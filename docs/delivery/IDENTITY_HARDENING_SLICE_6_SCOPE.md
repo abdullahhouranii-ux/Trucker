@@ -65,7 +65,7 @@ not done.
 | IH-12 | Every existing API test and browser check passes with unchanged behaviour, with the API connected as its restricted role |
 | IH-13 | All three CI jobs pass, including Windows, where the migration role is not a superuser |
 | IH-14 | Every decision that depends on time reads the clock when it is made: after the locks it needs are held, never at the start of the statement or transaction. The clock is the server's current time, or the fixed test clock in a database marked `test`. Proved deterministically: a verification queued behind a lock until the code expires is refused, and one second earlier is accepted; a transaction opened before expiry cannot use the code afterwards, on the test clock and on the real clock; the same for the session check, ending sessions, registration, creating and changing an organisation, and the repeat of a sign-in |
-| IH-15 | A production API does not start unless the server reports its connection as encrypted and is set never to write statement parameters to its log. The API's role cannot change those settings |
+| IH-15 | A production API does not start unless the server reports its connection as encrypted and is set never to write statement parameters to its log. The API's role cannot turn on parameter logging for ordinary statements (tested). PostgreSQL lets any role turn it on for failed statements on its own connection; that limit is recorded, not closed |
 
 ## 4. Scope
 

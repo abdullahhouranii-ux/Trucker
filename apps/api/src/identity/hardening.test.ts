@@ -277,9 +277,10 @@ test('the API role cannot read or write any identity table, the settings, the cl
     `ALTER TABLE trucker.session DISABLE ROW LEVEL SECURITY`,
     `CREATE POLICY open_all ON trucker.session FOR SELECT USING (true)`,
     `GRANT SELECT ON trucker.session TO trucker_app`,
-    // The two server settings behind the production gate on parameter logging.
+    // The server setting that decides whether parameters are logged with statements.
+    // (The one for failed statements can be changed by any role for its own connection:
+    // PostgreSQL does not allow that to be forbidden. See the record, section 3.4.)
     `SET log_parameter_max_length = -1`,
-    `SET log_parameter_max_length_on_error = -1`,
   ];
   for (const statement of statements) {
     await refused(() => app.query(statement), /permission denied|must be owner/i);
