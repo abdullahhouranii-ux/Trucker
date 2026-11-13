@@ -1,12 +1,10 @@
 // Prints the exact runtime versions used by a verification run, so that every run records
 // what it actually ran on. Node.js and PostgreSQL are major-version selections, not exact pins.
-import { execFileSync } from 'node:child_process';
 import pg from 'pg';
+import { probe } from './lib.mjs';
 
-const npmVersion = execFileSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['--version'], {
-  encoding: 'utf8',
-  shell: process.platform === 'win32',
-}).trim();
+const npm = probe('npm', ['--version']);
+const npmVersion = npm.ok ? npm.output : 'unknown';
 console.log(`node ${process.version}`);
 console.log(`npm ${npmVersion}`);
 console.log(`platform ${process.platform} ${process.arch}`);

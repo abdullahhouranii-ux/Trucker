@@ -85,6 +85,20 @@ Tested commit: `a392194` (code and CI jobs; the later commit on the branch adds 
 
 Node 22 and PostgreSQL 16 remain major-version selections. The Windows runner provides PostgreSQL 17, not 16, so the Windows result shows the code and setup steps work on Windows; it is not evidence for PostgreSQL 16 on Windows.
 
+## Review fix: starting processes without a shell (13 November 2026)
+
+Finding from review of `a4eba1e`: the helper scripts started commands through a shell on Windows, so a path or argument containing spaces or shell-special characters could be split or interpreted.
+
+| Change | Detail |
+|---|---|
+| No shell, anywhere | `tools/dev/lib.mjs` starts every process with `shell: false` and an argument array. The option cannot be overridden by a caller |
+| npm on Windows | `npm` there is a batch file, which cannot be started without a shell. The helpers start the Node.js binary with npm's JavaScript entry point (`npm-cli.js`) instead, so argument boundaries are preserved. If that file cannot be found on Windows the helper refuses, with no shell fallback |
+| `tools/dev/versions.mjs` | Uses the same launcher instead of its own shell call |
+| Tests (`tools/dev/lib.test.mjs`, 9 tests, part of `npm run verify` on every platform) | 22 hostile arguments (spaces, `&`, `|`, `;`, `<`, `>`, `%PATH%`, `$(...)`, backticks, quotes, carets, trailing backslashes, an empty argument) arrive unchanged; no redirect target is created; a script and working directory whose path contains spaces, `&` and parentheses run; `with-env.mjs` passes arguments through unchanged; npm is resolved to `node` + `npm-cli.js`; a missing `npm-cli.js` is refused on Windows; npm run with a `--prefix` containing spaces passes script arguments with spaces; no helper script requests a shell |
+| Windows CI job | Now checks the whole repository out into `trucker repo with spaces` and runs everything from there |
+
+Limit: arguments passed **through** `npm run ... -- <args>` are handed by npm to the script through the platform shell, as npm always does. The test for that path uses arguments with spaces only; shell-special characters are covered for processes the helpers start directly. The CI results for this fix are recorded in the pull request description.
+
 ## Verified and not verified
 
 | Item | State |
@@ -92,7 +106,8 @@ Node 22 and PostgreSQL 16 remain major-version selections. The Windows runner pr
 | `tools/dev/docker-compose.yml` and the Docker helpers on Linux | **Verified** in CI (`compose` job) |
 | Native Windows setup: checkout line endings, install, checks, tests, migrate, start and call the API | **Verified** on a GitHub Windows runner (`windows` job), with PostgreSQL 17.11 |
 | Docker Desktop on Windows (option A in the Windows instructions) | **Not verified** |
-| A Windows desktop machine, the PostgreSQL 16 installer, a path with spaces, antivirus interference | **Not verified** |
+| A repository path containing spaces on Windows | **Verified** on the Windows runner after the review fix |
+| A Windows desktop machine, the PostgreSQL 16 installer, antivirus interference | **Not verified** |
 | macOS | **Not verified** |
 | Load, security review, dependency vulnerability review | Not done |
 

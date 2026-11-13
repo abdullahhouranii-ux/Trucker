@@ -2,7 +2,8 @@
 #   verify   - the checks of `npm run verify` against a PostgreSQL service container (Linux)
 #   compose  - the same checks against the database started from tools/dev/docker-compose.yml
 #              through the local helper scripts, proving the Docker setup works
-#   windows  - the documented native Windows setup on a Windows runner
+#   windows  - the documented native Windows setup on a Windows runner, checked out into a
+#              path containing spaces
 # Each job prints the exact runtime versions it used.
 name: ci
 
@@ -106,8 +107,14 @@ jobs:
     env:
       NODE_ENV: test
       DATABASE_URL: postgres://trucker:trucker-local-only@localhost:5432/trucker_dev
+    defaults:
+      run:
+        # The repository is deliberately checked out into a path containing spaces.
+        working-directory: trucker repo with spaces
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: trucker repo with spaces
       - name: SQL files are checked out with LF endings
         shell: pwsh
         run: |
@@ -117,8 +124,9 @@ jobs:
           if ($eol -match "w/crlf") { throw "a SQL file was checked out with CRLF endings" }
       - uses: actions/setup-node@v4
         with:
-          node-version-file: .nvmrc
+          node-version-file: trucker repo with spaces/.nvmrc
           cache: npm
+          cache-dependency-path: trucker repo with spaces/package-lock.json
       - name: Start the runner's PostgreSQL and create the local role and database
         shell: pwsh
         run: |
