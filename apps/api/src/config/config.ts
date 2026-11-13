@@ -26,9 +26,62 @@ const schema = z.object({
   /** How long a migration statement waits for a table lock before failing. */
   MIGRATION_STATEMENT_LOCK_TIMEOUT_MS: milliseconds(100, 3_600_000, 10_000),
   MIGRATIONS_DIR: z.string().min(1).optional(),
+
+  /**
+   * Key for the keyed hashes of one-time codes and for deriving session tokens. Development and
+   * test fall back to a published value that protects nothing; production must set its own.
+   */
+  IDENTITY_SECRET: z.string().min(32).optional(),
+  /**
+   * How a one-time code reaches a person. No message supplier is chosen, so the only modes are
+   * `none` (sign-in is closed) and `development-display` (the code is returned to a caller on
+   * the same machine). The second is refused in production and with a remote database.
+   */
+  SIGN_IN_CODE_DELIVERY: z.enum(['none', 'development-display']).default('none'),
+  /**
+   * Which terms registration records. Only demonstration text exists; `demonstration` is
+   * refused in production, so production registration stays closed until approved terms exist.
+   */
+  REGISTRATION_TERMS: z.enum(['none', 'demonstration']).default('none'),
+
+  // Security periods. The defaults are DEVELOPMENT DEFAULTS that need review before production:
+  // production must set each one explicitly (docs/delivery/REGISTRATION_SLICE_4.md, section 4).
+  SIGN_IN_CODE_TTL_SECONDS: z.coerce.number().int().min(30).max(900).optional(),
+  SIGN_IN_CODE_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(10).optional(),
+  SIGN_IN_CODE_RESEND_WAIT_SECONDS: z.coerce.number().int().min(10).max(3600).optional(),
+  SIGN_IN_CODE_MAX_PER_HOUR: z.coerce.number().int().min(1).max(30).optional(),
+  SESSION_IDLE_MINUTES: z.coerce.number().int().min(1).max(1440).optional(),
+  SESSION_ABSOLUTE_HOURS: z.coerce.number().int().min(1).max(720).optional(),
 });
 
-export type AppConfig = Readonly<z.infer<typeof schema>>;
+/** Published on purpose: it only exists so local development needs no setup. */
+export const DEVELOPMENT_IDENTITY_SECRET = 'trucker-development-only-secret-not-for-production';
+
+export const SECURITY_PERIOD_DEFAULTS = {
+  SIGN_IN_CODE_TTL_SECONDS: 300,
+  SIGN_IN_CODE_MAX_ATTEMPTS: 5,
+  SIGN_IN_CODE_RESEND_WAIT_SECONDS: 60,
+  SIGN_IN_CODE_MAX_PER_HOUR: 5,
+  SESSION_IDLE_MINUTES: 30,
+  SESSION_ABSOLUTE_HOURS: 12,
+} as const;
+type PeriodKey = keyof typeof SECURITY_PERIOD_DEFAULTS;
+
+const LOCAL_DATABASE_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
+
+function databaseIsLocal(url: string): boolean {
+  try {
+    return LOCAL_DATABASE_HOSTS.has(new URL(url).hostname);
+  } catch {
+    return false;
+  }
+}
+
+type Parsed = z.infer<typeof schema>;
+export type AppConfig = Readonly<
+  Omit<Parsed, PeriodKey | 'IDENTITY_SECRET'> &
+    Record<PeriodKey, number> & { IDENTITY_SECRET: string }
+>;
 
 export class ConfigError extends Error {
   constructor(public readonly problems: readonly string[]) {
@@ -48,7 +101,46 @@ const RULE_BY_CODE: Record<string, string> = {
 export function loadConfig(env: Record<string, string | undefined>): AppConfig {
   const result = schema.safeParse(env);
   if (result.success) {
-    return Object.freeze(result.data);
+    const parsed = result.data;
+    const production = parsed.NODE_ENV === 'production';
+    const problems: string[] = [];
+    if (production) {
+      if (!parsed.IDENTITY_SECRET) problems.push('IDENTITY_SECRET must be set in production');
+      if (parsed.IDENTITY_SECRET === DEVELOPMENT_IDENTITY_SECRET) {
+        problems.push('IDENTITY_SECRET must not be the published development value');
+      }
+      if (parsed.SIGN_IN_CODE_DELIVERY === 'development-display') {
+        problems.push('SIGN_IN_CODE_DELIVERY must not be development-display in production');
+      }
+      if (parsed.REGISTRATION_TERMS === 'demonstration') {
+        problems.push('REGISTRATION_TERMS must not be demonstration in production');
+      }
+      for (const key of Object.keys(SECURITY_PERIOD_DEFAULTS) as PeriodKey[]) {
+        if (parsed[key] === undefined) {
+          problems.push(
+            `${key} must be set explicitly in production (the development default needs review)`,
+          );
+        }
+      }
+    }
+    if (
+      parsed.SIGN_IN_CODE_DELIVERY === 'development-display' &&
+      !databaseIsLocal(parsed.DATABASE_URL)
+    ) {
+      problems.push('SIGN_IN_CODE_DELIVERY development-display needs a database on this machine');
+    }
+    if (problems.length > 0) throw new ConfigError(problems);
+    const periods = Object.fromEntries(
+      (Object.keys(SECURITY_PERIOD_DEFAULTS) as PeriodKey[]).map((key) => [
+        key,
+        parsed[key] ?? SECURITY_PERIOD_DEFAULTS[key],
+      ]),
+    ) as Record<PeriodKey, number>;
+    return Object.freeze({
+      ...parsed,
+      ...periods,
+      IDENTITY_SECRET: parsed.IDENTITY_SECRET ?? DEVELOPMENT_IDENTITY_SECRET,
+    });
   }
   const problems = result.error.issues.map((issue) => {
     const key = issue.path.join('.') || '(root)';

@@ -55,10 +55,10 @@ jobs:
       - name: Nothing is pending and nothing was edited after applying
         run: npm run db:status
       - run: npm test
-      - name: Build the web application
-        run: npm run build -w @trucker/web
-      - name: Browser checks of the built web application (Chrome on the runner)
-        run: npm run test:browser -w @trucker/web
+      - name: Build the API and the web application, then run the browser checks against both
+        # Starts the API with code display and demonstration terms on this runner only,
+        # against the service database above. Uses Chrome on the runner.
+        run: npm run test:browser
 
   compose:
     name: compose (Docker database through tools/dev)

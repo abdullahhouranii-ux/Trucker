@@ -15,7 +15,12 @@ Local setup: `npm ci`, `npm run dev:env`, `npm run dev:db:up` (Docker) or your o
 PostgreSQL 16, `npm run dev:doctor`, `npm run dev:migrate`, `npm run dev:verify`,
 `npm run dev:api`. Windows: docs/delivery/WINDOWS_SETUP.md.
 
-No business feature exists: no sign-in, organisations, shipments, bookings, portals or mobile
+Registration and sign-in exist for local development only (docs/delivery/REGISTRATION_SLICE_4.md):
+mobile number with a one-time code, sessions, and registration with demonstration terms. No message
+supplier is chosen, so codes are displayed only on a developer's own machine; production refuses
+that setting and has registration closed.
+
+No other business feature exists: no organisations, shipments, bookings, portals or mobile
 application. Those are specified provisionally in docs/specs and gated on recorded decisions.
 
 ## Web application
