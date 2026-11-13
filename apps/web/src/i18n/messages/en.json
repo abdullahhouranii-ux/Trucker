@@ -1,0 +1,86 @@
+{
+  "meta": {
+    "title": "Trucker: road freight across the Gulf",
+    "description": "Trucker is a planned road freight platform for shippers, carriers, vehicle owners and drivers, in English, Arabic and Urdu."
+  },
+  "environment": {
+    "development": "Development build. Not a live service. All content is sample content."
+  },
+  "skip": "Skip to content",
+  "language": "Language",
+  "mainNav": "Main",
+  "nav": {
+    "how": "How it works",
+    "who": "Who it is for",
+    "languages": "Languages"
+  },
+  "hero": {
+    "title": "Road freight across the Gulf, one signed step at a time",
+    "lead": "Shipper, carrier and driver work from the same record, from pick-up to proof of delivery. In English, Arabic and Urdu.",
+    "action": "See how it works"
+  },
+  "example": {
+    "title": "Dubai to Riyadh",
+    "label": "Illustration",
+    "signed": "Signed",
+    "window": "Window",
+    "note": "The shipper, the carrier and operations read this same list. Each step shows who signed it and when.",
+    "steps": [
+      "Loaded in Dubai",
+      "Left the UAE",
+      "Entered Saudi Arabia",
+      "Arrive in Riyadh",
+      "Hand over and collect proof"
+    ]
+  },
+  "how": {
+    "title": "How it works",
+    "items": [
+      {
+        "title": "Post the load",
+        "text": "Describe the goods, the sites and the time windows once."
+      },
+      {
+        "title": "Compare offers and book",
+        "text": "Verified carriers quote. You accept one, with the price and terms fixed."
+      },
+      {
+        "title": "Follow each signed step",
+        "text": "The driver signs every milestone, even without signal."
+      },
+      {
+        "title": "Confirm proof of delivery",
+        "text": "Photos and the receiver's signature close the job."
+      }
+    ]
+  },
+  "who": {
+    "title": "Who it is for",
+    "items": [
+      {
+        "title": "Shippers",
+        "text": "Describe a load once, compare offers on the same terms and follow every step to delivery."
+      },
+      {
+        "title": "Carriers",
+        "text": "See loads that fit your fleet and the routes you are permitted to run. Assign truck, trailer and driver."
+      },
+      {
+        "title": "Drivers and vehicle owners",
+        "text": "One clear next step at every stop. Steps are saved on the phone when there is no signal."
+      }
+    ]
+  },
+  "languages": {
+    "title": "The same sign in three languages",
+    "lead": "Every screen is designed in English, Arabic and Urdu. Arabic and Urdu read right to left; numbers, plates and references stay left to right."
+  },
+  "footer": {
+    "note": "Draft copy. The service described is planned, not live. Launch countries and routes are not decided."
+  },
+  "notFound": {
+    "title": "This page does not exist",
+    "text": "The address may be mistyped, or the page may have moved.",
+    "home": "Go to the home page"
+  }
+}

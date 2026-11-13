@@ -1,0 +1,46 @@
+/* Generated from tokens.json (version 0.3.0, provisional). Do not edit by hand. */
+:root {
+  --c-blue: #0b4ea2;
+  --c-green: #0b6b4a;
+  --c-asphalt: #1f2328;
+  --c-yellow: #f6c700;
+  --c-red: #b3261e;
+  --c-ground: #edeff1;
+  --c-surface: #ffffff;
+  --c-text: #1f2328;
+  --c-muted: #4a525c;
+  --c-border: #6b737c;
+  --c-hairline: #c5cad0;
+  --c-blue-tint: #e3ecf8;
+  --c-green-tint: #dff0e7;
+  --c-yellow-tint: #fff3b8;
+  --c-red-tint: #fbe4e2;
+  --f-latin: 'Barlow', system-ui, sans-serif;
+  --f-arabic: 'Noto Sans Arabic', 'Barlow', system-ui, sans-serif;
+  --lh-latin: 1.4;
+  --lh-latin-tight: 1.15;
+  --lh-arabic: 1.7;
+  --lh-arabic-tight: 1.5;
+  --t-xs: 0.875rem;
+  --t-sm: 0.9375rem;
+  --t-md: 1.0625rem;
+  --t-lg: 1.25rem;
+  --t-xl: 1.5rem;
+  --t-2xl: 2rem;
+  --t-3xl: 2.75rem;
+  --s-1: 0.25rem;
+  --s-2: 0.5rem;
+  --s-3: 0.75rem;
+  --s-4: 1rem;
+  --s-5: 1.5rem;
+  --s-6: 2rem;
+  --s-7: 3rem;
+  --s-8: 4rem;
+  --r-sm: 0.375rem;
+  --r-md: 0.625rem;
+  --r-lg: 0.875rem;
+  --r-xl: 1.375rem;
+  --target-min: 2.75rem;
+  --target-large: 3.5rem;
+  --motion-fast: 120ms;
+}

@@ -1,9 +1,10 @@
 # Three jobs:
-#   verify   - the checks of `npm run verify` against a PostgreSQL service container (Linux)
+#   verify   - the checks of `npm run verify` against a PostgreSQL service container (Linux),
+#              then the web application is built and checked in a real browser
 #   compose  - the same checks against the database started from tools/dev/docker-compose.yml
 #              through the local helper scripts, proving the Docker setup works
 #   windows  - the documented native Windows setup on a Windows runner, checked out into a
-#              path containing spaces
+#              path containing spaces; the web application is built there but not browser-checked
 # Each job prints the exact runtime versions it used.
 name: ci
 
@@ -54,6 +55,10 @@ jobs:
       - name: Nothing is pending and nothing was edited after applying
         run: npm run db:status
       - run: npm test
+      - name: Build the web application
+        run: npm run build -w @trucker/web
+      - name: Browser checks of the built web application (Chrome on the runner)
+        run: npm run test:browser -w @trucker/web
 
   compose:
     name: compose (Docker database through tools/dev)
@@ -147,6 +152,8 @@ jobs:
         run: npm run dev:doctor
       - name: Full verification
         run: npm run verify
+      - name: Build the web application
+        run: npm run build -w @trucker/web
       - name: Migrate, then confirm nothing is pending
         run: |
           npm run db:migrate

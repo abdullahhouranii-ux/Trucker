@@ -18,6 +18,14 @@ PostgreSQL 16, `npm run dev:doctor`, `npm run dev:migrate`, `npm run dev:verify`
 No business feature exists: no sign-in, organisations, shipments, bookings, portals or mobile
 application. Those are specified provisionally in docs/specs and gated on recorded decisions.
 
+## Web application
+
+`apps/web` is the web shell: English, Arabic and Urdu with right-to-left layout, design tokens and a
+public home page. It has no sign-in and calls no API yet (docs/delivery/WEB_FOUNDATION_SLICE_3.md).
+
+- `npm run build -w @trucker/web`, then `npm run start:web`, serves it on http://localhost:3100.
+- `npm run test:browser` builds it and checks it in Chrome (set CHROME_PATH if Chrome is not found).
+
 ## Product reference
 
 The intended product context is the TruckLink Plan B freight platform: shipper,
