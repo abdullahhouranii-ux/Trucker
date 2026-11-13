@@ -8,6 +8,8 @@ import pg from 'pg';
 import { AppModule } from '../app.module.js';
 import { loadConfig } from '../config/config.js';
 import { defaultMigrationsDir, migrateUp } from '../database/migrations.js';
+import { configureApp } from '../http/configure-app.js';
+import { silentLogger } from '../http/logger.js';
 import { createTestDatabase } from '../testing/test-database.js';
 import { HealthService } from './health.service.js';
 
@@ -21,9 +23,10 @@ async function startApi(
     DB_CONNECT_TIMEOUT_MS: '500',
     ...overrides,
   });
-  const app: INestApplication = await NestFactory.create(AppModule.register(config), {
-    logger: false,
-  });
+  const app: INestApplication = configureApp(
+    await NestFactory.create(AppModule.register(config), { logger: false }),
+    silentLogger,
+  );
   await app.listen(0, '127.0.0.1');
   const { port } = app.getHttpServer().address() as AddressInfo;
   return { base: `http://127.0.0.1:${port}`, close: () => app.close() };
@@ -38,6 +41,7 @@ test('live is 200 and ready is 200 when the database is reachable and migrated',
   try {
     const live = await fetch(`${api.base}/health/live`);
     assert.equal(live.status, 200);
+    assert.match(live.headers.get('x-request-id') ?? '', /^[0-9a-f-]{36}$/);
     assert.deepEqual(await live.json(), { status: 'live' });
 
     const ready = await fetch(`${api.base}/health/ready`);
@@ -56,8 +60,12 @@ test('ready is 503 while migrations are pending; live stays 200', async () => {
   const database = await createTestDatabase();
   const api = await startApi(database.url);
   try {
-    const ready = await fetch(`${api.base}/health/ready`);
+    const ready = await fetch(`${api.base}/health/ready`, {
+      headers: { 'x-request-id': 'caller-supplied-id-001' },
+    });
     assert.equal(ready.status, 503);
+    // Health keeps its own body on failure; only the identifier header is added.
+    assert.equal(ready.headers.get('x-request-id'), 'caller-supplied-id-001');
     assert.deepEqual(await ready.json(), {
       status: 'not_ready',
       checks: { database: 'ok', migrations: 'pending' },
