@@ -83,12 +83,17 @@ answer was also reported as "your session has ended".
 | Situation | What the person sees | What is true on the server |
 |---|---|---|
 | Sign-out confirmed (or the server says the session was already over) | "You are signed out. The server confirmed that the session has ended." | Session revoked; its token is refused |
-| Sign-out not confirmed (error answer, or no answer) | Still signed in, with "The service did not confirm sign-out, so this session is still active. Try again." and a retry | Session still active |
-| After a failed sign-out, the person chooses "Remove sign-in from this browser only" | "Sign-in was removed from this browser only. The server did not confirm sign-out, so the session may stay active until it expires." | Session still active until it expires or is ended later |
+| Sign-out not confirmed (error answer, or no answer) | "Sign-out was not confirmed, so this session may still be active. Try again." The cookie is kept so that a retry is possible | **Unknown.** The request may not have arrived (session active), or it was carried out and only the answer was lost (session revoked) |
+| After a failed sign-out, the person chooses "Remove sign-in from this browser only" | "Sign-in was removed from this browser only. The server did not confirm sign-out, so the session may stay active until it expires." | Unknown, as above. If it is active, it stays so until it expires or is ended later |
 | Ending one session, or all others: confirmed | A confirmation that names the server | Revoked; tokens refused |
-| Ending one session, or all others: not confirmed | A translated error and the same button to retry | Still active |
+| Ending one session, or all others: not confirmed | "It was not confirmed that the session ended, so it may still be active. Try again." and the same button to retry | Unknown, as above |
+| Retry after an unconfirmed attempt | Sign-out: confirmed. Another session: confirmed, or "not found. It may have ended already" when the first attempt had in fact worked; the list then no longer shows it | Settled: the server's answer, including "already over", is the confirmation |
 | Ending a session that no longer exists | "That session was not found. It may have ended already." | Nothing changed |
 | The API does not answer while the account page loads | "Your account cannot be shown right now", with retry and both sign-out choices | Unknown, and nothing is claimed |
+
+An unconfirmed revocation is never worded as "still active" or "still signed in": the web
+application cannot know which of the two cases it is in. (The first wording of this fix said
+"still active"; corrected on review, 13 November 2026.)
 
 Browser-only sign-out is offered only after a failed sign-out, so that a person on a shared
 computer is not left unable to leave. It is never described as a confirmed sign-out.
@@ -165,8 +170,8 @@ Run on 13 November 2026, Linux, Node.js 22, PostgreSQL 16, headless Chrome.
 | Check | Count | Result |
 |---|---|---|
 | API tests, all (`npm test -w @trucker/api`) | 90, of which 46 are new | Pass |
-| Web unit tests | 23, of which 8 are new | Pass |
-| Browser checks (`npm run test:browser`), all | 436, of which 333 are new | Pass |
+| Web unit tests | 24, of which 9 are new | Pass |
+| Browser checks (`npm run test:browser`), all | 457, of which 354 are new | Pass |
 
 Added for the two fixes in sections 3a and 3b:
 
@@ -181,6 +186,10 @@ Added for the two fixes in sections 3a and 3b:
 | API: local caller that does not ask by name; forwarded caller (7 headers); caller from the network address | No code |
 | Web application started as production with development codes switched on | Serves no page; the log names the refusal |
 | Sign-out, end one session, end all others, each against an API answering 503 and an API that does not answer | Translated error (Urdu and English checked against the message files), focus on the summary, cookie kept, retry offered; afterwards the API still accepts every token |
+| **Answer lost**: a stand-in between the web application and the API passes the revocation to the API, lets the API carry it out and answer 204, then drops the answer and the connection. Done for ending another session and for sign-out | The API refuses the token (it was revoked), while the page shows the "may still be active" message and no confirmation; cookie kept; retry offered |
+| Retry after the lost answer, connection restored | Other session: the account shows one session and no error. Sign-out: the server answers that the session is already over, the page shows the confirmed sign-out and the cookie is removed |
+| Wording, all three languages | A unit test requires the "may" form in each unconfirmed message and rejects "still active" and "still signed in" |
+| Plain sign-out in English and Arabic | Confirmation shown; the API then refuses the token |
 | Retry once the API is back | Confirmed, with the confirmation shown; the API then answers 401 for the revoked token |
 | Browser-only sign-out | Offered only after a failure; cookie removed; reported as not confirmed; the API still accepts the token, as the message says |
 | New screen states (account unavailable, confirmation, signed out, signed out in this browser only) | Layout at four widths and doubled text, structure and axe-core: 0 findings |
@@ -189,6 +198,12 @@ One unexplained result is on record: in a single local run of the whole suite, o
 failed (86 of 87). The output of that run was not kept, so the test is not identified. 17 further
 runs, 8 of them under heavy processor load, all passed. Treat the suite as possibly having one
 timing-sensitive test until it is seen again and fixed.
+
+A second intermittent result, this one explained: the automated accessibility check sometimes
+ran before the page title had arrived after a form was sent (2 of 5 runs failed on
+`document-title`). The check now waits for the title; 3 further full runs passed. The delay
+itself is real: for a moment after such a navigation the page has no title. Its effect on
+screen-reader announcements has not been tested.
 
 New API tests include the negative cases asked for:
 

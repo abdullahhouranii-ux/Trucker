@@ -22,6 +22,51 @@ const appDir = fileURLToPath(new URL('..', import.meta.url));
 const outDir = fileURLToPath(new URL('./output/', import.meta.url));
 const locales = ['en', 'ar', 'ur'];
 const apiOrigin = `http://127.0.0.1:${apiPort}`;
+// The web application reaches the API through a stand-in on this port, so the checks can lose
+// an answer on its way back. It adds no header of its own and otherwise passes everything on.
+const relayPort = apiPort + 20;
+const relay = { mode: 'pass', lost: [] };
+const REVOCATIONS = [
+  ['POST', /^\/auth\/sign-out$/],
+  ['DELETE', /^\/me\/sessions\/[^/]+$/],
+  ['POST', /^\/me\/sessions\/revoke-others$/],
+];
+function startRelay() {
+  const server = http.createServer((request, response) => {
+    // "down": nothing gets through, as if the network between web and API had failed.
+    if (relay.mode === 'down') return request.socket.destroy();
+    const upstream = http.request(
+      {
+        host: '127.0.0.1',
+        port: apiPort,
+        path: request.url,
+        method: request.method,
+        headers: request.headers,
+      },
+      (answer) => {
+        const chunks = [];
+        answer.on('data', (chunk) => chunks.push(chunk));
+        answer.on('end', () => {
+          const revocation = REVOCATIONS.some(
+            ([method, path]) => method === request.method && path.test(request.url),
+          );
+          // "lose": the API carried the revocation out and answered, but the answer never
+          // arrives. After that nothing gets through until the test restores the connection.
+          if (relay.mode === 'lose' && revocation) {
+            relay.lost.push(`${request.method} ${request.url} -> ${answer.statusCode}`);
+            relay.mode = 'down';
+            return request.socket.destroy();
+          }
+          response.writeHead(answer.statusCode, answer.headers);
+          response.end(Buffer.concat(chunks));
+        });
+      },
+    );
+    upstream.on('error', () => request.socket.destroy());
+    request.pipe(upstream);
+  });
+  return new Promise((resolve) => server.listen(relayPort, '127.0.0.1', () => resolve(server)));
+}
 // This machine's own address on the network. A connection made to it arrives from it, so it
 // stands in for a visitor who is not on this machine.
 const outsideAddress = Object.values(networkInterfaces())
@@ -230,6 +275,7 @@ async function main() {
   const apiSaysToken = async (token) =>
     (await fetch(`${apiOrigin}/me`, { headers: { authorization: `Bearer ${token}` } })).status;
   await startApi();
+  const relayServer = await startRelay();
 
   const server = spawn(
     process.execPath,
@@ -241,7 +287,7 @@ async function main() {
       env: {
         ...process.env,
         NODE_ENV: 'production',
-        TRUCKER_API_URL: apiOrigin,
+        TRUCKER_API_URL: `http://127.0.0.1:${relayPort}`,
         TRUCKER_DEVELOPMENT_CODE_DISPLAY: 'local-visitors',
       },
     },
@@ -530,7 +576,7 @@ async function main() {
     const shots = {
       'en:sign-in error': 'sign-in-error-en-390',
       'ur:code': 'code-ur-390',
-      'ar:register error': 'register-error-ar-390',
+      'ur:sign-out unconfirmed': 'sign-out-unconfirmed-ur-390',
       'ur:account unavailable': 'account-unavailable-ur-390',
       'en:signed out locally': 'signed-out-locally-en-390',
     };
@@ -600,6 +646,12 @@ async function main() {
         facts.small.length === 0 && facts.islands === 0,
         `${label}: small targets [${facts.small.join(', ')}], misdirected islands ${facts.islands}`,
       );
+      // After a form is sent, Next.js swaps the page in place and the title can arrive a moment
+      // after the content. Wait for it, so the rules run on the finished page; a page that
+      // never gets a title still fails the document-title rule below.
+      await page
+        .waitForFunction(() => document.title.trim() !== '', { timeout: 5000 })
+        .catch(() => undefined);
       await page.evaluate(axeSource);
       const violations = await page.evaluate(async () => {
         const result = await window.axe.run(document, {
@@ -774,7 +826,19 @@ async function main() {
       await inspect(locale, 'account');
       people[locale] = { phone, name };
       // Sign out before the next language, so each run starts as a visitor. The last stays signed in.
-      if (index < locales.length - 1) await submit('#sign-out');
+      if (index < locales.length - 1) {
+        const plainToken = (await browser.cookies()).find(
+          (cookie) => cookie.name === 'trucker_session',
+        )?.value;
+        await submit('#sign-out');
+        check(
+          'revocation',
+          page.url() === `${origin}/${locale}/sign-in?done=signed_out` &&
+            (await text('#signed-out-confirmed')) === messagesFor(locale).auth.account.signedOut &&
+            (await apiSaysToken(plainToken)) === 401,
+          `${locale}: a plain sign-out led to ${page.url()} or the API still accepts the token`,
+        );
+      }
     }
 
     // Stored, not simulated: still signed in after a reload, and the name comes from the database.
@@ -1035,7 +1099,108 @@ async function main() {
     );
     await thirdContext.close();
 
-    // Confirmed sign-out: the server ended the session, the page says so, the token is refused.
+    // ------------------------------------------------------------------------------------
+    // The revocation is carried out, but its answer is lost on the way back
+    // ------------------------------------------------------------------------------------
+    await sleep(10_500);
+    const fourthContext = await browser.createBrowserContext();
+    const fourth = await fourthContext.newPage();
+    await fourth.goto(`${origin}/en/sign-in`, { waitUntil: 'networkidle0' });
+    await fourth.type('#phone', people.ur.phone);
+    await Promise.all([
+      fourth.waitForNavigation({ waitUntil: 'networkidle0' }),
+      fourth.click('#sign-in-form button[type=submit]'),
+    ]);
+    await fourth.type(
+      '#code',
+      await fourth.evaluate(() => document.querySelector('.notice-development .ltr').textContent),
+    );
+    await Promise.all([
+      fourth.waitForNavigation({ waitUntil: 'networkidle0' }),
+      fourth.click('form.card button.button-primary'),
+    ]);
+    const fourthToken = await tokenOf(fourthContext);
+    await fourthContext.close();
+    await open('/ur/account', 390);
+    check(
+      'lost answer',
+      (await page.evaluate(() => document.querySelectorAll('.session').length)) === 2 &&
+        (await apiSaysToken(fourthToken)) === 200,
+      'there is no second active session to end',
+    );
+
+    // Ending another session: done on the server, answer lost.
+    relay.mode = 'lose';
+    await submit('.session form button');
+    check(
+      'lost answer',
+      relay.lost.length === 1 && /^DELETE \/me\/sessions\/[0-9a-f-]+ -> 204$/.test(relay.lost[0]),
+      `the API did not carry out the end-session request whose answer was lost: ${relay.lost}`,
+    );
+    check(
+      'lost answer',
+      (await apiSaysToken(fourthToken)) === 401,
+      'the session whose end was not confirmed is still accepted by the API',
+    );
+    const lostEnd = (await summaryText()) ?? '';
+    check(
+      'lost answer',
+      page.url() === `${origin}/ur/account?error=end_session_unconfirmed` &&
+        lostEnd.includes(ur.errors.end_session_unconfirmed) &&
+        (await page.evaluate(() => document.getElementById('account-confirmation'))) === null,
+      `a lost end-session answer led to ${page.url()} without the uncertain message`,
+    );
+    check(
+      'lost answer',
+      ur.errors.end_session_unconfirmed.includes('ہو سکتا ہے') &&
+        !lostEnd.includes(ur.account.sessionEnded),
+      'the page claims an outcome it cannot know',
+    );
+    relay.mode = 'pass';
+    await submit('#retry-account');
+    check(
+      'lost answer',
+      page.url() === `${origin}/ur/account` &&
+        (await page.evaluate(() => document.querySelectorAll('.session').length)) === 1 &&
+        (await summaryText()) === null,
+      `after the connection returned, retrying did not show the true state: ${page.url()}`,
+    );
+
+    // Signing out: done on the server, answer lost. The page is uncertain; the retry confirms.
+    relay.mode = 'lose';
+    await submit('#sign-out');
+    check(
+      'lost answer',
+      relay.lost.length === 2 && relay.lost[1] === 'POST /auth/sign-out -> 204',
+      `the API did not carry out the sign-out whose answer was lost: ${relay.lost}`,
+    );
+    check(
+      'lost answer',
+      (await apiSaysToken(firstToken)) === 401,
+      'the session was not revoked on the server although the API answered 204',
+    );
+    const lostSignOut = (await summaryText()) ?? '';
+    check(
+      'lost answer',
+      page.url() === `${origin}/ur/account?error=sign_out_unconfirmed` &&
+        lostSignOut.includes(ur.errors.sign_out_unconfirmed) &&
+        lostSignOut.includes(ur.errors.account_unavailable),
+      `a lost sign-out answer led to ${page.url()} without the uncertain message`,
+    );
+    check(
+      'lost answer',
+      (await tokenOf(browser.defaultBrowserContext())) === firstToken &&
+        (await page.evaluate(() =>
+          ['sign-out', 'sign-out-local', 'retry-account'].every((id) =>
+            document.getElementById(id),
+          ),
+        )),
+      'after a lost answer the cookie was removed or a retry is not offered',
+    );
+    await inspect('ur', 'sign-out unconfirmed');
+    relay.mode = 'pass';
+
+    // The retry: the server says the session is already over, which confirms the sign-out.
     await submit('#sign-out');
     check(
       'revocation',
@@ -1285,6 +1450,8 @@ async function main() {
     if (browser) await browser.close();
     server.kill();
     apiServer?.kill();
+    relayServer.close();
+    relayServer.closeAllConnections();
   }
 
   console.log('checks run:', JSON.stringify(counts));

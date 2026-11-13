@@ -135,7 +135,7 @@
       "registered": "Registration is complete.",
       "retry": "Try again",
       "signOutLocal": "Remove sign-in from this browser only",
-      "signOutLocalNote": "Use this only if sign-out keeps failing. It does not end the session on the server: the session stays active until it expires.",
+      "signOutLocalNote": "Use this only if sign-out keeps failing. It does not end the session on the server: if the session is still active there, it stays active until it expires.",
       "signedOut": "You are signed out. The server confirmed that the session has ended.",
       "signedOutLocal": "Sign-in was removed from this browser only. The server did not confirm sign-out, so the session may stay active until it expires. When the service answers again, sign in and end that session.",
       "sessionEnded": "That session has ended. The server confirmed it.",
@@ -163,9 +163,9 @@
       "terms": "Tick the box to confirm that you have read the notice.",
       "unavailable": "The service did not answer. Nothing was saved. Try again.",
       "no_challenge": "Start again: enter your mobile number.",
-      "sign_out_unconfirmed": "You are still signed in. The service did not confirm sign-out, so this session is still active. Try again.",
-      "end_session_unconfirmed": "That session was not ended. The service did not confirm it, so the session is still active. Try again.",
-      "end_others_unconfirmed": "The other sessions were not ended. The service did not confirm it, so they are still active. Try again.",
+      "sign_out_unconfirmed": "Sign-out was not confirmed, so this session may still be active. Try again.",
+      "end_session_unconfirmed": "It was not confirmed that the session ended, so it may still be active. Try again.",
+      "end_others_unconfirmed": "It was not confirmed that the other sessions ended, so they may still be active. Try again.",
       "session_not_found": "That session was not found. It may have ended already.",
       "account_unavailable": "The service did not answer. You may still be signed in. Try again."
     }

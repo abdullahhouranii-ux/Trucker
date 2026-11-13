@@ -157,12 +157,16 @@ export async function registerAction(form: FormData): Promise<void> {
 }
 
 // Ending a session is confirmed only by the server's own answer. When the server does not
-// answer, or answers with an error, the session is treated as still active and the person is
-// told so, with a way to try again. Nothing is reported as ended on a guess.
+// answer, or answers with an error, the outcome is unknown: the request may never have
+// arrived, or it may have been carried out and only the answer lost. So the person is told the
+// session may still be active, and can try again. Nothing is reported as ended, or as still
+// active, on a guess. A retry settles it: the server then confirms, or says the session is
+// already over (401 for the caller's own session, 404 for another one).
 
 /**
  * Signs out on the server. The cookie is removed only once the server has confirmed the
- * session is over (or says it already was). Otherwise the person stays signed in and sees why.
+ * session is over (or says it already was). Otherwise the cookie is kept, so that the person
+ * can try again, and the page says that the session may still be active.
  */
 export async function signOutAction(form: FormData): Promise<void> {
   const locale = localeOf(form);
