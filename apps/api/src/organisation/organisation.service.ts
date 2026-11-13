@@ -381,21 +381,29 @@ export class OrganisationService {
         throw new ApiError(422, 'validation_failed', 'Some fields are missing or not valid.', {
           fields: ['countryCode'],
         });
-      const changed = await client.query<OrganisationRow>(
-        `UPDATE trucker.organisation
+      const changed = await client
+        .query<OrganisationRow>(
+          `UPDATE trucker.organisation
          SET legal_name = $2, trading_name = $3, country_code = $4, registration_number = $5,
              address = $6, contact_name = $7, version = version + 1
          WHERE id = $1 RETURNING ${COLUMNS}`,
-        [
-          id,
-          input.legalName,
-          input.tradingName,
-          input.countryCode,
-          input.registrationNumber,
-          input.address,
-          input.contactName,
-        ],
-      );
+          [
+            id,
+            input.legalName,
+            input.tradingName,
+            input.countryCode,
+            input.registrationNumber,
+            input.address,
+            input.contactName,
+          ],
+        )
+        .catch((error: unknown) => {
+          // The database judges the session again once the change holds its lock. A session
+          // that ended while the change waited is refused there, and that is not a fault.
+          if ((error as { code?: string }).code === '42501')
+            throw new ApiError(401, 'unauthorized', 'Authentication is required.');
+          throw error;
+        });
       // Row security refused the change: a member who is not an administrator.
       if (!changed.rows[0]) throw new ApiError(403, 'forbidden', 'This action is not allowed.');
       return view(changed.rows[0]);

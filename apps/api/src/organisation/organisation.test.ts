@@ -1493,6 +1493,8 @@ test('the database itself refuses fixture countries unless it is marked for them
         problems: [],
         environment: 'production',
         settingsReviewed: true,
+        connectionEncrypted: true,
+        parametersKeptOutOfLogs: true,
       }),
       [],
     );
@@ -1597,6 +1599,8 @@ test('loading fixtures needs every safeguard at once; production configuration r
       problems: [],
       environment: 'test',
       settingsReviewed: true,
+      connectionEncrypted: true,
+      parametersKeptOutOfLogs: true,
     }).join(),
     /not "production"/,
   );
@@ -1606,6 +1610,8 @@ test('loading fixtures needs every safeguard at once; production configuration r
       problems: [],
       environment: 'unmarked',
       settingsReviewed: true,
+      connectionEncrypted: true,
+      parametersKeptOutOfLogs: true,
     }).join(),
     /not "production"/,
   );
@@ -1615,6 +1621,8 @@ test('loading fixtures needs every safeguard at once; production configuration r
       problems: ['the database role is a superuser'],
       environment: 'production',
       settingsReviewed: true,
+      connectionEncrypted: true,
+      parametersKeptOutOfLogs: true,
     }).length,
     1,
   );
@@ -1625,8 +1633,24 @@ test('loading fixtures needs every safeguard at once; production configuration r
       problems: [],
       environment: 'production',
       settingsReviewed: false,
+      connectionEncrypted: true,
+      parametersKeptOutOfLogs: true,
     }).join(),
     /have not been recorded as reviewed for production/,
+  );
+  // Nor over a connection that is not encrypted, nor with a server that may log parameters.
+  const gates = productionStartProblems({
+    rowSecurityBinds: true,
+    problems: [],
+    environment: 'production',
+    settingsReviewed: true,
+    connectionEncrypted: false,
+    parametersKeptOutOfLogs: false,
+  }).join('\n');
+  assert.match(gates, /connection to the database is not encrypted/);
+  assert.match(
+    gates,
+    /log_parameter_max_length and log_parameter_max_length_on_error must both be 0/,
   );
 });
 
@@ -1662,6 +1686,9 @@ test('a production API does not start against a database that is not marked prod
   assert.match(marked.output, /Refusing to start in production/);
   assert.match(marked.output, /marked "test", not "production"/);
   assert.match(marked.output, /have not been recorded as reviewed for production/);
+  // This test server speaks no TLS and logs parameters by default: both gates are read from it.
+  assert.match(marked.output, /connection to the database is not encrypted/);
+  assert.match(marked.output, /may write statement parameters to its log/);
   // The migration role, under another name so that the two connection strings differ.
   const ownerAgain = new URL(database.url);
   ownerAgain.searchParams.set('application_name', 'same-role');

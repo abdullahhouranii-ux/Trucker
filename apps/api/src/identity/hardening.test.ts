@@ -5,7 +5,12 @@ import { after, before, test } from 'node:test';
 import pg from 'pg';
 import { loadConfig } from '../config/config.js';
 import { inspectAccess } from '../database/access.js';
-import { appDatabaseUrl, ensureLocalAppLogin, markEnvironment } from '../database/local.js';
+import {
+  appDatabaseUrl,
+  ensureLocalAppLogin,
+  loadCountryFixtures,
+  markEnvironment,
+} from '../database/local.js';
 import { defaultMigrationsDir, migrateUp } from '../database/migrations.js';
 import {
   parseSettingChanges,
@@ -42,6 +47,7 @@ before(async () => {
   await ensureLocalAppLogin(owner);
   await markEnvironment(owner, 'test');
   await testClock.start(owner);
+  await loadCountryFixtures(owner);
   app = new pg.Pool({ connectionString: appDatabaseUrl(database.url), max: 4 });
 });
 after(async () => {
@@ -339,7 +345,8 @@ test('the building blocks cannot be called directly by the API role', async () =
     `SELECT trucker.code_hash('${PEPPER}', '${signed.challengeId}', '000000')`,
     `SELECT * FROM trucker.live_session('${signed.tokenHash}')`,
     `SELECT * FROM trucker.account_of('${signed.sessionId}')`,
-    `SELECT trucker.record_identity_event('signed_in', '${signed.personId}', '${signed.sessionId}', 'forged')`,
+    `SELECT trucker.record_identity_event('signed_in', '${signed.personId}', '${signed.sessionId}', 'forged', now())`,
+    `SELECT trucker.session_state(NULL::trucker.session, now())`,
     `SELECT trucker.clock_now()`,
   ]) {
     await refused(() => app.query(statement), /permission denied for function/i);
@@ -1279,6 +1286,441 @@ test('shortening the absolute limit ends older sessions at once; lengthening it 
     // Twelve hours after it was created it is over, however long the limit now is.
     assert.equal((await sessionRow(signed.sessionId))!.revoked_reason, 'absolute_expired');
     await assertDead(signed, 'past the limit it was created with');
+  } finally {
+    await writeSecuritySettings(owner, { ...D }, false);
+  }
+});
+
+// ---------------------------------------------------------------------------------------------
+// Time is read when a decision is made (IH-14): after any wait for a lock, and never from the
+// start of the transaction. Each test below is deterministic: nothing depends on how long a
+// step happens to take. A second connection holds a lock, the test waits until the database
+// itself reports the first one as waiting, then the clock is moved, then the lock is released.
+// ---------------------------------------------------------------------------------------------
+/** Holds a lock in an open transaction of the migration role until released. */
+async function hold(statement: string, values: unknown[] = []): Promise<() => Promise<void>> {
+  const client = await owner.connect();
+  await client.query('BEGIN');
+  await client.query(statement, values);
+  return async () => {
+    await client.query('COMMIT');
+    client.release();
+  };
+}
+/** Resolves once some other connection to this database is waiting for a lock. */
+async function untilSomeoneWaits(): Promise<void> {
+  for (let attempt = 0; attempt < 400; attempt += 1) {
+    const waiting = await owner.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM pg_locks l JOIN pg_stat_activity a ON a.pid = l.pid
+       WHERE NOT l.granted AND a.datname = current_database() AND l.pid <> pg_backend_pid()`,
+    );
+    if (waiting.rows[0]!.n > 0) return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error('nothing started waiting for the lock');
+}
+/** Runs work that must queue behind the lock, moves the clock while it waits, then lets it go. */
+async function whileBlocked<T>(
+  lock: [statement: string, values: unknown[]],
+  work: () => Promise<T>,
+  seconds: number,
+): Promise<T> {
+  const release = await hold(...lock);
+  let released = false;
+  try {
+    const pending = work();
+    await untilSomeoneWaits();
+    await advance(seconds);
+    released = true;
+    await release();
+    return await pending;
+  } finally {
+    if (!released) await release();
+  }
+}
+const lockNumber = (phone: string): [string, unknown[]] => [
+  'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+  [phone],
+];
+const lockRow = (table: string, id: string): [string, unknown[]] => [
+  `SELECT 1 FROM trucker.${table} WHERE id = $1 FOR UPDATE`,
+  [id],
+];
+
+test('a verification that waits for a lock until the code has expired is refused', async () => {
+  // Behind the lock on the challenge itself, and behind the lock on the number.
+  for (const which of ['challenge', 'number'] as const) {
+    const phone = newPhone();
+    const asked = await requestCode(phone);
+    const tokenHash = randomHash();
+    const result = await whileBlocked(
+      which === 'challenge' ? lockRow('sign_in_challenge', asked.challenge_id!) : lockNumber(phone),
+      () => verifyCode(asked.challenge_id!, asked.development_code!, { tokenHash }),
+      D.code_ttl_seconds,
+    );
+    // Sent in time with the right code, but it could only act once the code was over.
+    assert.equal(result.status, 'expired', which);
+    assert.equal(result.session_id, null, which);
+    assert.equal(await check(tokenHash), 'unknown', which);
+    assert.equal(await count('person', 'phone_e164 = $1', [phone]), 0, which);
+  }
+  // One second less and the same wait ends in a sign-in: it is the time that decides.
+  const phone = newPhone();
+  const asked = await requestCode(phone);
+  const inTime = await whileBlocked(
+    lockRow('sign_in_challenge', asked.challenge_id!),
+    () => verifyCode(asked.challenge_id!, asked.development_code!),
+    D.code_ttl_seconds - 1,
+  );
+  assert.equal(inTime.status, 'signed_in');
+});
+
+test('a transaction opened before a code expires cannot use it afterwards', async () => {
+  const asked = await requestCode(newPhone());
+  const tokenHash = randomHash();
+  const client = await app.connect();
+  try {
+    await client.query('BEGIN');
+    // The transaction is open and has already read the clock once, well before expiry.
+    const early = await client.query<{ status: string }>(
+      'SELECT status FROM trucker.sign_in_request_code($1, $2, $3, false)',
+      [newPhone(), key(), PEPPER],
+    );
+    assert.equal(early.rows[0]!.status, 'created');
+    await advance(D.code_ttl_seconds);
+    const late = await client.query<VerifyRow>(
+      'SELECT * FROM trucker.sign_in_verify_code($1, $2, $3, $4, $5, $6, $7)',
+      [asked.challenge_id, asked.development_code, key(), PEPPER, randomUUID(), tokenHash, null],
+    );
+    assert.equal(late.rows[0]!.status, 'expired');
+    await client.query('COMMIT');
+  } finally {
+    await client.query('ROLLBACK').catch(() => undefined);
+    client.release();
+  }
+  assert.equal(await check(tokenHash), 'unknown');
+});
+
+test('on the real clock, an open transaction is judged by the time now, not the time it began', async () => {
+  // A database marked local-development: no test clock, the server's own time. Instead of
+  // waiting for minutes, the migration role moves the deadlines to "this instant" after the
+  // transaction has begun. By the transaction's start time they have not passed; by the
+  // clock they have.
+  const scratch = await scratchDatabase('local-development');
+  const pause = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 30));
+  const phone = newPhone();
+  const first = await requestCode(phone, { pool: scratch.app });
+  const sessionId = randomUUID();
+  const tokenHash = hashToken(sessionToken(SECRET, sessionId));
+  const signed = await scratch.app.query<VerifyRow>(
+    'SELECT * FROM trucker.sign_in_verify_code($1, $2, $3, $4, $5, $6, $7)',
+    [first.challenge_id, first.development_code, key(), PEPPER, sessionId, tokenHash, null],
+  );
+  assert.equal(signed.rows[0]!.status, 'signed_in');
+  const other = await requestCode(newPhone(), { pool: scratch.app });
+
+  const client = await scratch.app.connect();
+  let beganAt: number | undefined;
+  try {
+    await client.query('BEGIN');
+    const began = await client.query<{ started: Date }>('SELECT now() AS started');
+    beganAt = began.rows[0]!.started.getTime();
+    await pause();
+    // The code expires, and the session reaches the end of its idle period, at this instant.
+    const moved = await scratch.pool.query<{ at: Date }>(
+      `WITH instant AS (SELECT clock_timestamp() AS at),
+            code AS (UPDATE trucker.sign_in_challenge c SET expires_at = i.at
+                     FROM instant i WHERE c.id = $1),
+            idle AS (UPDATE trucker.session s
+                     SET last_used_at = i.at - make_interval(mins => $3)
+                     FROM instant i WHERE s.id = $2)
+       SELECT at FROM instant`,
+      [other.challenge_id, sessionId, D.session_idle_minutes],
+    );
+    await pause();
+    // By the transaction's own start time, neither deadline has passed.
+    const stale = await client.query<{ started: Date; before: boolean }>(
+      'SELECT now() AS started, now() < $1::timestamptz AS before',
+      [moved.rows[0]!.at],
+    );
+    assert.equal(stale.rows[0]!.started.getTime(), began.rows[0]!.started.getTime());
+    assert.equal(stale.rows[0]!.before, true);
+    // By the clock, both have, and that is what every function goes by.
+    const verify = await client.query<VerifyRow>(
+      'SELECT * FROM trucker.sign_in_verify_code($1, $2, $3, $4, $5, $6, $7)',
+      [other.challenge_id, other.development_code, key(), PEPPER, randomUUID(), randomHash(), null],
+    );
+    assert.equal(verify.rows[0]!.status, 'expired');
+    const mine = await client.query('SELECT * FROM trucker.my_account($1)', [tokenHash]);
+    assert.equal(mine.rowCount, 0);
+    const sessions = await client.query('SELECT * FROM trucker.my_sessions($1)', [tokenHash]);
+    assert.equal(sessions.rowCount, 0);
+    await client.query(`SELECT set_config('trucker.session_token_hash', $1, true)`, [tokenHash]);
+    const who = await client.query<{ person: string | null }>(
+      'SELECT trucker.request_person() AS person',
+    );
+    assert.equal(who.rows[0]!.person, null);
+    const registration = await client.query<{ status: string }>(
+      `SELECT trucker.complete_registration($1, 'Late', NULL, 'v', 'en', NULL) AS status`,
+      [tokenHash],
+    );
+    assert.equal(registration.rows[0]!.status, 'unauthorized');
+    const revoke = await client.query<{ status: string }>(
+      'SELECT trucker.revoke_my_session($1, $2, NULL) AS status',
+      [tokenHash, sessionId],
+    );
+    assert.equal(revoke.rows[0]!.status, 'unauthorized');
+    const checked = await client.query<{ status: string }>(
+      'SELECT status FROM trucker.session_check($1, NULL)',
+      [tokenHash],
+    );
+    assert.equal(checked.rows[0]!.status, 'expired');
+    await client.query('COMMIT');
+  } finally {
+    await client.query('ROLLBACK').catch(() => undefined);
+    client.release();
+  }
+  const row = await scratch.pool.query<{ revoked_reason: string; revoked_at: Date }>(
+    'SELECT revoked_reason, revoked_at FROM trucker.session WHERE id = $1',
+    [sessionId],
+  );
+  assert.equal(row.rows[0]!.revoked_reason, 'idle_expired');
+  // And the moment recorded is the moment it happened, not when the transaction began.
+  assert.ok(beganAt !== undefined && row.rows[0]!.revoked_at.getTime() > beganAt);
+});
+
+test('a session check that waits until the session is idle ends it', async () => {
+  const signed = await signIn();
+  const idle = D.session_idle_minutes * 60;
+  const status = await whileBlocked(
+    lockRow('session', signed.sessionId),
+    () => check(signed.tokenHash),
+    idle - (D.code_resend_wait_seconds + 1),
+  );
+  assert.equal(status, 'expired');
+  assert.equal((await sessionRow(signed.sessionId))!.revoked_reason, 'idle_expired');
+  // One second less and the same wait leaves it open.
+  const other = await signIn();
+  const open = await whileBlocked(
+    lockRow('session', other.sessionId),
+    () => check(other.tokenHash),
+    idle - (D.code_resend_wait_seconds + 1) - 1,
+  );
+  assert.equal(open, 'ok');
+});
+
+test("a change that waits until the caller's session has ended is not made", async () => {
+  const idleFrom = (): number => D.session_idle_minutes * 60 - (D.code_resend_wait_seconds + 1);
+
+  // Ending another of one's own sessions.
+  const phone = newPhone();
+  const target = await signIn(phone);
+  const caller = await signIn(phone);
+  await check(target.tokenHash); // used now, so it is not idle when the caller is
+  const revoked = await whileBlocked(
+    lockRow('session', target.sessionId),
+    async () =>
+      (
+        await app.query<{ status: string }>(
+          'SELECT trucker.revoke_my_session($1, $2, NULL) AS status',
+          [caller.tokenHash, target.sessionId],
+        )
+      ).rows[0]!.status,
+    idleFrom(),
+  );
+  assert.equal(revoked, 'unauthorized');
+  assert.equal((await sessionRow(target.sessionId))!.revoked_at, null);
+
+  // Ending all one's other sessions.
+  const phoneTwo = newPhone();
+  const targetTwo = await signIn(phoneTwo);
+  const callerTwo = await signIn(phoneTwo);
+  await check(targetTwo.tokenHash);
+  const others = await whileBlocked(
+    lockRow('session', targetTwo.sessionId),
+    async () =>
+      (
+        await app.query<{ ended: number | null }>(
+          'SELECT trucker.revoke_my_other_sessions($1, NULL) AS ended',
+          [callerTwo.tokenHash],
+        )
+      ).rows[0]!.ended,
+    idleFrom(),
+  );
+  assert.equal(others, null);
+  assert.equal((await sessionRow(targetTwo.sessionId))!.revoked_at, null);
+
+  // Completing registration.
+  const registering = await signIn();
+  const registered = await whileBlocked(
+    lockRow('person', registering.personId),
+    async () =>
+      (
+        await app.query<{ status: string }>(
+          `SELECT trucker.complete_registration($1, 'Too late (fictional)', NULL, 'v', 'en', NULL) AS status`,
+          [registering.tokenHash],
+        )
+      ).rows[0]!.status,
+    idleFrom(),
+  );
+  assert.equal(registered, 'unauthorized');
+  assert.equal(await count('terms_acceptance', 'person_id = $1', [registering.personId]), 0);
+  const person = await owner.query<{ display_name: string | null }>(
+    'SELECT display_name FROM trucker.person WHERE id = $1',
+    [registering.personId],
+  );
+  assert.equal(person.rows[0]!.display_name, null);
+});
+
+test('organisation changes that wait until the session has ended are not made either', async () => {
+  const idleFrom = (): number => D.session_idle_minutes * 60 - (D.code_resend_wait_seconds + 1);
+  const asCaller = async <T>(
+    tokenHash: string,
+    organisationId: string,
+    work: (client: pg.PoolClient) => Promise<T>,
+  ): Promise<T> => {
+    const client = await app.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        `SELECT set_config('trucker.session_token_hash', $1, true),
+                set_config('trucker.organisation_id', $2, true)`,
+        [tokenHash, organisationId],
+      );
+      const result = await work(client);
+      await client.query('COMMIT');
+      return result;
+    } finally {
+      await client.query('ROLLBACK').catch(() => undefined);
+      client.release();
+    }
+  };
+  const create = `SELECT trucker.create_organisation('Waiting Freight (fictional)', NULL, 'XA', 'W-1', NULL, NULL, true) AS id`;
+  const register = async (signed: Signed): Promise<void> => {
+    const done = await app.query<{ status: string }>(
+      `SELECT trucker.complete_registration($1, 'Test Person (fictional)', NULL, 'v', 'en', NULL) AS status`,
+      [signed.tokenHash],
+    );
+    assert.equal(done.rows[0]!.status, 'completed');
+  };
+
+  // Creating: queued behind another creation by the same person.
+  const creator = await signIn();
+  await register(creator);
+  await refused(
+    () =>
+      whileBlocked(
+        [
+          'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+          [`organisation.create:${creator.personId}`],
+        ],
+        () => asCaller(creator.tokenHash, '', (client) => client.query(create)),
+        idleFrom(),
+      ),
+    /no signed-in person/,
+  );
+  assert.equal(await count('organisation', 'created_by = $1', [creator.personId]), 0);
+
+  // Changing: queued behind another change to the same organisation.
+  const admin = await signIn();
+  await register(admin);
+  const made = await asCaller(admin.tokenHash, '', (client) =>
+    client.query<{ id: string }>(create),
+  );
+  const organisationId = made.rows[0]!.id;
+  let changedRows: number | null = null;
+  const change = whileBlocked(
+    lockRow('organisation', organisationId),
+    () =>
+      asCaller(admin.tokenHash, organisationId, async (client) => {
+        const result = await client.query(
+          `UPDATE trucker.organisation SET legal_name = 'Changed too late', version = version + 1 WHERE id = $1`,
+          [organisationId],
+        );
+        changedRows = result.rowCount;
+      }),
+    idleFrom(),
+  );
+  // Either the database finds nothing the caller may change, or it refuses the change.
+  await change.catch((error: Error) =>
+    assert.match(error.message, /without a signed-in person|violates row-level security policy/),
+  );
+  assert.notEqual(changedRows, 1);
+  const kept = await owner.query<{ legal_name: string; version: number }>(
+    'SELECT legal_name, version FROM trucker.organisation WHERE id = $1',
+    [organisationId],
+  );
+  assert.deepEqual(kept.rows[0], { legal_name: 'Waiting Freight (fictional)', version: 1 });
+  assert.equal(
+    await count('audit_entry', `organisation_id = $1 AND action = 'organisation.updated'`, [
+      organisationId,
+    ]),
+    0,
+  );
+});
+
+test('a code request that waits is judged, and stamped, by the time after the wait', async () => {
+  const phone = newPhone();
+  const first = await requestCode(phone);
+  assert.equal(first.status, 'created');
+  // Sent at once it would be "too soon". It waits out the resend period behind a lock.
+  const second = await whileBlocked(
+    lockNumber(phone),
+    () => requestCode(phone),
+    D.code_resend_wait_seconds,
+  );
+  assert.equal(second.status, 'created');
+  assert.equal(
+    second.created_at!.getTime() - first.created_at!.getTime(),
+    D.code_resend_wait_seconds * 1000,
+  );
+  assert.equal(
+    second.expires_at!.getTime() - second.created_at!.getTime(),
+    D.code_ttl_seconds * 1000,
+  );
+});
+
+test('repeating a sign-in returns its session only while that session is live by the one rule', async () => {
+  // An idle period shorter than the two minutes in which a sign-in may be repeated.
+  await writeSecuritySettings(owner, { session_idle_minutes: 1 }, false);
+  try {
+    const asked = await requestCode(newPhone());
+    const sessionId = randomUUID();
+    const tokenHash = hashToken(sessionToken(SECRET, sessionId));
+    const verifyKey = key();
+    const again = (): Promise<VerifyRow> =>
+      verifyCode(asked.challenge_id!, asked.development_code!, { requestKey: verifyKey });
+    const first = await verifyCode(asked.challenge_id!, asked.development_code!, {
+      sessionId,
+      tokenHash,
+      requestKey: verifyKey,
+    });
+    assert.equal(first.status, 'signed_in');
+    await advance(59);
+    assert.deepEqual([(await again()).status, (await again()).session_id], ['repeated', sessionId]);
+    await advance(1);
+    // Still inside the two minutes, not revoked, not marked ended: but idle, so not live.
+    assert.equal((await sessionRow(sessionId))!.revoked_at, null);
+    const late = await again();
+    assert.deepEqual([late.status, late.session_id], ['used', null]);
+    assert.deepEqual(await account(tokenHash), []);
+
+    // The same through a wait: sent while the session lived, acted on after it went idle.
+    const second = await requestCode(newPhone());
+    const secondSession = randomUUID();
+    const secondKey = key();
+    const signedIn = await verifyCode(second.challenge_id!, second.development_code!, {
+      sessionId: secondSession,
+      tokenHash: hashToken(sessionToken(SECRET, secondSession)),
+      requestKey: secondKey,
+    });
+    assert.equal(signedIn.status, 'signed_in');
+    const waited = await whileBlocked(
+      lockRow('session', secondSession),
+      () => verifyCode(second.challenge_id!, second.development_code!, { requestKey: secondKey }),
+      60,
+    );
+    assert.deepEqual([waited.status, waited.session_id], ['used', null]);
   } finally {
     await writeSecuritySettings(owner, { ...D }, false);
   }

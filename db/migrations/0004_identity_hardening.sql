@@ -4,9 +4,12 @@
 --
 -- Decisions recorded on 13 November 2026 (docs/delivery/IDENTITY_HARDENING_SLICE_6.md):
 --   * one-time codes are created by the database, never by the API;
---   * the limits are read from a protected settings row. No function takes a limit or a time
+--   * the limits are read from a protected settings rec. No function takes a limit or a time
 --     from its caller, so a caller cannot loosen either;
 --   * the clock can be set only in a database marked "test";
+--   * every decision that depends on time reads the clock when it is made, never at the start
+--     of the transaction, and only after the locks it needs are held: a request that waited,
+--     or a transaction left open, is judged by the time it acts, not the time it began;
 --   * no code is created outside a database marked local-development or test: with no message
 --     supplier there is nowhere to deliver one, so sign-in stays closed there;
 --   * a stored code hash is keyed with a value the database never keeps
@@ -15,7 +18,7 @@
 -- Every function here names its search path, with pg_temp last, and is closed to PUBLIC.
 
 -- ---------------------------------------------------------------------------------------------
--- Protected settings. One row. The API's role has no right on it at all.
+-- Protected settings. One rec. The API's role has no right on it at all.
 -- The values are the development defaults reviewed in docs/delivery/REGISTRATION_SLICE_4.md
 -- (section 4) and ORGANISATION_ONBOARDING_SLICE_5.md. They need review before production,
 -- which is recorded in reviewed_for_production and checked when a production API starts.
@@ -72,12 +75,14 @@ $$;
 CREATE TRIGGER test_clock_guard BEFORE INSERT OR UPDATE ON trucker.test_clock
   FOR EACH ROW EXECUTE FUNCTION trucker.guard_test_clock();
 
+-- The time now: the moment of the call, not the start of the statement or the transaction.
+-- (now() would stay fixed for as long as a transaction is left open.)
 CREATE FUNCTION trucker.clock_now() RETURNS timestamptz
-LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, trucker, pg_temp AS $$
+LANGUAGE sql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, trucker, pg_temp AS $$
   SELECT coalesce(
     (SELECT c.fixed_at FROM trucker.test_clock c
       WHERE (SELECT e.kind FROM trucker.environment e) = 'test'),
-    pg_catalog.now())
+    pg_catalog.clock_timestamp())
 $$;
 
 -- ---------------------------------------------------------------------------------------------
@@ -134,21 +139,40 @@ LANGUAGE sql IMMUTABLE SET search_path = pg_catalog, trucker, pg_temp AS $$
     'hex')
 $$;
 
--- The live session for a token hash, or nothing. A session is live when it has not been
--- ended, has been used within the idle period, and is younger than the absolute limit: both
--- the limit written when it was created and the limit in force now, whichever is earlier.
--- Every check of a session goes through here.
+-- THE rule for whether a session is live, at a given moment:
+--   live | revoked | absolute_expired | idle_expired | unknown
+-- Live means not ended, used within the idle period, and younger than the absolute limit:
+-- both the limit written when it was created and the limit in force now, whichever is
+-- earlier. Every function that asks about a session asks here.
+CREATE FUNCTION trucker.session_state(p_session trucker.session, p_at timestamptz) RETURNS text
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, trucker, pg_temp AS $$
+  SELECT CASE
+    WHEN p_session.id IS NULL OR p_at IS NULL THEN 'unknown'
+    WHEN p_session.revoked_at IS NOT NULL THEN 'revoked'
+    WHEN least(p_session.absolute_expires_at,
+               p_session.created_at + make_interval(hours => g.session_absolute_hours)) <= p_at
+      THEN 'absolute_expired'
+    WHEN p_session.last_used_at + make_interval(mins => g.session_idle_minutes) <= p_at
+      THEN 'idle_expired'
+    ELSE 'live'
+  END
+  FROM trucker.security_setting g
+$$;
+
+-- The live session for a token hash, or nothing, judged at the moment of the call. Takes no
+-- lock, so it is for reading. A function that changes something locks first and then asks
+-- session_state with a clock read after the locks (see the account functions below).
+-- Marked STABLE so that row-security policies can use it; it still reads the current time
+-- each time it is evaluated, and nothing is remembered from one statement to the next.
 CREATE FUNCTION trucker.live_session(p_token_hash text)
 RETURNS TABLE (session_id uuid, person_id uuid)
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, trucker, pg_temp AS $$
   SELECT s.id, s.person_id
-  FROM trucker.session s CROSS JOIN trucker.security_setting g
+  FROM (SELECT trucker.clock_now() AS at) c
+  CROSS JOIN trucker.session s
   WHERE p_token_hash ~ '^[0-9a-f]{64}$'
     AND s.token_hash = p_token_hash
-    AND s.revoked_at IS NULL
-    AND s.absolute_expires_at > trucker.clock_now()
-    AND s.created_at + make_interval(hours => g.session_absolute_hours) > trucker.clock_now()
-    AND s.last_used_at + make_interval(mins => g.session_idle_minutes) > trucker.clock_now()
+    AND trucker.session_state(s, c.at) = 'live'
 $$;
 
 CREATE TYPE trucker.account_view AS (
@@ -177,11 +201,11 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, trucker, pg_t
 $$;
 
 CREATE FUNCTION trucker.record_identity_event(
-  p_kind text, p_person uuid, p_session uuid, p_request_id text
+  p_kind text, p_person uuid, p_session uuid, p_request_id text, p_at timestamptz
 ) RETURNS void
 LANGUAGE sql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, trucker, pg_temp AS $$
   INSERT INTO trucker.identity_event (occurred_at, kind, person_id, session_id, request_id)
-  VALUES (trucker.clock_now(), p_kind, p_person, p_session, left(p_request_id, 200))
+  VALUES (p_at, p_kind, p_person, p_session, left(p_request_id, 200))
 $$;
 
 -- ---------------------------------------------------------------------------------------------
@@ -202,7 +226,7 @@ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, trucker
 DECLARE
   g trucker.security_setting;
   kind text;
-  t timestamptz := trucker.clock_now();
+  t timestamptz;
   wait interval;
   found_id uuid;
   found_created timestamptz;
@@ -222,11 +246,16 @@ BEGIN
      OR p_pepper IS NULL OR p_pepper !~ '^[0-9a-f]{64}$' THEN
     RAISE EXCEPTION 'invalid argument' USING ERRCODE = 'invalid_parameter_value';
   END IF;
+  -- One request at a time per number, so the limits below cannot be raced. Then the codes
+  -- still open for the number, which a verification may be holding.
+  PERFORM pg_advisory_xact_lock(hashtextextended(p_phone, 0));
+  PERFORM 1 FROM trucker.sign_in_challenge c
+  WHERE c.phone_e164 = p_phone AND c.consumed_at IS NULL AND c.superseded_at IS NULL
+  ORDER BY c.id FOR UPDATE;
+  -- Only now, with nothing left to wait for, the time and the limits.
+  t := trucker.clock_now();
   SELECT * INTO g FROM trucker.security_setting;
   wait := make_interval(secs => g.code_resend_wait_seconds);
-
-  -- One request at a time per number, so the limits below cannot be raced.
-  PERFORM pg_advisory_xact_lock(hashtextextended(p_phone, 0));
 
   SELECT c.id, c.created_at, c.expires_at INTO found_id, found_created, found_expires
   FROM trucker.sign_in_challenge c
@@ -293,7 +322,9 @@ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, trucker
 DECLARE
   g trucker.security_setting;
   ch trucker.sign_in_challenge;
-  t timestamptz := trucker.clock_now();
+  existing trucker.session;
+  phone text;
+  t timestamptz;
   matches boolean;
   attempts integer;
   person uuid;
@@ -303,20 +334,32 @@ BEGIN
      OR p_pepper IS NULL OR p_pepper !~ '^[0-9a-f]{64}$' THEN
     RAISE EXCEPTION 'invalid argument' USING ERRCODE = 'invalid_parameter_value';
   END IF;
-  SELECT * INTO g FROM trucker.security_setting;
 
-  SELECT * INTO ch FROM trucker.sign_in_challenge c WHERE c.id = p_challenge FOR UPDATE;
+  -- Locks first, in the same order as a code request: the number, then the challenge.
+  -- (The number of a challenge never changes, so it can be read before locking.)
+  SELECT c.phone_e164 INTO phone FROM trucker.sign_in_challenge c WHERE c.id = p_challenge;
   IF NOT FOUND THEN
     status := 'incorrect';
     RETURN;
   END IF;
+  PERFORM pg_advisory_xact_lock(hashtextextended(phone, 0));
+  SELECT * INTO ch FROM trucker.sign_in_challenge c WHERE c.id = p_challenge FOR UPDATE;
+  IF ch.session_id IS NOT NULL THEN
+    SELECT * INTO existing FROM trucker.session s WHERE s.id = ch.session_id FOR UPDATE;
+  END IF;
+  -- Only now the time: after any wait, so a request that queued behind another, or a
+  -- transaction that was left open, is judged by when it acts. Nothing below waits again.
+  t := trucker.clock_now();
+  SELECT * INTO g FROM trucker.security_setting;
+
   matches := p_code IS NOT NULL AND p_code ~ '^[0-9]{6}$'
              AND ch.code_hash = trucker.code_hash(p_pepper, ch.id, p_code);
 
   IF ch.consumed_at IS NOT NULL THEN
+    -- The same request again: answered with the same session only while that session is
+    -- live by the one rule (not ended, not idle, not over age).
     IF matches AND ch.verify_key = p_request_key AND t - ch.consumed_at <= interval '2 minutes'
-       AND EXISTS (SELECT 1 FROM trucker.session s
-                   WHERE s.id = ch.session_id AND s.revoked_at IS NULL) THEN
+       AND trucker.session_state(existing, t) = 'live' THEN
       status := 'repeated';
       session_id := ch.session_id;
     ELSE
@@ -341,7 +384,7 @@ BEGIN
     attempts := ch.failed_attempts + 1;
     UPDATE trucker.sign_in_challenge c SET failed_attempts = attempts WHERE c.id = ch.id;
     IF attempts >= g.code_max_attempts THEN
-      PERFORM trucker.record_identity_event('code_locked', NULL, NULL, p_request_id);
+      PERFORM trucker.record_identity_event('code_locked', NULL, NULL, p_request_id, t);
       status := 'locked';
     ELSE
       status := 'incorrect';
@@ -350,15 +393,17 @@ BEGIN
     RETURN;
   END IF;
 
-  INSERT INTO trucker.person (phone_e164) VALUES (ch.phone_e164)
-  ON CONFLICT (phone_e164) DO UPDATE SET phone_e164 = EXCLUDED.phone_e164
-  RETURNING id INTO person;
+  -- The lock on the number means nobody else is creating this person at the same moment.
+  SELECT p.id INTO person FROM trucker.person p WHERE p.phone_e164 = ch.phone_e164;
+  IF NOT FOUND THEN
+    INSERT INTO trucker.person (phone_e164) VALUES (ch.phone_e164) RETURNING id INTO person;
+  END IF;
   INSERT INTO trucker.session (id, person_id, token_hash, created_at, last_used_at, absolute_expires_at)
   VALUES (p_session, person, p_token_hash, t, t, t + make_interval(hours => g.session_absolute_hours));
   UPDATE trucker.sign_in_challenge c
   SET consumed_at = t, verify_key = p_request_key, session_id = p_session
   WHERE c.id = ch.id;
-  PERFORM trucker.record_identity_event('signed_in', person, p_session, p_request_id);
+  PERFORM trucker.record_identity_event('signed_in', person, p_session, p_request_id, t);
   status := 'signed_in';
   session_id := p_session;
 END
@@ -376,28 +421,27 @@ CREATE FUNCTION trucker.session_check(
 LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, trucker, pg_temp AS $$
 #variable_conflict use_column
 DECLARE
-  g trucker.security_setting;
   s trucker.session;
-  t timestamptz := trucker.clock_now();
-  reason text;
+  t timestamptz;
+  state text;
 BEGIN
   status := 'unknown';
   IF p_token_hash IS NULL OR p_token_hash !~ '^[0-9a-f]{64}$' THEN
     RETURN;
   END IF;
   SELECT * INTO s FROM trucker.session x WHERE x.token_hash = p_token_hash FOR UPDATE;
-  IF NOT FOUND OR s.revoked_at IS NOT NULL THEN
+  IF NOT FOUND THEN
     RETURN;
   END IF;
-  SELECT * INTO g FROM trucker.security_setting;
-  IF least(s.absolute_expires_at, s.created_at + make_interval(hours => g.session_absolute_hours)) <= t THEN
-    reason := 'absolute_expired';
-  ELSIF s.last_used_at + make_interval(mins => g.session_idle_minutes) <= t THEN
-    reason := 'idle_expired';
+  -- The time is read after the row is locked, so a check that waited is judged by now.
+  t := trucker.clock_now();
+  state := trucker.session_state(s, t);
+  IF state = 'revoked' THEN
+    RETURN;
   END IF;
-  IF reason IS NOT NULL THEN
-    UPDATE trucker.session x SET revoked_at = t, revoked_reason = reason WHERE x.id = s.id;
-    PERFORM trucker.record_identity_event('session_expired', s.person_id, s.id, p_request_id);
+  IF state <> 'live' THEN
+    UPDATE trucker.session x SET revoked_at = t, revoked_reason = state WHERE x.id = s.id;
+    PERFORM trucker.record_identity_event('session_expired', s.person_id, s.id, p_request_id, t);
     status := 'expired';
     RETURN;
   END IF;
@@ -425,37 +469,46 @@ $$;
 -- status: completed | already | unauthorized | closed
 -- Only demonstration terms exist, and only a database marked local-development or test
 -- records them: a row is never evidence that approved legal terms were accepted.
+-- Like every function below that changes something: lock what will be touched, then read
+-- the clock, then decide whether the caller's session is live, then act.
 CREATE FUNCTION trucker.complete_registration(
   p_token_hash text, p_display_name text, p_contact_email text,
   p_terms_version text, p_terms_language text, p_request_id text
 ) RETURNS text
 LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, trucker, pg_temp AS $$
 DECLARE
-  who record;
+  own trucker.session;
   kind text;
-  t timestamptz := trucker.clock_now();
+  t timestamptz;
   completed timestamptz;
 BEGIN
-  SELECT l.session_id, l.person_id INTO who FROM trucker.live_session(p_token_hash) l;
+  IF p_token_hash IS NULL OR p_token_hash !~ '^[0-9a-f]{64}$' THEN
+    RETURN 'unauthorized';
+  END IF;
+  SELECT * INTO own FROM trucker.session s WHERE s.token_hash = p_token_hash FOR UPDATE;
   IF NOT FOUND THEN
+    RETURN 'unauthorized';
+  END IF;
+  SELECT p.registration_completed_at INTO completed
+  FROM trucker.person p WHERE p.id = own.person_id FOR UPDATE;
+  t := trucker.clock_now();
+  IF trucker.session_state(own, t) <> 'live' THEN
     RETURN 'unauthorized';
   END IF;
   SELECT e.kind INTO kind FROM trucker.environment e;
   IF kind IS NULL OR kind NOT IN ('local-development', 'test') THEN
     RETURN 'closed';
   END IF;
-  SELECT p.registration_completed_at INTO completed
-  FROM trucker.person p WHERE p.id = who.person_id FOR UPDATE;
   IF completed IS NOT NULL THEN
     RETURN 'already';
   END IF;
   INSERT INTO trucker.terms_acceptance (person_id, terms_kind, version, language, accepted_at)
-  VALUES (who.person_id, 'demonstration', p_terms_version, p_terms_language, t)
+  VALUES (own.person_id, 'demonstration', p_terms_version, p_terms_language, t)
   ON CONFLICT ON CONSTRAINT terms_acceptance_once DO NOTHING;
   UPDATE trucker.person p
   SET display_name = p_display_name, contact_email = p_contact_email, registration_completed_at = t
-  WHERE p.id = who.person_id;
-  PERFORM trucker.record_identity_event('registration_completed', who.person_id, who.session_id, p_request_id);
+  WHERE p.id = own.person_id;
+  PERFORM trucker.record_identity_event('registration_completed', own.person_id, own.id, p_request_id, t);
   RETURN 'completed';
 END
 $$;
@@ -469,13 +522,11 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, trucker, pg_t
                s.absolute_expires_at,
                s.created_at + make_interval(hours => g.session_absolute_hours)),
          s.id = l.session_id
-  FROM trucker.live_session(p_token_hash) l
+  FROM (SELECT trucker.clock_now() AS at) c
+  CROSS JOIN trucker.live_session(p_token_hash) l
   JOIN trucker.session s ON s.person_id = l.person_id
   CROSS JOIN trucker.security_setting g
-  WHERE s.revoked_at IS NULL
-    AND s.absolute_expires_at > trucker.clock_now()
-    AND s.created_at + make_interval(hours => g.session_absolute_hours) > trucker.clock_now()
-    AND s.last_used_at + make_interval(mins => g.session_idle_minutes) > trucker.clock_now()
+  WHERE trucker.session_state(s, c.at) = 'live'
   ORDER BY s.created_at DESC, s.id
 $$;
 
@@ -485,23 +536,52 @@ CREATE FUNCTION trucker.revoke_my_session(p_token_hash text, p_session uuid, p_r
 RETURNS text
 LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, trucker, pg_temp AS $$
 DECLARE
-  who record;
-  own boolean;
+  own_id uuid;
+  owner_id uuid;
+  own trucker.session;
+  target trucker.session;
+  rec trucker.session;
+  t timestamptz;
+  is_own boolean;
 BEGIN
-  SELECT l.session_id, l.person_id INTO who FROM trucker.live_session(p_token_hash) l;
+  IF p_token_hash IS NULL OR p_token_hash !~ '^[0-9a-f]{64}$' THEN
+    RETURN 'unauthorized';
+  END IF;
+  -- Whose session this is never changes, so it can be read before locking.
+  SELECT s.id, s.person_id INTO own_id, owner_id
+  FROM trucker.session s WHERE s.token_hash = p_token_hash;
   IF NOT FOUND THEN
     RETURN 'unauthorized';
   END IF;
-  own := p_session = who.session_id;
-  UPDATE trucker.session s
-  SET revoked_at = trucker.clock_now(),
-      revoked_reason = CASE WHEN own THEN 'signed_out' ELSE 'revoked_by_person' END
-  WHERE s.id = p_session AND s.person_id = who.person_id AND s.revoked_at IS NULL;
-  IF NOT FOUND THEN
+  -- The caller's session and the one to end, if it is the caller's too: locked together, in
+  -- one order, so two sessions ending each other cannot block each other for ever. A
+  -- session of another person is never locked.
+  FOR rec IN
+    SELECT * FROM trucker.session s
+    WHERE s.person_id = owner_id AND (s.id = own_id OR s.id = p_session)
+    ORDER BY s.id FOR UPDATE
+  LOOP
+    IF rec.id = own_id THEN
+      own := rec;
+    END IF;
+    IF rec.id = p_session THEN
+      target := rec;
+    END IF;
+  END LOOP;
+  t := trucker.clock_now();
+  IF trucker.session_state(own, t) <> 'live' THEN
+    RETURN 'unauthorized';
+  END IF;
+  IF target.id IS NULL OR target.revoked_at IS NOT NULL THEN
     RETURN 'not_found';
   END IF;
+  is_own := target.id = own_id;
+  UPDATE trucker.session s
+  SET revoked_at = t,
+      revoked_reason = CASE WHEN is_own THEN 'signed_out' ELSE 'revoked_by_person' END
+  WHERE s.id = target.id;
   PERFORM trucker.record_identity_event(
-    CASE WHEN own THEN 'signed_out' ELSE 'session_revoked' END, who.person_id, p_session, p_request_id);
+    CASE WHEN is_own THEN 'signed_out' ELSE 'session_revoked' END, owner_id, target.id, p_request_id, t);
   RETURN 'revoked';
 END
 $$;
@@ -511,24 +591,43 @@ CREATE FUNCTION trucker.revoke_my_other_sessions(p_token_hash text, p_request_id
 RETURNS integer
 LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, trucker, pg_temp AS $$
 DECLARE
-  who record;
+  own_id uuid;
+  owner_id uuid;
+  own trucker.session;
+  rec trucker.session;
+  others uuid[] := '{}';
   ended uuid;
-  total integer := 0;
+  t timestamptz;
 BEGIN
-  SELECT l.session_id, l.person_id INTO who FROM trucker.live_session(p_token_hash) l;
+  IF p_token_hash IS NULL OR p_token_hash !~ '^[0-9a-f]{64}$' THEN
+    RETURN NULL;
+  END IF;
+  SELECT s.id, s.person_id INTO own_id, owner_id
+  FROM trucker.session s WHERE s.token_hash = p_token_hash;
   IF NOT FOUND THEN
     RETURN NULL;
   END IF;
-  FOR ended IN
-    UPDATE trucker.session s
-    SET revoked_at = trucker.clock_now(), revoked_reason = 'revoked_by_person'
-    WHERE s.person_id = who.person_id AND s.id <> who.session_id AND s.revoked_at IS NULL
-    RETURNING s.id
+  FOR rec IN
+    SELECT * FROM trucker.session s
+    WHERE s.person_id = owner_id AND (s.id = own_id OR s.revoked_at IS NULL)
+    ORDER BY s.id FOR UPDATE
   LOOP
-    PERFORM trucker.record_identity_event('session_revoked', who.person_id, ended, p_request_id);
-    total := total + 1;
+    IF rec.id = own_id THEN
+      own := rec;
+    ELSIF rec.revoked_at IS NULL THEN
+      others := others || rec.id;
+    END IF;
   END LOOP;
-  RETURN total;
+  t := trucker.clock_now();
+  IF trucker.session_state(own, t) <> 'live' THEN
+    RETURN NULL;
+  END IF;
+  FOREACH ended IN ARRAY others LOOP
+    UPDATE trucker.session s SET revoked_at = t, revoked_reason = 'revoked_by_person'
+    WHERE s.id = ended;
+    PERFORM trucker.record_identity_event('session_revoked', owner_id, ended, p_request_id, t);
+  END LOOP;
+  RETURN coalesce(array_length(others, 1), 0);
 END
 $$;
 
@@ -557,7 +656,7 @@ CREATE FUNCTION trucker.create_organisation(
 LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, trucker, pg_temp AS $$
 DECLARE
   actor uuid := trucker.request_person();
-  t timestamptz := trucker.clock_now();
+  t timestamptz;
   creation_limit integer;
   created uuid;
   new_row trucker.organisation;
@@ -572,6 +671,11 @@ BEGIN
   END IF;
   -- One creation at a time per person, so the limit cannot be raced.
   PERFORM pg_advisory_xact_lock(hashtextextended('organisation.create:' || actor::text, 0));
+  -- After any wait: is the caller still signed in now, and what time is it now?
+  IF trucker.request_person() IS DISTINCT FROM actor THEN
+    RAISE EXCEPTION 'no signed-in person' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  t := trucker.clock_now();
   SELECT g.organisation_creation_limit INTO creation_limit FROM trucker.security_setting g;
   IF creation_limit IS NULL
      OR (SELECT count(*) FROM trucker.organisation WHERE created_by = actor) >= creation_limit THEN

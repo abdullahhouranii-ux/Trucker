@@ -1,6 +1,7 @@
 # Trucker: identity database hardening slice — scope and acceptance criteria (approved with conditions)
 
-Version 1.0, 13 November 2026. Owner: Abdullah.
+Version 1.1, 13 November 2026. Owner: Abdullah. Version 1.1 adds the decisions of the review of
+pull request #8 (section 2.1) and criteria IH-14 and IH-15.
 
 **Status: scope approved by Abdullah on 13 November 2026 (H-1, H-2), with conditions on H-3,
 H-4 and H-5 and further requirements (section 2).** The build is recorded in
@@ -32,6 +33,16 @@ API's database role could read and write sessions.
 | R-6 | Test direct function calls as the restricted role: attempts to weaken limits, forge sessions, reach another person's data, and retry revoked sessions | IH-6, IH-3, IH-7, IH-8 |
 | — | Open a focused pull request; do not merge it. Defer wording and translation corrections to the final audit. Leave TruckLink, `main` and deployments untouched | Section 4 |
 
+### 2.1 Given on review of pull request #8 (13 November 2026)
+
+| # | Decision | Effect |
+|---|---|---|
+| T-1 | Security decisions must use the current database time, including after lock waits, while preserving the protected test clock. Changing `now()` alone is insufficient if time is still captured before waiting | IH-14 |
+| T-2 | Deterministic tests: a transaction opened before expiry but verifying afterwards; a verification blocked until the code expires. Session expiry and consumed-code retries go through the shared live-session rule too | IH-14, IH-8 |
+| H-3a | The external-key HMAC direction is accepted, subject to review of the completed implementation | Record, section 3.3 |
+| G-1 | Encrypted database connections and protection against parameter logging are mandatory production gates | IH-15 |
+| H-3b | Provisional. The supplier slice must define send failures, retries, crashes and duplicate delivery before choosing its final design | Record, section 3.5. Nothing is built |
+
 ## 3. Acceptance criteria
 
 Each criterion is proved by an automated test against a real PostgreSQL database, run as the
@@ -47,12 +58,14 @@ not done.
 | IH-5 | The clock can be fixed only in a database marked `test`. A fixed clock is ignored the moment the mark is anything else. The API's role can write neither the clock nor the mark, and no function it can call takes a time |
 | IH-6 | Limits are read inside the database from one protected row. No function the API's role can call takes a number, a time or a period, so there is nothing through which a limit could be loosened. Settings invented by the caller are not read. A change by the migration role applies at once. Each value is range-checked by the table. Production does not start until the values are recorded as reviewed; an old limit name left in the API's configuration stops the API |
 | IH-7 | The account functions take no identifier of a person. With A's session: B's account is not returned, B's sessions are not listed, ending B's session answers exactly like a session that does not exist, registration changes A only |
-| IH-8 | A session is live only when it is not ended, is inside the idle period and is inside the absolute limit (the earlier of the limit stored when it was created and the limit in force now). One rule, used by every function including the organisation rules. A revoked, idle or over-age session is refused by every function, including before anything has marked it ended; repeating the sign-in request of a revoked session does not return it |
+| IH-8 | (Extended on review.) A session is live only when it is not ended, is inside the idle period and is inside the absolute limit (the earlier of the limit stored when it was created and the limit in force now). One rule, used by every function including the organisation rules. A revoked, idle or over-age session is refused by every function, including before anything has marked it ended; repeating the sign-in request returns its session only while that session is live by the same rule: not when it is revoked, idle or over age |
 | IH-9 | Simultaneous wrong attempts never exceed the limit; two simultaneous correct attempts create one session (the existing API tests, now running against the functions) |
 | IH-10 | The session check made on every request is one statement and sends the hash of the token, never the token |
 | IH-11 | In a database that is unmarked or marked production, no code is created and no demonstration terms are recorded, whatever the caller asks |
 | IH-12 | Every existing API test and browser check passes with unchanged behaviour, with the API connected as its restricted role |
 | IH-13 | All three CI jobs pass, including Windows, where the migration role is not a superuser |
+| IH-14 | Every decision that depends on time reads the clock when it is made: after the locks it needs are held, never at the start of the statement or transaction. The clock is the server's current time, or the fixed test clock in a database marked `test`. Proved deterministically: a verification queued behind a lock until the code expires is refused, and one second earlier is accepted; a transaction opened before expiry cannot use the code afterwards, on the test clock and on the real clock; the same for the session check, ending sessions, registration, creating and changing an organisation, and the repeat of a sign-in |
+| IH-15 | A production API does not start unless the server reports its connection as encrypted and is set never to write statement parameters to its log. The API's role cannot change those settings |
 
 ## 4. Scope
 

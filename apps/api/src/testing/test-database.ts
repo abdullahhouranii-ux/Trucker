@@ -37,6 +37,19 @@ export async function createTestDatabase(): Promise<TestDatabase> {
       const dropper = new pg.Client({ connectionString: admin });
       await dropper.connect();
       try {
+        // A pool reports itself closed as soon as it has asked its connections to close, a
+        // moment before the server has let them go. Dropping the database by force in that
+        // moment cuts such a connection off, and the cut surfaces as a stray error in
+        // whichever test happened to open it. So wait until the server shows none left; the
+        // force remains only as a last resort for a connection a test really did leak.
+        for (let attempt = 0; attempt < 200; attempt += 1) {
+          const open = await dropper.query<{ n: number }>(
+            'SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname = $1',
+            [name],
+          );
+          if (open.rows[0]?.n === 0) break;
+          await new Promise((resolve) => setTimeout(resolve, 25));
+        }
         await dropper.query(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`);
       } finally {
         await dropper.end();
