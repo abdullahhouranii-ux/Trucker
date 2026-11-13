@@ -38,7 +38,7 @@ move time. Endpoints, answers and screens are unchanged.
 
 | Change | Where |
 |---|---|
-| Identity service is now nine thin calls; it creates and compares no code | `identity/identity.service.ts`, `identity/secrets.ts` |
+| Identity service is now thin calls to eight functions; it creates and compares no code | `identity/identity.service.ts`, `identity/secrets.ts` |
 | Limits removed from the API's configuration. An old name still set stops the API with a message naming it | `config/config.ts` |
 | Production start also requires the settings to be recorded as reviewed | `database/access.ts` |
 | `npm run db:settings -- show` and `-- set name=value ... [--reviewed-for-production]`, run as the migration role | `cli/security-settings.ts`, `database/settings.ts` |
@@ -51,7 +51,9 @@ move time. Endpoints, answers and screens are unchanged.
 
 Abdullah approved database-generated codes and asked for the threat model before any stored
 form or delivery queue is accepted. This section is that document. What is built follows the
-proposal in 3.3 and is called out as awaiting his decision in section 8.
+proposal in 3.3 and is called out as awaiting his decision in section 8. The proposal of
+13 November recommended salted SHA-256 and a delivery queue; the table in 3.2 shows why that
+recommendation was wrong, and it is withdrawn.
 
 ### 3.1 What is being protected
 
@@ -128,7 +130,8 @@ it is marked local-development or test), and the mark itself (a production mark 
 
 ## 5. Checks and results
 
-Run on this branch against PostgreSQL 16, locally and in CI (see the pull request for the run).
+Run on `43bdf31` against PostgreSQL 16, locally and in CI (run 43456265992: verify, compose and
+windows all passed).
 
 | Check | Result |
 |---|---|
