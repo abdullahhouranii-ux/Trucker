@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { redirect } from 'next/navigation';
 import { defaultLocale, isLocale, type Locale } from '../i18n/config.ts';
 import { api, type Person } from './api.ts';
+import { visitorMayHaveDevelopmentCode } from './development-code.ts';
 import {
   clearSignIn,
   endSession,
@@ -39,12 +40,15 @@ const query = (values: Record<string, string | number | undefined>): string => {
 };
 
 async function sendCode(locale: Locale, phone: string, retryKey: string): Promise<never> {
+  const showCode = await visitorMayHaveDevelopmentCode();
   const reply = await api<{ challengeId: string; developmentCode?: string }>(
     'POST',
     '/auth/code-requests',
     {
       body: { phone },
       retryKey,
+      // Asked for only when this server itself saw the visitor arrive from this machine.
+      ...(showCode ? { headers: { 'x-trucker-development-code': 'local-visitor' } } : {}),
     },
   );
   if (!reply.ok) {
@@ -62,7 +66,10 @@ async function sendCode(locale: Locale, phone: string, retryKey: string): Promis
   await writeSignIn({
     phone,
     challengeId: reply.data.challengeId,
-    ...(reply.data.developmentCode ? { developmentCode: reply.data.developmentCode } : {}),
+    // Checked again here: a code the API returned is dropped unless the visitor is local.
+    ...(showCode && reply.data.developmentCode
+      ? { developmentCode: reply.data.developmentCode }
+      : {}),
   });
   redirect(`/${locale}/sign-in/code`);
 }
@@ -149,12 +156,34 @@ export async function registerAction(form: FormData): Promise<void> {
   redirect(`/${locale}/account?done=registered`);
 }
 
+// Ending a session is confirmed only by the server's own answer. When the server does not
+// answer, or answers with an error, the session is treated as still active and the person is
+// told so, with a way to try again. Nothing is reported as ended on a guess.
+
+/**
+ * Signs out on the server. The cookie is removed only once the server has confirmed the
+ * session is over (or says it already was). Otherwise the person stays signed in and sees why.
+ */
 export async function signOutAction(form: FormData): Promise<void> {
   const locale = localeOf(form);
   const token = await sessionToken();
-  if (token) await api('POST', '/auth/sign-out', { token });
+  if (!token) redirect(`/${locale}/sign-in?done=signed_out`);
+  const reply = await api('POST', '/auth/sign-out', { token });
+  if (reply.ok || reply.status === 401) {
+    await endSession();
+    redirect(`/${locale}/sign-in?done=signed_out`);
+  }
+  redirect(`/${locale}/account?error=sign_out_unconfirmed`);
+}
+
+/**
+ * Removes the sign-in from this browser without the server's confirmation. Offered only after
+ * a failed sign-out. The session itself may stay active until it expires, and the page says so.
+ */
+export async function signOutLocallyAction(form: FormData): Promise<void> {
+  const locale = localeOf(form);
   await endSession();
-  redirect(`/${locale}`);
+  redirect(`/${locale}/sign-in?done=signed_out_local`);
 }
 
 export async function endSessionAction(form: FormData): Promise<void> {
@@ -162,14 +191,29 @@ export async function endSessionAction(form: FormData): Promise<void> {
   const token = await sessionToken();
   if (!token) redirect(`/${locale}/sign-in?error=session_ended`);
   const id = text(form, 'sessionId');
-  if (/^[0-9a-f-]{36}$/i.test(id)) await api('DELETE', `/me/sessions/${id}`, { token });
-  redirect(`/${locale}/account`);
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))
+    redirect(`/${locale}/account?error=session_not_found`);
+  const reply = await api('DELETE', `/me/sessions/${id}`, { token });
+  if (reply.ok) redirect(`/${locale}/account?done=session_ended`);
+  if (reply.status === 401) {
+    await endSession();
+    redirect(`/${locale}/sign-in?error=session_ended`);
+  }
+  redirect(
+    `/${locale}/account?error=${reply.status === 404 ? 'session_not_found' : 'end_session_unconfirmed'}`,
+  );
 }
 
 export async function endOtherSessionsAction(form: FormData): Promise<void> {
   const locale = localeOf(form);
   const token = await sessionToken();
   if (!token) redirect(`/${locale}/sign-in?error=session_ended`);
-  await api('POST', '/me/sessions/revoke-others', { token });
-  redirect(`/${locale}/account`);
+  const reply = await api<{ revoked: number }>('POST', '/me/sessions/revoke-others', { token });
+  if (reply.ok && typeof reply.data.revoked === 'number')
+    redirect(`/${locale}/account${query({ done: 'others_ended', count: reply.data.revoked })}`);
+  if (reply.status === 401) {
+    await endSession();
+    redirect(`/${locale}/sign-in?error=session_ended`);
+  }
+  redirect(`/${locale}/account?error=end_others_unconfirmed`);
 }

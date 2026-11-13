@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
+import { networkInterfaces } from 'node:os';
 import { after, before, test } from 'node:test';
 import type { INestApplication } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
@@ -88,9 +89,18 @@ async function call(
   target: Api,
   method: string,
   path: string,
-  options: { body?: unknown; token?: string; key?: string | null } = {},
+  options: {
+    body?: unknown;
+    token?: string;
+    key?: string | null;
+    headers?: Record<string, string>;
+    askForCode?: boolean;
+  } = {},
 ): Promise<Reply> {
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = { ...options.headers };
+  // Tests stand in for a developer on this machine, who asks for the code by name.
+  if (options.askForCode !== false && path === '/auth/code-requests')
+    headers['x-trucker-development-code'] = 'local-visitor';
   if (options.body !== undefined) headers['content-type'] = 'application/json';
   if (options.token) headers.authorization = `Bearer ${options.token}`;
   if (options.key !== null && method === 'POST' && path.startsWith('/auth/code')) {
@@ -496,6 +506,69 @@ test('a number without a country code is refused and names the field only', asyn
 // ---------------------------------------------------------------------------------------------
 // Where codes may and may not appear
 // ---------------------------------------------------------------------------------------------
+test('a local caller that does not ask for the development code by name gets none', async () => {
+  const reply = await call(api, 'POST', '/auth/code-requests', {
+    body: { phone: newPhone() },
+    askForCode: false,
+  });
+  assert.equal(reply.status, 202);
+  assert.equal(reply.body.developmentCode, undefined);
+  assert.equal(typeof reply.body.challengeId, 'string');
+});
+
+test('a request that was forwarded gets no development code, even from this machine', async () => {
+  for (const header of [
+    'forwarded',
+    'x-forwarded-for',
+    'x-forwarded-host',
+    'x-real-ip',
+    'via',
+    'cf-connecting-ip',
+    'true-client-ip',
+  ]) {
+    const reply = await call(api, 'POST', '/auth/code-requests', {
+      body: { phone: newPhone() },
+      headers: { [header]: header === 'forwarded' ? 'for=127.0.0.1' : '127.0.0.1' },
+    });
+    assert.equal(reply.status, 202, header);
+    assert.equal(reply.body.developmentCode, undefined, header);
+  }
+});
+
+test('a caller from another address gets no development code, whatever it sends', async () => {
+  const address = Object.values(networkInterfaces())
+    .flat()
+    .find((entry) => entry && entry.family === 'IPv4' && !entry.internal)?.address;
+  assert.ok(address, 'this test needs a network address other than loopback');
+  const config = loadConfig({
+    NODE_ENV: 'test',
+    DATABASE_URL: database.url,
+    SIGN_IN_CODE_DELIVERY: 'development-display',
+  });
+  const app = configureApp(
+    await NestFactory.create(AppModule.register(config, clock), { logger: false }),
+    collecting,
+  );
+  await app.listen(0, '0.0.0.0');
+  apps.push(app);
+  const { port } = app.getHttpServer().address() as AddressInfo;
+  // Connecting to the machine's own outside address makes that address the caller.
+  const remote: Api = { base: `http://${address}:${port}`, close: () => app.close() };
+  const reply = await call(remote, 'POST', '/auth/code-requests', { body: { phone: newPhone() } });
+  assert.equal(reply.status, 202);
+  assert.equal(reply.body.developmentCode, undefined);
+  // The same server still answers a caller on this machine, so the refusal above is the rule.
+  const local = await call(
+    { base: `http://127.0.0.1:${port}`, close: remote.close },
+    'POST',
+    '/auth/code-requests',
+    {
+      body: { phone: newPhone() },
+    },
+  );
+  assert.match(String(local.body.developmentCode), /^[0-9]{6}$/);
+});
+
 test('with code delivery off, no code is created and none is returned', async () => {
   const phone = newPhone();
   const reply = await call(closed, 'POST', '/auth/code-requests', { body: { phone } });

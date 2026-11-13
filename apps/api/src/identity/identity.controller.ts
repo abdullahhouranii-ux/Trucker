@@ -34,6 +34,37 @@ const RETRY_KEY = /^[A-Za-z0-9._-]{16,128}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const LOCAL_ADDRESSES = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 
+/** The caller must ask for the development code by name. Nothing is returned by default. */
+export const DEVELOPMENT_CODE_HEADER = 'x-trucker-development-code';
+export const DEVELOPMENT_CODE_ASK = 'local-visitor';
+// Any of these means the request was passed on by something else, so the socket address is
+// not the address of whoever is really asking.
+const FORWARDING_HEADERS = [
+  'forwarded',
+  'x-forwarded-for',
+  'x-forwarded-host',
+  'x-real-ip',
+  'via',
+  'cf-connecting-ip',
+  'true-client-ip',
+];
+
+/**
+ * Whether a development code may be returned to this caller. All three must hold:
+ * the connection comes from this machine, nothing forwarded the request, and the caller
+ * asked for the code by name. The web application asks only for a visitor it has itself
+ * found to be on this machine, so a remote visitor to the web application gets nothing
+ * even though the web server's own connection to the API is local.
+ */
+export function mayReturnDevelopmentCode(request: {
+  socket?: { remoteAddress?: string };
+  headers: Record<string, string | string[] | undefined>;
+}): boolean {
+  if (!LOCAL_ADDRESSES.has(request.socket?.remoteAddress ?? '')) return false;
+  if (FORWARDING_HEADERS.some((name) => request.headers[name] !== undefined)) return false;
+  return request.headers[DEVELOPMENT_CODE_HEADER] === DEVELOPMENT_CODE_ASK;
+}
+
 const codeRequestBody = z.object({ phone: z.string().min(1).max(40) });
 const verificationBody = z.object({
   challengeId: z.string().regex(UUID),
@@ -110,8 +141,7 @@ export class IdentityController {
       throw new ApiError(422, 'validation_failed', 'Some fields are missing or not valid.', {
         fields: ['phone'],
       });
-    const local = LOCAL_ADDRESSES.has(request.socket?.remoteAddress ?? '');
-    return this.identity.requestCode(phone, retryKey(key), local);
+    return this.identity.requestCode(phone, retryKey(key), mayReturnDevelopmentCode(request));
   }
 
   /** Step 2 of sign-in: a correct code becomes a session. */

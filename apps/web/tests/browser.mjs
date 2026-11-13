@@ -3,9 +3,12 @@
 //
 // Needs a Chrome or Chromium binary. Set CHROME_PATH, or install one at a usual location.
 // What these checks do not cover is listed in docs/delivery/WEB_FOUNDATION_SLICE_3.md.
+import { Buffer } from 'node:buffer';
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import http from 'node:http';
 import { createRequire } from 'node:module';
+import { networkInterfaces } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import puppeteer from 'puppeteer-core';
 
@@ -18,6 +21,90 @@ const apiMigrate = fileURLToPath(new URL('../../api/dist/cli/migrate.js', import
 const appDir = fileURLToPath(new URL('..', import.meta.url));
 const outDir = fileURLToPath(new URL('./output/', import.meta.url));
 const locales = ['en', 'ar', 'ur'];
+const apiOrigin = `http://127.0.0.1:${apiPort}`;
+// This machine's own address on the network. A connection made to it arrives from it, so it
+// stands in for a visitor who is not on this machine.
+const outsideAddress = Object.values(networkInterfaces())
+  .flat()
+  .find((entry) => entry && entry.family === 'IPv4' && !entry.internal)?.address;
+const messagesFor = (locale) =>
+  JSON.parse(readFileSync(new URL(`../src/i18n/messages/${locale}.json`, import.meta.url), 'utf8'));
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// One request made by hand, so the test controls the address connected to and every header,
+// including Host. Returns the status, the headers and the body.
+function rawRequest({ connectTo, path, method = 'GET', headers = {}, body }) {
+  return new Promise((resolve, reject) => {
+    const request = http.request(
+      { host: connectTo, port, path, method, headers, setHost: false },
+      (response) => {
+        const chunks = [];
+        response.on('data', (chunk) => chunks.push(chunk));
+        response.on('end', () =>
+          resolve({
+            status: response.statusCode,
+            headers: response.headers,
+            body: Buffer.concat(chunks).toString('utf8'),
+          }),
+        );
+      },
+    );
+    request.on('error', reject);
+    if (body) request.write(body);
+    request.end();
+  });
+}
+
+// Asks for a sign-in code the way a browser without scripts does: reads the sign-in form, posts
+// it, and returns what the web application stored for the visitor and showed on the next page.
+async function rawCodeRequest({ connectTo, hostHeader, extraHeaders = {}, phone }) {
+  const base = { host: hostHeader, ...extraHeaders };
+  const form = await rawRequest({ connectTo, path: '/en/sign-in', headers: base });
+  const fields = [
+    ...form.body.matchAll(/<input type="hidden" name="([^"]+)"(?: value="([^"]*)")?/g),
+  ].map((match) => [match[1], match[2] ?? '']);
+  const boundary = `----trucker${Date.now()}`;
+  const part = (name, value) =>
+    `--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`;
+  const body = Buffer.from(
+    fields.map(([name, value]) => part(name, value)).join('') +
+      part('phone', phone) +
+      `--${boundary}--\r\n`,
+  );
+  const posted = await rawRequest({
+    connectTo,
+    path: '/en/sign-in',
+    method: 'POST',
+    headers: {
+      ...base,
+      origin: `http://${hostHeader}`,
+      'content-type': `multipart/form-data; boundary=${boundary}`,
+      'content-length': String(body.length),
+    },
+    body,
+  });
+  const setCookie = (posted.headers['set-cookie'] ?? []).find((value) =>
+    value.startsWith('trucker_sign_in='),
+  );
+  const cookieValue = setCookie ? setCookie.split(';')[0].slice('trucker_sign_in='.length) : '';
+  let stored = null;
+  try {
+    stored = JSON.parse(decodeURIComponent(cookieValue));
+  } catch {
+    // nothing stored
+  }
+  const next = await rawRequest({
+    connectTo,
+    path: '/en/sign-in/code',
+    headers: { ...base, cookie: `trucker_sign_in=${cookieValue}` },
+  });
+  return {
+    status: posted.status,
+    location: posted.headers.location ?? posted.headers['x-action-redirect'] ?? '',
+    stored,
+    page: next.body,
+  };
+}
 const widths = [320, 360, 390, 412, 600, 768, 1024, 1280, 1440, 1920];
 
 const failures = [];
@@ -109,24 +196,53 @@ async function main() {
     SIGN_IN_CODE_MAX_PER_HOUR: '30',
   };
   await run(apiMigrate, ['up'], apiEnv);
-  const apiServer = spawn(process.execPath, [apiMain], {
-    stdio: ['ignore', 'pipe', 'pipe'],
-    env: apiEnv,
-  });
   let apiLog = '';
-  apiServer.stdout.on('data', (chunk) => (apiLog += chunk));
-  apiServer.stderr.on('data', (chunk) => (apiLog += chunk));
+  let apiServer;
+  const apiAnswers = async () => {
+    try {
+      return (await fetch(`${apiOrigin}/health/live`)).status === 200;
+    } catch {
+      return false;
+    }
+  };
+  // The API is stopped and started again during the checks, to see what the web application
+  // does when it gets no answer. Sessions are in the database, so they survive a restart.
+  const startApi = async () => {
+    apiServer = spawn(process.execPath, [apiMain], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: apiEnv,
+    });
+    apiServer.stdout.on('data', (chunk) => (apiLog += chunk));
+    apiServer.stderr.on('data', (chunk) => (apiLog += chunk));
+    for (let attempt = 0; attempt < 80; attempt += 1) {
+      if (await apiAnswers()) return;
+      await sleep(250);
+    }
+    throw new Error('the API did not start');
+  };
+  const stopApi = async () => {
+    const stopped = new Promise((resolve) => apiServer.once('exit', resolve));
+    apiServer.kill();
+    await stopped;
+    for (let attempt = 0; attempt < 40 && (await apiAnswers()); attempt += 1) await sleep(100);
+  };
+  // What the API itself says about a session token: 200 while valid, 401 once revoked.
+  const apiSaysToken = async (token) =>
+    (await fetch(`${apiOrigin}/me`, { headers: { authorization: `Bearer ${token}` } })).status;
+  await startApi();
 
   const server = spawn(
     process.execPath,
-    [require.resolve('next/dist/bin/next'), 'start', '-p', String(port)],
+    // Listens on every address, so the checks can also arrive as a visitor from outside.
+    [require.resolve('next/dist/bin/next'), 'start', '-p', String(port), '-H', '0.0.0.0'],
     {
       cwd: appDir,
       stdio: ['ignore', 'pipe', 'pipe'],
       env: {
         ...process.env,
         NODE_ENV: 'production',
-        TRUCKER_API_URL: `http://127.0.0.1:${apiPort}`,
+        TRUCKER_API_URL: apiOrigin,
+        TRUCKER_DEVELOPMENT_CODE_DISPLAY: 'local-visitors',
       },
     },
   );
@@ -415,8 +531,8 @@ async function main() {
       'en:sign-in error': 'sign-in-error-en-390',
       'ur:code': 'code-ur-390',
       'ar:register error': 'register-error-ar-390',
-      'ur:register': 'register-ur-390',
-      'en:account': 'account-en-390',
+      'ur:account unavailable': 'account-unavailable-ur-390',
+      'en:signed out locally': 'signed-out-locally-en-390',
     };
     // Fictional numbers: country code 999 is not assigned. Unique per run.
     const stamp = String(Date.now()).slice(-7);
@@ -658,7 +774,7 @@ async function main() {
       await inspect(locale, 'account');
       people[locale] = { phone, name };
       // Sign out before the next language, so each run starts as a visitor. The last stays signed in.
-      if (index < locales.length - 1) await submit('form button.button-primary');
+      if (index < locales.length - 1) await submit('#sign-out');
     }
 
     // Stored, not simulated: still signed in after a reload, and the name comes from the database.
@@ -723,6 +839,14 @@ async function main() {
       `a returning person was sent to ${second.url()}`,
     );
 
+    const tokenOf = async (context) =>
+      (await context.cookies()).find((cookie) => cookie.name === 'trucker_session')?.value;
+    const secondToken = await tokenOf(secondContext);
+    check(
+      'revocation',
+      (await apiSaysToken(secondToken)) === 200,
+      'the second session is not accepted by the API before it is ended',
+    );
     await page.reload({ waitUntil: 'networkidle0' });
     check(
       'journey sessions',
@@ -734,6 +858,17 @@ async function main() {
       'journey sessions',
       (await page.evaluate(() => document.querySelectorAll('.session').length)) === 1,
       'the other session is still listed after ending it',
+    );
+    check(
+      'revocation',
+      page.url() === `${origin}/ur/account?done=session_ended` &&
+        (await text('#account-confirmation')) === messagesFor('ur').auth.account.sessionEnded,
+      `ending a session led to ${page.url()} without the confirmation`,
+    );
+    check(
+      'revocation',
+      (await apiSaysToken(secondToken)) === 401,
+      'the API still accepts a session after the web application confirmed it ended',
     );
     await second.goto(`${origin}/en/account`, { waitUntil: 'networkidle0' });
     check(
@@ -750,9 +885,171 @@ async function main() {
     );
     await secondContext.close();
 
-    // Signing out ends the session; the account then needs a new sign-in.
-    await submit('form button.button-primary');
-    check('journey sessions', page.url() === `${origin}/ur`, `signing out led to ${page.url()}`);
+    // ------------------------------------------------------------------------------------
+    // Ending sessions when the API does not confirm it
+    // ------------------------------------------------------------------------------------
+    const ur = messagesFor('ur').auth;
+    const en = messagesFor('en').auth;
+    const summaryText = () => text('#error-summary');
+    const firstToken = await tokenOf(browser.defaultBrowserContext());
+    check('revocation', (await apiSaysToken(firstToken)) === 200, 'the first session is not valid');
+
+    // A second session again, so there is one to end. Same number: wait out the resend limit.
+    await sleep(10_500);
+    const thirdContext = await browser.createBrowserContext();
+    const third = await thirdContext.newPage();
+    await third.goto(`${origin}/en/sign-in`, { waitUntil: 'networkidle0' });
+    await third.type('#phone', people.ur.phone);
+    await Promise.all([
+      third.waitForNavigation({ waitUntil: 'networkidle0' }),
+      third.click('#sign-in-form button[type=submit]'),
+    ]);
+    await third.type(
+      '#code',
+      await third.evaluate(() => document.querySelector('.notice-development .ltr').textContent),
+    );
+    await Promise.all([
+      third.waitForNavigation({ waitUntil: 'networkidle0' }),
+      third.click('form.card button.button-primary'),
+    ]);
+    const thirdToken = await tokenOf(thirdContext);
+    await open('/ur/account', 390);
+    check(
+      'revocation',
+      (await page.evaluate(() => document.querySelectorAll('.session').length)) === 2,
+      'two sessions are not listed before the failure checks',
+    );
+
+    // 1. The API answers with an error (503) instead of a confirmation.
+    await stopApi();
+    const failing = http.createServer((request, response) => {
+      response.writeHead(503, { 'content-type': 'application/json' });
+      response.end('{"code":"service_unavailable","message":"stand-in for a failing API"}');
+    });
+    await new Promise((resolve) => failing.listen(apiPort, '127.0.0.1', resolve));
+    await submit('.session form button');
+    check(
+      'revocation',
+      page.url() === `${origin}/ur/account?error=end_session_unconfirmed`,
+      `ending a session against a failing API led to ${page.url()}`,
+    );
+    check(
+      'revocation',
+      ((await summaryText()) ?? '').includes(ur.errors.end_session_unconfirmed) &&
+        (await focusedId()) === 'error-summary',
+      'a failed end-session is not explained in Urdu with focus on the summary',
+    );
+    await submit('#sign-out');
+    check(
+      'revocation',
+      page.url() === `${origin}/ur/account?error=sign_out_unconfirmed` &&
+        ((await summaryText()) ?? '').includes(ur.errors.sign_out_unconfirmed),
+      `signing out against a failing API led to ${page.url()}`,
+    );
+    check(
+      'revocation',
+      (await tokenOf(browser.defaultBrowserContext())) === firstToken,
+      'the session cookie was removed although sign-out was not confirmed',
+    );
+    await new Promise((resolve) => {
+      failing.close(resolve);
+      failing.closeAllConnections();
+    });
+
+    // 2. The API does not answer at all.
+    await submit('#sign-out');
+    check(
+      'revocation',
+      page.url() === `${origin}/ur/account?error=sign_out_unconfirmed` &&
+        (await page.evaluate(() => document.querySelector('[data-state]')?.dataset.state)) ===
+          'account-unavailable',
+      `signing out with no API led to ${page.url()}`,
+    );
+    check(
+      'revocation',
+      ((await summaryText()) ?? '').includes(ur.errors.sign_out_unconfirmed) &&
+        ((await summaryText()) ?? '').includes(ur.errors.account_unavailable) &&
+        !page.url().includes('session_ended'),
+      'with no API the page does not say that sign-out was unconfirmed, or claims the session ended',
+    );
+    check(
+      'revocation',
+      (await page.evaluate(() =>
+        ['retry-account', 'sign-out', 'sign-out-local'].every((id) => document.getElementById(id)),
+      )) && (await tokenOf(browser.defaultBrowserContext())) === firstToken,
+      'retry, sign out and browser-only sign out are not all offered, or the cookie was removed',
+    );
+    await inspect('ur', 'account unavailable');
+
+    // 3. The API is back. Nothing was revoked by the failed attempts, and retrying works.
+    await startApi();
+    check(
+      'revocation',
+      (await apiSaysToken(firstToken)) === 200 && (await apiSaysToken(thirdToken)) === 200,
+      'a session was revoked although the web application reported failure',
+    );
+    await submit('#retry-account');
+    check(
+      'revocation',
+      page.url() === `${origin}/ur/account` &&
+        (await page.evaluate(() => document.querySelectorAll('.session').length)) === 2 &&
+        (await summaryText()) === null,
+      `retrying the account led to ${page.url()}`,
+    );
+
+    // "End all other sessions": failure first, then the confirmed result.
+    await stopApi();
+    await submit('.form-inline form:first-child button');
+    check(
+      'revocation',
+      page.url() === `${origin}/ur/account?error=end_others_unconfirmed` &&
+        ((await summaryText()) ?? '').includes(ur.errors.end_others_unconfirmed),
+      `ending other sessions with no API led to ${page.url()}`,
+    );
+    await startApi();
+    check(
+      'revocation',
+      (await apiSaysToken(thirdToken)) === 200,
+      'the other session was revoked although failure was reported',
+    );
+    await open('/ur/account', 390);
+    await submit('.form-inline form:first-child button');
+    check(
+      'revocation',
+      page.url() === `${origin}/ur/account?done=others_ended&count=1` &&
+        (await text('#account-confirmation')) === ur.account.othersEnded.replace('{n}', '1'),
+      `ending other sessions led to ${page.url()}`,
+    );
+    check(
+      'revocation',
+      (await apiSaysToken(thirdToken)) === 401 && (await apiSaysToken(firstToken)) === 200,
+      'after a confirmed "end all others" the other token is still accepted, or this one is not',
+    );
+    await inspect('ur', 'account confirmation');
+    // Ending a session that is already gone is reported as such, not as success.
+    await third.goto(`${origin}/en/account`, { waitUntil: 'networkidle0' });
+    check(
+      'revocation',
+      third.url() === `${origin}/en/sign-in?error=session_ended`,
+      `the revoked session still opened ${third.url()}`,
+    );
+    await thirdContext.close();
+
+    // Confirmed sign-out: the server ended the session, the page says so, the token is refused.
+    await submit('#sign-out');
+    check(
+      'revocation',
+      page.url() === `${origin}/ur/sign-in?done=signed_out` &&
+        (await text('#signed-out-confirmed')) === ur.account.signedOut,
+      `signing out led to ${page.url()}`,
+    );
+    check(
+      'revocation',
+      (await tokenOf(browser.defaultBrowserContext())) === undefined &&
+        (await apiSaysToken(firstToken)) === 401,
+      'after a confirmed sign-out the cookie remains or the API still accepts the token',
+    );
+    await inspect('ur', 'signed out');
     await open('/ur/account', 390);
     check(
       'journey sessions',
@@ -760,8 +1057,217 @@ async function main() {
       `after signing out the account opened ${page.url()}`,
     );
 
-    // A second code for the same number straight away is refused, with the wait in the message.
+    // Browser-only sign-out: offered after a failure, and reported as not confirmed.
+    await open('/en/sign-in', 390);
     await page.type('#phone', people.en.phone);
+    await submit('#sign-in-form button[type=submit]');
+    await page.type('#code', await text('.notice-development .ltr'));
+    await submit('form.card button.button-primary');
+    const localToken = await tokenOf(browser.defaultBrowserContext());
+    check(
+      'revocation',
+      page.url() === `${origin}/en/account` &&
+        (await page.evaluate(() => document.getElementById('sign-out-local'))) === null,
+      'browser-only sign-out is offered before any failure',
+    );
+    await stopApi();
+    await submit('#sign-out');
+    check(
+      'revocation',
+      ((await summaryText()) ?? '').includes(en.errors.sign_out_unconfirmed),
+      'the failed sign-out is not explained in English',
+    );
+    await submit('#sign-out-local');
+    check(
+      'revocation',
+      page.url() === `${origin}/en/sign-in?done=signed_out_local` &&
+        (await text('#signed-out-local')) === en.account.signedOutLocal &&
+        (await page.evaluate(() => document.getElementById('signed-out-confirmed'))) === null,
+      `browser-only sign-out led to ${page.url()} or claims confirmation`,
+    );
+    check(
+      'revocation',
+      (await tokenOf(browser.defaultBrowserContext())) === undefined,
+      'browser-only sign-out left the session cookie in place',
+    );
+    await inspect('en', 'signed out locally');
+    await startApi();
+    check(
+      'revocation',
+      (await apiSaysToken(localToken)) === 200,
+      'the page said the server session may still be active, but the API refuses the token',
+    );
+    // Tidy up: end that session on the server, and confirm the token is then refused.
+    const tidy = await fetch(`${apiOrigin}/auth/sign-out`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${localToken}` },
+    });
+    check(
+      'revocation',
+      tidy.status === 204 && (await apiSaysToken(localToken)) === 401,
+      'ending the left-over session on the server did not make the API refuse its token',
+    );
+
+    // ------------------------------------------------------------------------------------
+    // Development codes reach only a visitor on this machine
+    // ------------------------------------------------------------------------------------
+    check(
+      'code locality',
+      Boolean(outsideAddress),
+      'this machine has no network address other than loopback, so a remote visitor cannot be tested',
+    );
+    if (outsideAddress) {
+      const outsideOrigin = `http://${outsideAddress}:${port}`;
+      const sixDigits = /(^|[^0-9])[0-9]{6}([^0-9]|$)/;
+      // A real browser arriving from outside, first plainly, then claiming to be local.
+      for (const [label, extra, index] of [
+        ['a remote visitor', {}, 3],
+        ['a remote visitor claiming to be local', { 'x-trucker-visitor': 'local' }, 4],
+      ]) {
+        const context = await browser.createBrowserContext();
+        const visitor = await context.newPage();
+        await visitor.setExtraHTTPHeaders(extra);
+        await visitor.goto(`${outsideOrigin}/en/sign-in`, { waitUntil: 'networkidle0' });
+        await visitor.type('#phone', phoneFor(index));
+        await Promise.all([
+          visitor.waitForNavigation({ waitUntil: 'networkidle0' }),
+          visitor.click('#sign-in-form button[type=submit]'),
+        ]);
+        const seen = await visitor.evaluate(() => ({
+          panel: document.querySelector('.notice-development') !== null,
+          body: document.body.innerText,
+        }));
+        const kept = decodeURIComponent(
+          (await context.cookies()).find((cookie) => cookie.name === 'trucker_sign_in')?.value ??
+            '',
+        );
+        check(
+          'code locality',
+          visitor.url() === `${outsideOrigin}/en/sign-in/code`,
+          `${label} was sent to ${visitor.url()}`,
+        );
+        check(
+          'code locality',
+          !seen.panel && !sixDigits.test(seen.body),
+          `${label} is shown a development code`,
+        );
+        check(
+          'code locality',
+          (() => {
+            // Exactly a number and a challenge identifier, nothing else. (Searching for six
+            // digits would misfire on the identifier, which is random hexadecimal.)
+            try {
+              return Object.keys(JSON.parse(kept)).sort().join(',') === 'challengeId,phone';
+            } catch {
+              return false;
+            }
+          })(),
+          `${label} was handed something other than a number and a challenge: ${kept}`,
+        );
+        await context.close();
+      }
+
+      // Requests made by hand, so the Host header and forwarding headers can be forged too.
+      const attempts = [
+        {
+          label: 'from outside, forging Host, the visitor mark and a forwarded address',
+          connectTo: outsideAddress,
+          hostHeader: `localhost:${port}`,
+          extraHeaders: { 'x-trucker-visitor': 'local', 'x-forwarded-for': '127.0.0.1' },
+          index: 5,
+        },
+        {
+          label: 'from outside, forging Host and the visitor mark only',
+          connectTo: outsideAddress,
+          hostHeader: `localhost:${port}`,
+          extraHeaders: { 'x-trucker-visitor': 'local' },
+          index: 6,
+        },
+        {
+          label: 'from this machine but passed on by a forwarder',
+          connectTo: '127.0.0.1',
+          hostHeader: `localhost:${port}`,
+          extraHeaders: { 'x-forwarded-for': '203.0.113.7' },
+          index: 7,
+        },
+        {
+          label: 'from this machine but addressed to a public name',
+          connectTo: '127.0.0.1',
+          hostHeader: 'trucker.example',
+          extraHeaders: {},
+          index: 8,
+        },
+      ];
+      for (const attempt of attempts) {
+        const result = await rawCodeRequest({ ...attempt, phone: phoneFor(attempt.index) });
+        check(
+          'code locality',
+          result.status === 303 && Boolean(result.stored?.challengeId),
+          `${attempt.label}: the request was not accepted (${result.status}), so it proves nothing`,
+        );
+        check(
+          'code locality',
+          result.stored?.developmentCode === undefined &&
+            !result.page.includes('notice-development'),
+          `${attempt.label}: a development code was returned`,
+        );
+      }
+      // The same hand-made request from this machine does get the code, so the refusals above
+      // are the rule at work and not a broken test.
+      const control = await rawCodeRequest({
+        connectTo: '127.0.0.1',
+        hostHeader: `localhost:${port}`,
+        phone: phoneFor(9),
+      });
+      check(
+        'code locality',
+        /^[0-9]{6}$/.test(control.stored?.developmentCode ?? '') &&
+          control.page.includes('notice-development'),
+        'a visitor on this machine no longer gets the development code',
+      );
+    }
+
+    // Production refuses the switch: started that way, the web application serves no page.
+    const refusedPort = port + 7;
+    const refused = spawn(
+      process.execPath,
+      [require.resolve('next/dist/bin/next'), 'start', '-p', String(refusedPort)],
+      {
+        cwd: appDir,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: {
+          ...process.env,
+          NODE_ENV: 'production',
+          TRUCKER_API_URL: apiOrigin,
+          TRUCKER_STAGE: 'production',
+          TRUCKER_DEVELOPMENT_CODE_DISPLAY: 'local-visitors',
+        },
+      },
+    );
+    let refusedLog = '';
+    refused.stdout.on('data', (chunk) => (refusedLog += chunk));
+    refused.stderr.on('data', (chunk) => (refusedLog += chunk));
+    let refusedStatus = 0;
+    for (let attempt = 0; attempt < 60 && refusedStatus === 0; attempt += 1) {
+      await sleep(250);
+      try {
+        refusedStatus = (await fetch(`http://127.0.0.1:${refusedPort}/en/sign-in`)).status;
+      } catch {
+        // not listening yet, or it exited
+      }
+      if (refused.exitCode !== null) break;
+    }
+    refused.kill();
+    check(
+      'code locality',
+      refusedStatus !== 200 && refusedLog.includes('must not be set in production'),
+      `production with development codes switched on served a page (${refusedStatus})`,
+    );
+
+    // A second code for the same number straight away is refused, with the wait in the message.
+    await open('/en/sign-in', 390);
+    await page.evaluate(() => (document.querySelector('#phone').value = ''));
+    await page.type('#phone', people.ar.phone);
     await submit('#sign-in-form button[type=submit]');
     await submit('.form-inline button');
     check(
@@ -778,7 +1284,7 @@ async function main() {
   } finally {
     if (browser) await browser.close();
     server.kill();
-    apiServer.kill();
+    apiServer?.kill();
   }
 
   console.log('checks run:', JSON.stringify(counts));

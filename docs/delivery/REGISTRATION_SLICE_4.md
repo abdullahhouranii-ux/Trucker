@@ -36,12 +36,62 @@ to the shipment slice and are not used here.
 |---|---|
 | Database | No. Only a keyed hash (HMAC-SHA-256 with the server secret, bound to the challenge) |
 | Logs | No. The request log holds method, path, status and duration only. A test reads the log and fails if the code, the token or the number appears |
-| API response | Only when `SIGN_IN_CODE_DELIVERY=development-display` **and** the caller is on the same machine, and only in the first answer |
+| API response | Only when `SIGN_IN_CODE_DELIVERY=development-display`, the caller connects from the same machine, the request was not forwarded, **and** the caller asks for the code by name (`X-Trucker-Development-Code: local-visitor`). Only in the first answer |
+| Web application | Only when `TRUCKER_DEVELOPMENT_CODE_DISPLAY=local-visitors` and the **browser** is on the same machine (section 3a). Otherwise the web application does not ask the API for the code and keeps nothing |
 | Address bar | Never. The web application keeps sign-in progress in an HttpOnly cookie |
-| Production | Never. `development-display` is refused at start in production, and anywhere the database is not on the same machine |
+| Production | Never. The API refuses `development-display` at start in production, and anywhere the database is not on the same machine. The web application refuses `TRUCKER_DEVELOPMENT_CODE_DISPLAY` in production: started that way it serves no page |
 
 With the default setting (`none`) no code is created at all and sign-in answers 503. That is the
 state of any environment without a message supplier, including production today.
+
+### 3a. Local-only access along the whole path (fixed after review, 13 November 2026)
+
+**The defect.** In the first version of this pull request (commit `b4cde78`) the API returned
+the code to any caller on its own machine. The web server is such a caller, so it received the
+code for every visitor and passed it on. Anyone who could reach the web application, from any
+address, was shown the code. The regression test below fails on that version with exactly this
+result.
+
+**The rule now.** The browser's own connection decides, and it is judged where it arrives:
+
+1. As each request reaches the web server, before any framework code runs, the server records
+   whether the visitor is local. Local needs all three: the connection comes from this machine;
+   no forwarding header is present (a proxy or tunnel on this machine would otherwise look
+   local); the request is addressed to `localhost`, `127.0.0.1`, `[::1]` or a `.localhost` name.
+   The record replaces anything the visitor sent under the same header name.
+2. The action that requests a code asks the API for the development code only for a local
+   visitor, and keeps it for the visitor only then.
+3. The API returns it only to a local, unforwarded caller that asks by name. Nothing is returned
+   by default, so a caller that forgets the rule gets nothing.
+
+A visitor's own `X-Forwarded-For`, `Host` or `X-Trucker-Visitor` header cannot make them local:
+Next.js keeps a visitor's `X-Forwarded-For`, so it is not used to decide.
+
+Known limit: a forwarder on this machine that removes every forwarding header and rewrites
+`Host` to `localhost` would be indistinguishable from a local browser. Do not put such a
+forwarder in front of a build with development codes switched on.
+
+### 3b. Ending sessions is confirmed by the server, or reported as not confirmed (same review)
+
+**The defect.** Sign-out removed the browser's cookie and showed the home page whatever the API
+answered, so a session could stay active on the server while the person believed it was over.
+Ending another session, or all others, ignored failures the same way. An API that did not
+answer was also reported as "your session has ended".
+
+**The rule now.**
+
+| Situation | What the person sees | What is true on the server |
+|---|---|---|
+| Sign-out confirmed (or the server says the session was already over) | "You are signed out. The server confirmed that the session has ended." | Session revoked; its token is refused |
+| Sign-out not confirmed (error answer, or no answer) | Still signed in, with "The service did not confirm sign-out, so this session is still active. Try again." and a retry | Session still active |
+| After a failed sign-out, the person chooses "Remove sign-in from this browser only" | "Sign-in was removed from this browser only. The server did not confirm sign-out, so the session may stay active until it expires." | Session still active until it expires or is ended later |
+| Ending one session, or all others: confirmed | A confirmation that names the server | Revoked; tokens refused |
+| Ending one session, or all others: not confirmed | A translated error and the same button to retry | Still active |
+| Ending a session that no longer exists | "That session was not found. It may have ended already." | Nothing changed |
+| The API does not answer while the account page loads | "Your account cannot be shown right now", with retry and both sign-out choices | Unknown, and nothing is claimed |
+
+Browser-only sign-out is offered only after a failed sign-out, so that a person on a shared
+computer is not left unable to leave. It is never described as a confirmed sign-out.
 
 ## 4. Security periods: development defaults that need production review
 
@@ -114,9 +164,26 @@ Run on 13 November 2026, Linux, Node.js 22, PostgreSQL 16, headless Chrome.
 
 | Check | Count | Result |
 |---|---|---|
-| API tests, all (`npm test -w @trucker/api`) | 87, of which 43 are new | Pass |
-| Web unit tests | 17, of which 2 are new | Pass |
-| Browser checks (`npm run test:browser`), all | 356, of which 253 are new | Pass |
+| API tests, all (`npm test -w @trucker/api`) | 90, of which 46 are new | Pass |
+| Web unit tests | 23, of which 8 are new | Pass |
+| Browser checks (`npm run test:browser`), all | 436, of which 333 are new | Pass |
+
+Added for the two fixes in sections 3a and 3b:
+
+| Check | Result |
+|---|---|
+| A browser arriving from this machine's network address (not loopback) asks for a code through the web application | No code on the page, none in the cookie |
+| The same, sending `X-Trucker-Visitor: local` | No code |
+| Hand-made requests from the network address forging `Host: localhost`, the visitor mark and `X-Forwarded-For: 127.0.0.1` | No code |
+| A request from this machine carrying a forwarding header, and one addressed to a public name | No code |
+| The same hand-made request from this machine, unforged (control) | Code returned, so the refusals are the rule and not a broken test |
+| The web-side check switched off on purpose (not committed) | 8 of these checks fail, each showing the code reaching the remote visitor |
+| API: local caller that does not ask by name; forwarded caller (7 headers); caller from the network address | No code |
+| Web application started as production with development codes switched on | Serves no page; the log names the refusal |
+| Sign-out, end one session, end all others, each against an API answering 503 and an API that does not answer | Translated error (Urdu and English checked against the message files), focus on the summary, cookie kept, retry offered; afterwards the API still accepts every token |
+| Retry once the API is back | Confirmed, with the confirmation shown; the API then answers 401 for the revoked token |
+| Browser-only sign-out | Offered only after a failure; cookie removed; reported as not confirmed; the API still accepts the token, as the message says |
+| New screen states (account unavailable, confirmation, signed out, signed out in this browser only) | Layout at four widths and doubled text, structure and axe-core: 0 findings |
 
 One unexplained result is on record: in a single local run of the whole suite, one API test
 failed (86 of 87). The output of that run was not kept, so the test is not identified. 17 further
@@ -151,6 +218,8 @@ labels, heading count, direction, target size, and with axe-core (WCAG 2.0 to 2.
 
 ## 8. Design defects found on the real screens and fixed
 
+- A failed sign-out looked like a successful one, and an API that did not answer looked like an
+  ended session; both now say what is known (section 3b).
 - Focus did not move to the error summary after a refused form; fixed and checked.
 - Error-summary links were under 24 px high; enlarged.
 - The header took five rows on a phone on task pages; it now shows only the account link there.

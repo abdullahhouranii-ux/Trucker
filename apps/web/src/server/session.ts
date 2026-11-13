@@ -58,24 +58,47 @@ export async function endSession(): Promise<void> {
   (await cookies()).delete(SESSION_COOKIE);
 }
 
-/** The signed-in person, or null. Does not change cookies, so pages may call it while rendering. */
-export async function currentPerson(): Promise<{
+export interface SignedIn {
   token: string;
   person: Person;
   session: Session;
-} | null> {
-  const token = await sessionToken();
-  if (!token) return null;
-  const reply = await api<{ person: Person; session: Session }>('GET', '/me', { token });
-  return reply.ok ? { token, ...reply.data } : null;
 }
 
-/** For pages that need a signed-in person: anyone else is sent to sign in. */
+/**
+ * What is known about the visitor's session. "ended" is the server's own answer that the
+ * session is no longer valid. "unknown" means the server did not answer, so nothing is known:
+ * the session may well still be active, and it must not be reported as ended.
+ */
+export type SessionLookup =
+  | ({ state: 'signed-in' } & SignedIn)
+  | { state: 'none' }
+  | { state: 'ended' }
+  | { state: 'unknown'; token: string };
+
+/** Does not change cookies, so pages may call it while rendering. */
+export async function lookUpSession(): Promise<SessionLookup> {
+  const token = await sessionToken();
+  if (!token) return { state: 'none' };
+  const reply = await api<{ person: Person; session: Session }>('GET', '/me', { token });
+  if (reply.ok) return { state: 'signed-in', token, ...reply.data };
+  return reply.status === 401 ? { state: 'ended' } : { state: 'unknown', token };
+}
+
+/** The signed-in person, or null when there is none or the server did not answer. */
+export async function currentPerson(): Promise<SignedIn | null> {
+  const found = await lookUpSession();
+  return found.state === 'signed-in' ? found : null;
+}
+
+/**
+ * For pages that need a signed-in person. Someone with no session, or one the server says has
+ * ended, is sent to sign in. When the server does not answer, the page gets "unknown" and must
+ * say so instead of claiming the session ended.
+ */
 export async function requirePerson(
   locale: Locale,
-): Promise<{ token: string; person: Person; session: Session }> {
-  const current = await currentPerson();
-  if (current) return current;
-  const hadSession = (await sessionToken()) !== undefined;
-  redirect(`/${locale}/sign-in${hadSession ? '?error=session_ended' : ''}`);
+): Promise<({ state: 'signed-in' } & SignedIn) | { state: 'unknown'; token: string }> {
+  const found = await lookUpSession();
+  if (found.state === 'signed-in' || found.state === 'unknown') return found;
+  redirect(`/${locale}/sign-in${found.state === 'ended' ? '?error=session_ended' : ''}`);
 }

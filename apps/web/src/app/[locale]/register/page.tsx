@@ -20,7 +20,10 @@ export default async function RegisterPage({ params, searchParams }: Props) {
   const m = getMessages(locale);
   const t = m.auth.register;
   const errors = m.auth.errors;
-  const { person } = await requirePerson(locale);
+  const found = await requirePerson(locale);
+  // The server did not answer: the account page explains and offers a retry.
+  if (found.state === 'unknown') redirect(`/${locale}/account`);
+  const { person } = found;
   if (person.registrationComplete) redirect(`/${locale}/account`);
 
   const terms = await api<Terms>('GET', `/registration/terms?language=${locale}`);

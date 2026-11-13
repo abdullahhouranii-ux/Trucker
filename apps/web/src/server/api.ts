@@ -11,9 +11,14 @@ export type ApiReply<T> =
 export async function api<T>(
   method: 'GET' | 'POST' | 'DELETE',
   path: string,
-  options: { body?: unknown; token?: string; retryKey?: string } = {},
+  options: {
+    body?: unknown;
+    token?: string;
+    retryKey?: string;
+    headers?: Record<string, string>;
+  } = {},
 ): Promise<ApiReply<T>> {
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = { ...options.headers };
   if (options.body !== undefined) headers['content-type'] = 'application/json';
   if (options.token) headers.authorization = `Bearer ${options.token}`;
   if (options.retryKey) headers['idempotency-key'] = options.retryKey;

@@ -28,7 +28,7 @@ direction for expansion only. No screen and no accessibility claim is approved.
 | X-04 | Terms shown at registration (demonstration text only) | EN, AR, UR (drafts) | Default, validation, closed | REGISTRATION_SLICE_4.md |
 | X-01 (second part) | Finish registration: name, optional e-mail | EN, AR, UR (drafts) | Default, validation, success | REGISTRATION_SLICE_4.md |
 | X-05 | Session ended | EN, AR, UR (drafts) | Shown as a message on the sign-in page | REGISTRATION_SLICE_4.md |
-| X-07 (part) | Account: own details, sessions, end a session, sign out | EN, AR, UR (drafts) | Default, success. No editing, no language preference, no device names | REGISTRATION_SLICE_4.md |
+| X-07 (part) | Account: own details, sessions, end a session, sign out | EN, AR, UR (drafts) | Default, success, failure (revocation not confirmed, with retry), service not answering, browser-only sign-out. No editing, no language preference, no device names | REGISTRATION_SLICE_4.md |
 
 Components added in slice 4, with no token change: form field, error summary, notice (error, success,
 development), checkbox, primary button, fact list. Tokens stay at 0.3.0.

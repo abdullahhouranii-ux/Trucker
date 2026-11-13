@@ -38,12 +38,23 @@ export default async function SignInPage({ params, searchParams }: Props) {
     problems.push({ message: errors[error as keyof typeof errors] });
   else if (error) problems.push({ message: errors.unavailable });
   const phoneError = error === 'phone' ? errors.phone : undefined;
+  const done = typeof search.done === 'string' ? search.done : undefined;
   const progress = await readSignIn();
 
   return (
     <div className="page page-narrow">
       <h1>{t.title}</h1>
       <ErrorSummary title={errors.summary} problems={problems} />
+      {done === 'signed_out' ? (
+        <p className="notice notice-success" role="status" id="signed-out-confirmed">
+          {m.auth.account.signedOut}
+        </p>
+      ) : null}
+      {done === 'signed_out_local' ? (
+        <p className="notice" role="status" id="signed-out-local">
+          {m.auth.account.signedOutLocal}
+        </p>
+      ) : null}
       <p>{t.lead}</p>
       <form className="form card" id="sign-in-form" action={requestCodeAction} noValidate>
         <input type="hidden" name="locale" value={locale} />

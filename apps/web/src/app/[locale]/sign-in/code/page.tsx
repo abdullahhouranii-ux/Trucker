@@ -33,6 +33,9 @@ export default async function CodePage({ params, searchParams }: Props) {
   const errors = m.auth.errors;
   const progress = await readSignIn();
   if (!progress?.challengeId) redirect(`/${locale}/sign-in?error=no_challenge`);
+  // Present only when the action that asked for the code found the visitor to be on this
+  // machine (src/server/development-code.ts). Nothing is kept for anyone else.
+  const developmentCode = progress.developmentCode;
   const search = await searchParams;
   const error = typeof search.error === 'string' ? search.error : undefined;
 
@@ -68,11 +71,11 @@ export default async function CodePage({ params, searchParams }: Props) {
       <p>
         <WithIsland template={t.lead} name="phone" value={masked} />
       </p>
-      {progress.developmentCode ? (
+      {developmentCode ? (
         <div className="notice notice-development" role="note">
           <h2>{t.developmentTitle}</h2>
           <p>
-            <WithIsland template={t.developmentText} name="code" value={progress.developmentCode} />
+            <WithIsland template={t.developmentText} name="code" value={developmentCode} />
           </p>
         </div>
       ) : null}

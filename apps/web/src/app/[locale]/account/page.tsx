@@ -1,12 +1,15 @@
 import { notFound, redirect } from 'next/navigation';
 import { DraftKeeper } from '../../../components/draft-keeper.tsx';
+import { ErrorSummary, type Problem } from '../../../components/form.tsx';
 import { Ltr } from '../../../components/ltr.tsx';
-import { isLocale } from '../../../i18n/config.ts';
+import { isLocale, type Locale } from '../../../i18n/config.ts';
+import { fill } from '../../../i18n/format.ts';
 import { getMessages } from '../../../i18n/messages.ts';
 import {
   endOtherSessionsAction,
   endSessionAction,
   signOutAction,
+  signOutLocallyAction,
 } from '../../../server/actions.ts';
 import { api, type Session } from '../../../server/api.ts';
 import { requirePerson } from '../../../server/session.ts';
@@ -19,23 +22,106 @@ type Props = {
 // Times are shown in UTC with the zone named, because no place is attached to a session.
 const when = (iso: string): string => `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC`;
 
+const REVOCATION_ERRORS = [
+  'sign_out_unconfirmed',
+  'end_session_unconfirmed',
+  'end_others_unconfirmed',
+  'session_not_found',
+] as const;
+
+/** Sign out again, or as a last resort remove the sign-in from this browser only. */
+function SignOutChoices({
+  locale,
+  labels,
+  offerLocal,
+}: {
+  locale: Locale;
+  labels: { signOut: string; signOutLocal: string; signOutLocalNote: string };
+  offerLocal: boolean;
+}) {
+  return (
+    <>
+      <form action={signOutAction}>
+        <input type="hidden" name="locale" value={locale} />
+        <button className="button button-primary" type="submit" id="sign-out">
+          {labels.signOut}
+        </button>
+      </form>
+      {offerLocal ? (
+        <form action={signOutLocallyAction}>
+          <input type="hidden" name="locale" value={locale} />
+          <button
+            className="button"
+            type="submit"
+            id="sign-out-local"
+            aria-describedby="sign-out-local-note"
+          >
+            {labels.signOutLocal}
+          </button>
+          <p className="form-note" id="sign-out-local-note">
+            {labels.signOutLocalNote}
+          </p>
+        </form>
+      ) : null}
+    </>
+  );
+}
+
 export default async function AccountPage({ params, searchParams }: Props) {
   const { locale } = await params;
   if (!isLocale(locale)) notFound();
   const m = getMessages(locale);
   const t = m.auth.account;
-  const { token, person } = await requirePerson(locale);
+  const errors = m.auth.errors;
+  const search = await searchParams;
+  const error = typeof search.error === 'string' ? search.error : undefined;
+  const done = typeof search.done === 'string' ? search.done : undefined;
+  const problems: Problem[] = [];
+  const revocationError = REVOCATION_ERRORS.find((code) => code === error);
+  if (revocationError) problems.push({ message: errors[revocationError] });
+  else if (error) problems.push({ message: errors.unavailable });
+
+  const found = await requirePerson(locale);
+  if (found.state === 'unknown') {
+    // The server did not answer. Nothing is known about the session, so nothing is claimed:
+    // the person may retry, sign out again, or remove the sign-in from this browser only.
+    problems.push({ message: errors.account_unavailable });
+    return (
+      <div className="page page-narrow" data-state="account-unavailable">
+        <h1>{t.unavailableTitle}</h1>
+        <ErrorSummary title={errors.summary} problems={problems} />
+        <div className="form-inline">
+          <a className="button" href={`/${locale}/account`} id="retry-account">
+            {t.retry}
+          </a>
+          <SignOutChoices locale={locale} labels={t} offerLocal />
+        </div>
+      </div>
+    );
+  }
+  const { token, person } = found;
   if (!person.registrationComplete) redirect(`/${locale}/register`);
   const list = await api<{ sessions: Session[] }>('GET', '/me/sessions', { token });
   const sessions = list.ok ? list.data.sessions : [];
-  const done = (await searchParams).done === 'registered';
+  if (!list.ok) problems.push({ message: errors.account_unavailable });
+  const count =
+    typeof search.count === 'string' && /^[0-9]{1,4}$/.test(search.count) ? search.count : '0';
+  const confirmation =
+    done === 'registered'
+      ? t.registered
+      : done === 'session_ended'
+        ? t.sessionEnded
+        : done === 'others_ended'
+          ? fill(t.othersEnded, { n: count })
+          : undefined;
 
   return (
     <div className="page page-narrow">
       <h1>{t.title}</h1>
-      {done ? (
-        <p className="notice notice-success" role="status">
-          {t.registered}
+      <ErrorSummary title={errors.summary} problems={problems} />
+      {confirmation && problems.length === 0 ? (
+        <p className="notice notice-success" role="status" id="account-confirmation">
+          {confirmation}
         </p>
       ) : null}
       <dl className="card facts">
@@ -105,12 +191,11 @@ export default async function AccountPage({ params, searchParams }: Props) {
               </button>
             </form>
           ) : null}
-          <form action={signOutAction}>
-            <input type="hidden" name="locale" value={locale} />
-            <button className="button button-primary" type="submit">
-              {t.signOut}
-            </button>
-          </form>
+          <SignOutChoices
+            locale={locale}
+            labels={t}
+            offerLocal={revocationError === 'sign_out_unconfirmed'}
+          />
         </div>
       </section>
       <DraftKeeper formId="register-form" clear />
