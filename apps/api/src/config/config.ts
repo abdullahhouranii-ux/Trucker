@@ -54,17 +54,11 @@ const schema = z.object({
    */
   REGISTRATION_TERMS: z.enum(['none', 'demonstration']).default('none'),
 
-  // Security periods. The defaults are DEVELOPMENT DEFAULTS that need review before production:
-  // production must set each one explicitly (docs/delivery/REGISTRATION_SLICE_4.md, section 4).
-  SIGN_IN_CODE_TTL_SECONDS: z.coerce.number().int().min(30).max(900).optional(),
-  SIGN_IN_CODE_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(10).optional(),
-  SIGN_IN_CODE_RESEND_WAIT_SECONDS: z.coerce.number().int().min(10).max(3600).optional(),
-  SIGN_IN_CODE_MAX_PER_HOUR: z.coerce.number().int().min(1).max(30).optional(),
-  SESSION_IDLE_MINUTES: z.coerce.number().int().min(1).max(1440).optional(),
-  SESSION_ABSOLUTE_HOURS: z.coerce.number().int().min(1).max(720).optional(),
+  // The sign-in and session limits and the organisation creation limit are not configured
+  // here: they are protected database settings (db/migrations/0004, `npm run db:settings`),
+  // which the API's role can neither read nor change.
 
-  /** How many organisations one person may create. Development default; production sets it. */
-  ORGANISATION_CREATION_LIMIT: z.coerce.number().int().min(1).max(1000).optional(),
+  // A development default that needs review before production, which must set it explicitly.
   /** How long a retry key is remembered. After that the same key is treated as new. */
   RETRY_KEY_RETENTION_HOURS: z.coerce.number().int().min(1).max(720).optional(),
   /**
@@ -79,16 +73,23 @@ const schema = z.object({
 export const DEVELOPMENT_IDENTITY_SECRET = 'trucker-development-only-secret-not-for-production';
 
 export const SECURITY_PERIOD_DEFAULTS = {
-  SIGN_IN_CODE_TTL_SECONDS: 300,
-  SIGN_IN_CODE_MAX_ATTEMPTS: 5,
-  SIGN_IN_CODE_RESEND_WAIT_SECONDS: 60,
-  SIGN_IN_CODE_MAX_PER_HOUR: 5,
-  SESSION_IDLE_MINUTES: 30,
-  SESSION_ABSOLUTE_HOURS: 12,
-  ORGANISATION_CREATION_LIMIT: 5,
   RETRY_KEY_RETENTION_HOURS: 24,
 } as const;
 type PeriodKey = keyof typeof SECURITY_PERIOD_DEFAULTS;
+
+/**
+ * Settings the API used to read and no longer does. One that is still set would be ignored
+ * silently, leaving an operator believing a limit applies that does not, so it is refused.
+ */
+export const MOVED_TO_DATABASE = [
+  'SIGN_IN_CODE_TTL_SECONDS',
+  'SIGN_IN_CODE_MAX_ATTEMPTS',
+  'SIGN_IN_CODE_RESEND_WAIT_SECONDS',
+  'SIGN_IN_CODE_MAX_PER_HOUR',
+  'SESSION_IDLE_MINUTES',
+  'SESSION_ABSOLUTE_HOURS',
+  'ORGANISATION_CREATION_LIMIT',
+] as const;
 
 const LOCAL_DATABASE_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
 
@@ -127,6 +128,13 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
     const parsed = result.data;
     const production = parsed.NODE_ENV === 'production';
     const problems: string[] = [];
+    for (const key of MOVED_TO_DATABASE) {
+      if (env[key] !== undefined && env[key] !== '') {
+        problems.push(
+          `${key} is no longer read by the API: it is a protected database setting (npm run db:settings)`,
+        );
+      }
+    }
     if (production) {
       if (!parsed.IDENTITY_SECRET) problems.push('IDENTITY_SECRET must be set in production');
       if (parsed.IDENTITY_SECRET === DEVELOPMENT_IDENTITY_SECRET) {

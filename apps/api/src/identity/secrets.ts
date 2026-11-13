@@ -1,17 +1,17 @@
-import { createHash, createHmac, randomInt, timingSafeEqual } from 'node:crypto';
-
-/** A six-digit code, uniformly random, leading zeros kept. */
-export function generateCode(): string {
-  return String(randomInt(0, 1_000_000)).padStart(6, '0');
-}
+import { createHash, createHmac } from 'node:crypto';
 
 /**
- * Six digits are too few to protect with a plain hash: anyone who can read the table could try
- * all million values. The hash is keyed with a server secret and bound to the challenge, so the
- * table alone reveals nothing.
+ * One-time codes are created and compared inside the database (db/migrations/0004). The API
+ * never sees a stored code hash. What it contributes is this key: the database keys each
+ * stored hash with it and never keeps it, so the tables alone, read by anyone, reveal no
+ * code. Six digits are too few to protect with an unkeyed hash, salted or not: anyone who
+ * could read the table could try all million values.
+ *
+ * It is derived from the server secret rather than being the secret itself, so the value
+ * that travels to the database cannot be used to forge a session token.
  */
-export function hashCode(secret: string, challengeId: string, code: string): string {
-  return createHmac('sha256', secret).update(`code:${challengeId}:${code}`).digest('hex');
+export function codePepper(secret: string): string {
+  return createHmac('sha256', secret).update('trucker:sign-in-code-pepper:v1').digest('hex');
 }
 
 /**
@@ -26,10 +26,4 @@ export function sessionToken(secret: string, sessionId: string): string {
 
 export function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
-}
-
-export function sameHash(a: string, b: string): boolean {
-  const left = Buffer.from(a, 'hex');
-  const right = Buffer.from(b, 'hex');
-  return left.length === right.length && timingSafeEqual(left, right);
 }

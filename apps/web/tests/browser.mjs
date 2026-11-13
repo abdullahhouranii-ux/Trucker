@@ -18,6 +18,9 @@ const apiPort = Number(process.env.API_TEST_PORT ?? 3102);
 const origin = `http://localhost:${port}`;
 const apiMain = fileURLToPath(new URL('../../api/dist/main.js', import.meta.url));
 const apiMigrate = fileURLToPath(new URL('../../api/dist/cli/migrate.js', import.meta.url));
+const apiSettings = fileURLToPath(
+  new URL('../../api/dist/cli/security-settings.js', import.meta.url),
+);
 const apiLocalDatabase = fileURLToPath(
   new URL('../../api/dist/cli/local-database.js', import.meta.url),
 );
@@ -239,17 +242,31 @@ async function main() {
     throw new Error('DATABASE_URL must be set: the journey checks use the real API and database.');
   if (!existsSync(apiMain)) throw new Error('Build the API first: npm run build -w @trucker/api');
   // The API under test: real code, real PostgreSQL. Codes are displayed because this is a local
-  // development configuration; the resend wait is shortened so the checks do not take minutes.
+  // development configuration.
   const apiEnv = {
     ...process.env,
     NODE_ENV: 'development',
     PORT: String(apiPort),
     SIGN_IN_CODE_DELIVERY: 'development-display',
     REGISTRATION_TERMS: 'demonstration',
-    SIGN_IN_CODE_RESEND_WAIT_SECONDS: '10',
-    SIGN_IN_CODE_MAX_PER_HOUR: '30',
   };
   await run(apiMigrate, ['up'], apiEnv);
+  // The resend wait is shortened so the checks do not take minutes. Limits are protected
+  // settings in the database, changed by the migration role and never by the API; the values
+  // found here are put back when the checks end.
+  const settingsBefore = JSON.parse(await run(apiSettings, ['show'], apiEnv));
+  const restoreSettings = () =>
+    run(
+      apiSettings,
+      [
+        'set',
+        `code_resend_wait_seconds=${settingsBefore.code_resend_wait_seconds}`,
+        `code_max_per_hour=${settingsBefore.code_max_per_hour}`,
+        ...(settingsBefore.reviewed_for_production ? ['--reviewed-for-production'] : []),
+      ],
+      apiEnv,
+    );
+  await run(apiSettings, ['set', 'code_resend_wait_seconds=10', 'code_max_per_hour=30'], apiEnv);
   // The API runs as its own database role, which row security binds, never as the migration
   // role. The fictional countries are loaded with the explicit acknowledgement they require.
   const appRole = await run(apiLocalDatabase, ['app-role'], apiEnv);
@@ -1777,6 +1794,7 @@ async function main() {
     if (browser) await browser.close();
     server.kill();
     apiServer?.kill();
+    await restoreSettings().catch((error) => console.error('settings not restored:', error));
     relayServer.close();
     relayServer.closeAllConnections();
   }

@@ -11,19 +11,21 @@ import {
 /**
  * For a database on the developer's own machine. Run after migrations, as the migration role.
  *   app-role  creates the local login for the API's role and prints its connection string
+ *   mark      marks the database local-development. Without the mark the database creates no
+ *             sign-in code, so nobody can sign in
  *   fixtures  marks the database local-development and loads the fictional countries
- * Both refuse a production NODE_ENV and a database that is not on this machine. `fixtures`
- * also needs TRUCKER_LOCAL_FIXTURES=local-development-only, and the database refuses the rows
- * unless it carries the mark, which a production database can never be given.
+ * All refuse a production NODE_ENV and a database that is not on this machine. `mark` and
+ * `fixtures` also need TRUCKER_LOCAL_FIXTURES=local-development-only, and the database refuses
+ * fixture rows unless it carries the mark, which a production database can never be given.
  */
 async function main(command: string | undefined): Promise<number> {
-  if (command !== 'app-role' && command !== 'fixtures') {
-    console.error('usage: local-database <app-role|fixtures>');
+  if (command !== 'app-role' && command !== 'mark' && command !== 'fixtures') {
+    console.error('usage: local-database <app-role|mark|fixtures>');
     return 2;
   }
   const url = process.env.DATABASE_URL;
   const problems =
-    command === 'fixtures'
+    command !== 'app-role'
       ? fixtureSafeguardProblems(process.env)
       : [
           ...(process.env.NODE_ENV === 'production' ? ['NODE_ENV must not be production'] : []),
@@ -50,6 +52,10 @@ async function main(command: string | undefined): Promise<number> {
       return 1;
     }
     if (kind === 'unmarked') await markEnvironment(pool, 'local-development');
+    if (command === 'mark') {
+      console.log(`database marked: ${kind === 'unmarked' ? 'local-development' : kind}`);
+      return 0;
+    }
     const codes = await loadCountryFixtures(pool);
     console.log(`fixture countries loaded (fictional): ${codes.join(', ')}`);
     return 0;

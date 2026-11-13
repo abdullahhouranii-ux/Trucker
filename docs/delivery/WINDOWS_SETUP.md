@@ -44,6 +44,12 @@ After `npm run db:migrate` (or `npm run dev:migrate`), run `npm run db:app-role`
 already holds that value. Without it the API connects as the migration role and keeps
 organisation data closed.
 
+To sign in locally the database must also be marked local-development: it creates one-time
+codes only with that mark, which a production database can never be given. Set
+`TRUCKER_LOCAL_FIXTURES` to `local-development-only` and run `npm run db:mark` (or
+`npm run db:fixtures`, which also loads the fictional countries). Limits such as the code
+lifetime and the session periods are settings inside the database: `npm run db:settings -- show`.
+
 ## Install, check and run
 
 ```powershell

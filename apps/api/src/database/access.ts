@@ -11,6 +11,12 @@ export interface DatabaseAccess {
   readonly rowSecurityBinds: boolean;
   readonly problems: readonly string[];
   readonly environment: EnvironmentKind;
+  /** The protected security settings have been recorded as reviewed for production. */
+  readonly settingsReviewed: boolean;
+  /** This connection to the database is encrypted, as the server itself reports it. */
+  readonly connectionEncrypted: boolean;
+  /** The server is set never to write statement parameters to its log. */
+  readonly parametersKeptOutOfLogs: boolean;
 }
 
 /**
@@ -47,10 +53,28 @@ export async function inspectAccess(pool: Pick<pg.Pool, 'query'>): Promise<Datab
     if (!found.member) problems.push('the database role is not a member of trucker_app');
   }
   const mark = await pool.query<{ kind: EnvironmentKind }>('SELECT kind FROM trucker.environment');
+  const reviewed = await pool.query<{ reviewed: boolean | null }>(
+    'SELECT trucker.security_settings_reviewed() AS reviewed',
+  );
+  // The key for one-time codes and the codes people type travel to the database as statement
+  // parameters. Both gates are read from the server, for this connection and this role.
+  const transport = await pool.query<{
+    encrypted: boolean;
+    in_statements: string | null;
+    on_error: string | null;
+  }>(
+    `SELECT coalesce((SELECT s.ssl FROM pg_stat_ssl s WHERE s.pid = pg_backend_pid()), false) AS encrypted,
+            current_setting('log_parameter_max_length', true) AS in_statements,
+            current_setting('log_parameter_max_length_on_error', true) AS on_error`,
+  );
   return {
     rowSecurityBinds: problems.length === 0,
     problems,
     environment: mark.rows[0]?.kind ?? 'unmarked',
+    settingsReviewed: reviewed.rows[0]?.reviewed === true,
+    connectionEncrypted: transport.rows[0]?.encrypted === true,
+    parametersKeptOutOfLogs:
+      transport.rows[0]?.in_statements === '0' && transport.rows[0]?.on_error === '0',
   };
 }
 
@@ -108,15 +132,31 @@ export class AccessGuard {
 }
 
 /**
- * Production does not start on a guess. The role must be bound by row security and the
+ * Production does not start on a guess. The role must be bound by row security, the
  * database must have been marked production, which is possible only when it holds no fixture
- * data and can never be undone.
+ * data and can never be undone, the limits it enforces must have been reviewed, the
+ * connection must be encrypted and the server must not log statement parameters.
  */
 export function productionStartProblems(access: DatabaseAccess): string[] {
   const problems = [...access.problems];
   if (access.environment !== 'production') {
     problems.push(
       `the database is marked "${access.environment}", not "production" (mark it once, deliberately, before the first production start)`,
+    );
+  }
+  if (!access.connectionEncrypted) {
+    problems.push(
+      'the connection to the database is not encrypted (the key for one-time codes and the codes themselves travel on it)',
+    );
+  }
+  if (!access.parametersKeptOutOfLogs) {
+    problems.push(
+      'the database server may write statement parameters to its log: log_parameter_max_length and log_parameter_max_length_on_error must both be 0 for the API role',
+    );
+  }
+  if (!access.settingsReviewed) {
+    problems.push(
+      'the security settings in the database are development defaults that have not been recorded as reviewed for production (npm run db:settings)',
     );
   }
   return problems;
