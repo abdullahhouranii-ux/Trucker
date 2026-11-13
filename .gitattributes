@@ -1,0 +1,9 @@
+# Line endings are fixed in the repository so that every platform checks out identical bytes.
+# Migration checksums are also computed on normalised text (apps/api/src/database/migrations.ts),
+# so a checkout made before this file existed, or an editor that rewrites endings, cannot make
+# an applied migration look edited.
+* text=auto eol=lf
+*.sql text eol=lf
+*.sh text eol=lf
+*.png binary
+*.jpg binary

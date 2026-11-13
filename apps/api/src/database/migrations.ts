@@ -1,19 +1,29 @@
 import { createHash } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import type pg from 'pg';
 
 /**
- * Forward-only SQL migrations.
+ * Forward-only SQL migrations for transactional SQL only.
  *
- * Files are named NNNN_description.sql, numbered from 0001 without gaps. Each runs in its own
- * transaction and is recorded with a checksum, so an applied file that is later edited is
- * detected instead of being silently ignored. One runner at a time holds an advisory lock.
+ * Files are named NNNN_description.sql, numbered from 0001 without gaps. The runner wraps each
+ * file in its own transaction and records it with a checksum, so an applied file that is later
+ * edited is detected. One runner at a time holds an advisory lock; waiting for it is bounded.
+ *
+ * Not supported, and refused when the files are read:
+ *  - transaction control inside a file (BEGIN, COMMIT, ROLLBACK, SAVEPOINT and similar): the
+ *    runner owns the transaction;
+ *  - statements PostgreSQL will not run inside a transaction (CREATE/DROP INDEX CONCURRENTLY,
+ *    REINDEX CONCURRENTLY, VACUUM, CREATE/DROP DATABASE, CREATE/DROP TABLESPACE, ALTER SYSTEM);
+ *  - SQL-standard function bodies written with BEGIN ATOMIC (use a dollar-quoted body).
+ * Work of those kinds needs a separately reviewed procedure outside this runner.
  */
 
 const FILE_PATTERN = /^(\d{4})_([a-z0-9_]+)\.sql$/;
 const ADVISORY_LOCK_KEY = '7426018350912';
+const LOCK_POLL_MS = 200;
 
 export interface MigrationFile {
   readonly version: number;
@@ -26,6 +36,13 @@ export interface MigrationStatus {
   readonly applied: readonly number[];
   readonly pending: readonly number[];
   readonly problems: readonly string[];
+}
+
+export interface MigrateOptions {
+  /** How long to wait for another runner to finish. Default 30 s. */
+  readonly lockWaitMs?: number;
+  /** How long any migration statement may wait for a table lock. Default 10 s. */
+  readonly statementLockTimeoutMs?: number;
 }
 
 export class MigrationError extends Error {
@@ -42,6 +59,59 @@ export function defaultMigrationsDir(): string {
   return path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../db/migrations');
 }
 
+/**
+ * The text that is hashed and executed: no byte-order mark, LF line endings only. A file
+ * checked out with CRLF on one machine and LF on another therefore has one checksum.
+ */
+export function normaliseSql(raw: string): string {
+  const withoutMark = raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw;
+  return withoutMark.replace(/\r\n?/g, '\n');
+}
+
+export function checksumOf(raw: string): string {
+  return createHash('sha256').update(normaliseSql(raw), 'utf8').digest('hex');
+}
+
+/** Removes comments, string literals, dollar-quoted bodies and quoted identifiers. */
+function stripNonCode(sql: string): string {
+  return sql
+    .replace(/\$([A-Za-z_][A-Za-z0-9_]*)?\$[\s\S]*?\$\1\$/g, ' ')
+    .replace(/--[^\n]*/g, ' ')
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/'(?:[^']|'')*'/g, ' ')
+    .replace(/"(?:[^"]|"")*"/g, ' ');
+}
+
+const FORBIDDEN: ReadonlyArray<readonly [RegExp, string]> = [
+  [
+    /^(BEGIN|START\s+TRANSACTION|COMMIT|END|ROLLBACK|ABORT|SAVEPOINT|RELEASE|PREPARE\s+TRANSACTION)\b/i,
+    'controls a transaction; the runner owns the transaction',
+  ],
+  [
+    /^(CREATE\s+(UNIQUE\s+)?INDEX\s+CONCURRENTLY|DROP\s+INDEX\s+CONCURRENTLY|REINDEX\b[\s\S]*\bCONCURRENTLY)\b/i,
+    'cannot run inside a transaction (CONCURRENTLY)',
+  ],
+  [
+    /^(VACUUM|CREATE\s+DATABASE|DROP\s+DATABASE|CREATE\s+TABLESPACE|DROP\s+TABLESPACE|ALTER\s+SYSTEM)\b/i,
+    'cannot run inside a transaction',
+  ],
+];
+
+/** Returns the reasons a migration file is not acceptable to this runner. */
+export function findUnsupportedStatements(sql: string): string[] {
+  const reasons: string[] = [];
+  for (const statement of stripNonCode(normaliseSql(sql)).split(';')) {
+    const text = statement.trim();
+    if (!text) continue;
+    for (const [pattern, reason] of FORBIDDEN) {
+      if (pattern.test(text)) {
+        reasons.push(`"${text.split(/\s+/).slice(0, 3).join(' ')}" ${reason}`);
+      }
+    }
+  }
+  return reasons;
+}
+
 export async function readMigrationFiles(dir: string): Promise<MigrationFile[]> {
   let entries: string[];
   try {
@@ -55,12 +125,16 @@ export async function readMigrationFiles(dir: string): Promise<MigrationFile[]> 
     if (!match) {
       throw new MigrationError(`migration file name must be NNNN_description.sql: ${entry}`);
     }
-    const sql = await readFile(path.join(dir, entry), 'utf8');
+    const raw = await readFile(path.join(dir, entry), 'utf8');
+    const unsupported = findUnsupportedStatements(raw);
+    if (unsupported.length > 0) {
+      throw new MigrationError(`${entry} is not supported: ${unsupported.join('; ')}`);
+    }
     files.push({
       version: Number(match[1]),
       name: match[2] as string,
-      checksum: createHash('sha256').update(sql).digest('hex'),
-      sql,
+      checksum: checksumOf(raw),
+      sql: normaliseSql(raw),
     });
   }
   files.forEach((file, index) => {
@@ -112,13 +186,40 @@ export async function migrationStatus(db: Queryable, dir: string): Promise<Migra
   return compare(files, await readApplied(db));
 }
 
+async function acquireRunnerLock(client: pg.PoolClient, waitMs: number): Promise<void> {
+  const deadline = Date.now() + waitMs;
+  for (;;) {
+    const result = await client.query<{ locked: boolean }>(
+      'SELECT pg_try_advisory_lock($1::bigint) AS locked',
+      [ADVISORY_LOCK_KEY],
+    );
+    if (result.rows[0]?.locked) return;
+    if (Date.now() >= deadline) {
+      throw new MigrationError(
+        `another migration run holds the lock; gave up after waiting ${waitMs} ms`,
+      );
+    }
+    await sleep(Math.min(LOCK_POLL_MS, Math.max(1, deadline - Date.now())));
+  }
+}
+
 /** Applies every pending migration in order. Returns the versions applied by this call. */
-export async function migrateUp(pool: pg.Pool, dir: string): Promise<number[]> {
+export async function migrateUp(
+  pool: pg.Pool,
+  dir: string,
+  options: MigrateOptions = {},
+): Promise<number[]> {
+  const lockWaitMs = options.lockWaitMs ?? 30_000;
+  const statementLockTimeoutMs = options.statementLockTimeoutMs ?? 10_000;
   const files = await readMigrationFiles(dir);
   const client = await pool.connect();
+  let broken = false;
   try {
-    await client.query('SELECT pg_advisory_lock($1::bigint)', [ADVISORY_LOCK_KEY]);
+    await acquireRunnerLock(client, lockWaitMs);
     try {
+      // Session settings for this runner only: no statement limit, bounded table-lock waits.
+      await client.query('SET statement_timeout = 0');
+      await client.query(`SET lock_timeout = ${Math.trunc(statementLockTimeoutMs)}`);
       await client.query(`
         CREATE TABLE IF NOT EXISTS public.schema_migrations (
           version integer PRIMARY KEY,
@@ -149,9 +250,20 @@ export async function migrateUp(pool: pg.Pool, dir: string): Promise<number[]> {
       }
       return appliedNow;
     } finally {
-      await client.query('SELECT pg_advisory_unlock($1::bigint)', [ADVISORY_LOCK_KEY]);
+      try {
+        await client.query('RESET lock_timeout');
+        await client.query('RESET statement_timeout');
+        await client.query('SELECT pg_advisory_unlock($1::bigint)', [ADVISORY_LOCK_KEY]);
+      } catch {
+        // The connection is gone; the server releases the lock when the session ends.
+        broken = true;
+      }
     }
+  } catch (error) {
+    // A connection that failed mid-run is discarded rather than returned to the pool.
+    broken = !(error instanceof MigrationError);
+    throw error;
   } finally {
-    client.release();
+    client.release(broken);
   }
 }

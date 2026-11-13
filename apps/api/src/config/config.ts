@@ -5,6 +5,9 @@ import { z } from 'zod';
  * when anything is missing or malformed. Problems name the key and the rule, never the value,
  * so a connection string or secret cannot leak into logs.
  */
+const milliseconds = (min: number, max: number, fallback: number) =>
+  z.coerce.number().int().min(min).max(max).default(fallback);
+
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']),
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
@@ -12,7 +15,16 @@ const schema = z.object({
     .string()
     .regex(/^postgres(ql)?:\/\/\S+$/, 'must be a postgres:// connection string'),
   DB_POOL_MAX: z.coerce.number().int().min(1).max(100).default(10),
-  DB_CONNECT_TIMEOUT_MS: z.coerce.number().int().min(100).max(60000).default(3000),
+  /** Limit on establishing a connection. Does not bound a query on an open connection. */
+  DB_CONNECT_TIMEOUT_MS: milliseconds(100, 60_000, 3_000),
+  /** Server-side limit on any single statement issued by the API. */
+  DB_STATEMENT_TIMEOUT_MS: milliseconds(100, 600_000, 5_000),
+  /** Overall deadline for the readiness check, whatever the database is doing. */
+  HEALTH_CHECK_TIMEOUT_MS: milliseconds(50, 30_000, 2_000),
+  /** How long a migration run waits for another run to finish before giving up. */
+  MIGRATION_LOCK_WAIT_MS: milliseconds(0, 3_600_000, 30_000),
+  /** How long a migration statement waits for a table lock before failing. */
+  MIGRATION_STATEMENT_LOCK_TIMEOUT_MS: milliseconds(100, 3_600_000, 10_000),
   MIGRATIONS_DIR: z.string().min(1).optional(),
 });
 

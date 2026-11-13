@@ -1,6 +1,6 @@
 # Foundation slice 1: workspace, pinned tooling, configuration, health and readiness, migration checks
 
-Date: 13 November 2026. Status: **on a review branch; not merged to main, not deployed.**
+Date: 13 November 2026, revised the same day after review. Status: **slice 1 was merged into `staging` through pull request 1 (not in `main`, not deployed). The review fixes in section "Review fixes" are on a separate review branch with their own pull request against `staging`.**
 
 ## Scope
 
@@ -13,20 +13,40 @@ Date: 13 November 2026. Status: **on a review branch; not merged to main, not de
 | Forward-only SQL migration runner with checks; one baseline migration with no business tables | Countries, currencies and other reference data (wait for D-003) |
 | CI workflow file | A run of that workflow on GitHub |
 
-## Pinned versions
+## Versions: what is pinned exactly and what is a major-version selection
 
-Chosen from the npm registry on 13 November 2026 and fixed exactly in `package.json` and `package-lock.json`.
+Chosen from the npm registry on 13 November 2026.
 
-| Tool | Version | Note |
+**Pinned to an exact release** (in `package.json` and `package-lock.json`; `npm ci` installs exactly these):
+
+| Package | Version | Note |
 |---|---|---|
-| Node.js | 22 (`.nvmrc`; engines `>=22.12 <23`) | Evidence below ran on 22.23.4 |
-| npm | 10.9.9 | `engine-strict` is on |
 | TypeScript | 6.0.3 | Not 7.x: typescript-eslint 8.72.2 declares support below 6.1 |
 | NestJS (`common`, `core`, `platform-express`) | 12.5.0 | Published as ES modules, so the API is an ES-module project |
 | pg | 8.23.1 | |
 | zod | 4.6.7 | Configuration validation only |
 | ESLint / typescript-eslint / Prettier | 10.14.0 / 8.72.2 / 3.10.1 | |
-| PostgreSQL | 16 | Evidence ran on 16.15. Moving to a newer major needs the checks re-run |
+
+**Major-version selections, not exact pins:**
+
+| Runtime | Selection | What actually ran |
+|---|---|---|
+| Node.js | Major 22: `.nvmrc` contains `22`; `engines` allows `>=22.12.0 <23`. The newest 22.x available is used | 22.23.4 locally |
+| npm | `>=10.9.0 <11` | 10.9.9 locally |
+| PostgreSQL | Major 16: the `postgres:16` image tag in the compose file and CI follows the newest 16.x | 16.15 locally |
+
+Decision (Abdullah, 13 Nov 2026): keep Node 22 and PostgreSQL 16 as major-version selections for now, and record the exact versions used in each verification run.
+
+### Exact versions used in each verification run
+
+`npm run versions` prints them; CI runs it as the step "Record runtime versions", so every CI run records its own.
+
+| Run | Node.js | npm | PostgreSQL | Platform |
+|---|---|---|---|---|
+| Local, slice 1 as first delivered (17 tests) | 22.23.4 | 10.9.9 | 16.15 | Linux x64 |
+| Local, review fixes (28 tests) | 22.23.4 | 10.9.9 | 16.15 | Linux x64 |
+| GitHub CI, pull request 1 (commits `0899c08`, `a627ae3`) | not recorded: the versions step did not exist yet | | | ubuntu-latest |
+| GitHub CI, review-fixes pull request | recorded in that run's "Record runtime versions" step and in the pull request | | | ubuntu-latest |
 
 Tests use Node's built-in test runner on the compiled output, so there is no separate test framework to pin.
 
@@ -41,6 +61,10 @@ npm run verify                  # format check, lint, type check, migration file
 npm run db:migrate && npm run db:status
 npm run start:api
 ```
+
+Windows: see `docs/delivery/WINDOWS_SETUP.md` (not yet executed on Windows).
+
+**Migrations run separately, before the API serves traffic.** The API never applies migrations itself. `/health/ready` answers 503 while any migration is pending or inconsistent, so a deployment must run `db:migrate` first and route traffic only when readiness is 200. `/health/live` is independent of the database.
 
 The database role used for tests must be allowed to create databases: each test file creates and drops its own.
 
@@ -65,20 +89,42 @@ All of the following was executed on 13 November 2026 against a locally installe
 | 13 | Readiness is false when the database is unreachable and recovers when it returns | Running process: 200 `ready`; database stopped: 503 `{"database":"unavailable","migrations":"unknown"}`; database started: 200 again without restarting the API | Pass |
 | 14 | Readiness is false while migrations are pending | Integration test: 503 `{"database":"ok","migrations":"pending"}` | Pass |
 | 15 | Readiness responses leak no connection detail | Integration test asserts the body contains only the two check names | Pass |
-| 16 | Whole suite | 17 tests, 17 pass, 0 fail | Pass |
+| 16 | Whole suite as first delivered | 17 tests, 17 pass, 0 fail (28 after the review fixes below) | Pass |
+
+## Review fixes (13 November 2026, after Abdullah's review of the patch)
+
+On branch `foundation/review-fixes-slice-1`, for review against `staging`. Re-run locally against PostgreSQL 16.15: format, lint, type check, migration file check, and the full suite, now 28 tests, 28 pass, repeated three times.
+
+| # | Finding | Change | Evidence | Result |
+|---|---|---|---|---|
+| R1 | Migration checksums could differ between Windows and Linux checkouts | `.gitattributes` forces LF for SQL (and normalises text generally). Independently, the runner hashes and executes normalised text: no byte-order mark, LF only | Unit test: LF, CRLF, CR and BOM variants give one checksum. Integration test: a file applied with LF and then rewritten with CRLF is not reported as edited. Simulated checkouts with `core.autocrlf=true`: with `.gitattributes` the file is LF; without it the file is CRLF (8 CR lines) and the checksum is still identical | Pass |
+| R2 | Readiness had no execution deadline | One overall deadline for the readiness check (`HEALTH_CHECK_TIMEOUT_MS`, default 2 s); a server-side `statement_timeout` and a driver `query_timeout` on the API pool (`DB_STATEMENT_TIMEOUT_MS`, default 5 s), separate from the connection timeout | Stalled query on an open connection (table lock held): 503 `{"database":"ok","migrations":"unknown"}` inside the deadline, liveness 200, and 200 again after release. Server that accepts connections and never answers: 503 inside the deadline. Query that never resolves (stub): answer inside the deadline | Pass |
+| R3 | Migration lock waiting must be bounded separately | Waiting for another runner is bounded (`MIGRATION_LOCK_WAIT_MS`, default 30 s). Waiting for a table lock inside a migration is bounded (`MIGRATION_STATEMENT_LOCK_TIMEOUT_MS`, default 10 s). The migration connection has no statement timeout | Test: second runner gives up after its wait and succeeds once the lock is free. Test: a statement blocked by a table lock fails within its bound, is rolled back, and applies later | Pass |
+| R4 | Migration files must not control transactions | Files containing BEGIN, COMMIT, ROLLBACK, SAVEPOINT and similar, or statements that cannot run in a transaction, are refused when read, before any database work. `db:check` therefore catches them in CI without a database | Tests: six refused examples; keywords inside comments, strings and dollar-quoted function bodies are not mistaken for statements | Pass |
+| R5 | Recovery after a runner is terminated | No code change needed; behaviour proved | Test: the runner process is killed during the second of three migrations. Afterwards only the first is recorded, nothing is half-applied, and the next run applies the second and third exactly once | Pass |
+
+### Migration runner: scope and limits
+
+The runner is accepted for **transactional SQL only**. It does not support, and refuses:
+
+- transaction control inside a migration file;
+- `CREATE INDEX CONCURRENTLY`, `DROP INDEX CONCURRENTLY`, `REINDEX ... CONCURRENTLY`, `VACUUM`, `CREATE` or `DROP DATABASE`, `CREATE` or `DROP TABLESPACE`, `ALTER SYSTEM`;
+- SQL-standard function bodies written with `BEGIN ATOMIC` (use a dollar-quoted body).
+
+Also outside its scope: large data backfills that should commit in batches, and down migrations (it is forward-only). Any of these needs a separately reviewed procedure. The refusal is a text check on statement beginnings; it is a guard against mistakes, not a security control.
 
 ## Not verified
 
 - `tools/dev/docker-compose.yml` was not executed: no Docker daemon was available.
-- `.github/workflows/ci.yml` has not run: nothing has been pushed. The versions of the two GitHub actions it uses should be confirmed on the first run.
-- Only Linux was used. Windows and macOS setup is untested.
+- GitHub CI passed on pull request 1 for slice 1 as first pushed (commits `0899c08` and `a627ae3`). Its result for the review fixes is reported on their own pull request, not in this file.
+- Only Linux was used. Windows setup instructions exist but were not executed; macOS is untested. The CRLF behaviour was simulated on Linux, not observed on Windows.
 - No load, security or dependency-vulnerability review was done.
 
 ## Choices in this slice that need confirmation
 
 | Choice | Why | Alternative |
 |---|---|---|
-| A small in-repository migration runner (about 150 lines) instead of a library | It gives exactly the required checks: contiguous numbering, checksum of applied files, one transaction per file, single runner | An established migration library; less code to own, but the edited-after-apply check would need adding |
-| Readiness treats pending migrations as "not ready" | A build must not serve traffic against a schema it does not match | Report only database reachability |
+| A small in-repository migration runner instead of a library | Accepted by Abdullah on 13 Nov 2026 for transactional SQL only, with the limits listed above | An established migration library if non-transactional operations become necessary |
+| Readiness treats pending migrations as "not ready" | Confirmed by Abdullah on 13 Nov 2026; liveness stays independent; migrations run separately before traffic | — |
 | Tests run on compiled output with Node's test runner | NestJS 12 is ES-module only; this avoids a test framework and its transform configuration | A test framework with TypeScript transform |
 | PostgreSQL 16 | It is what the evidence ran on | A newer major, after re-running the checks |

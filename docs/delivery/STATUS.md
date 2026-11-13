@@ -23,10 +23,11 @@ Commercial model (D-001), payment approach (D-002) and launch geography (D-003) 
 
 ## Current milestone
 
-M0: foundation. Foundation slice 1 is on a review branch (not merged): npm workspace,
-pinned tooling, validated configuration, API health and readiness, SQL migration runner with
-checks, CI workflow file. Evidence: docs/delivery/FOUNDATION_SLICE_1.md (17 tests passing
-locally against PostgreSQL 16; CI workflow and Docker compose file not yet executed).
+M0: foundation. Foundation slice 1 is merged into the staging branch (not main): npm
+workspace, pinned tooling, validated configuration, API health and readiness, SQL migration
+runner with checks, CI workflow. Evidence: docs/delivery/FOUNDATION_SLICE_1.md. Review fixes
+(line endings, bounded readiness and lock waits, runner limits) are on their own pull request
+against staging. Docker compose file and Windows setup are not yet executed.
 Only apps/api exists. No business module, portal or mobile code exists.
 
 ## Next executable slice
