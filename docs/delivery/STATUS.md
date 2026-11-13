@@ -9,10 +9,17 @@ Product name: Trucker. Preserve historical reference files as references.
 
 ## Completed
 
-- GitHub metadata checked: private repository, default main, empty at inspection.
-- Local main repository initialized and origin configured.
-- Original architecture, repaired prototype and planning references copied.
 - Fresh-build decision recorded and initial backlog established.
+- Original architecture, repaired prototype and planning references added under docs/reference.
+- First commit pushed to GitHub (documents only).
+- Files moved from the nested Trucker/ folder to the repository root.
+- Provisional Stage 1 baseline and Stage 2 Parts 1-4 and the Stage 3 architecture evaluation saved under docs/specs, the authoritative set (documents only; no tests run).
+
+## Scope note
+
+Seven surfaces: public website, shipper portal, carrier portal, vehicle-owner portal, driver
+application, operations console, partner integration. Five roles; surfaces are not roles.
+Commercial model (D-001), payment approach (D-002) and launch geography (D-003) are undecided.
 
 ## Current milestone
 
@@ -35,7 +42,6 @@ Do not return mock successes or confuse the reference HTML with the hosted produ
 
 ## Environment
 
-Direct GitHub clone failed because github.com DNS resolution was unavailable.
-Local repository has origin configured but has never fetched or pushed.
-No dependencies installed; no application tests run; no commit created.
-Before the first push, fetch origin and check it is still empty to avoid overwriting later work.
+Repository cloned and inspected on 13 November 2026 at commit d8107af.
+tools/dev and docs/api are planned locations and do not exist yet.
+No dependencies installed; no application tests run.
