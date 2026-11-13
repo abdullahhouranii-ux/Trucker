@@ -682,6 +682,8 @@ test('selecting one organisation hides every other, even for a member of both', 
   });
   const retryKey = key();
   await createOrganisation(stranger, { legalName: 'Keyed' }, retryKey);
+  // A later creation time, so the newest-first order below does not depend on chance.
+  advance(1);
   await createOrganisation(person, { legalName: 'Organisation A2' }, key());
   const tokenHash = hashToken(person.token);
   const seen = (context: { tokenHash?: string; organisationId?: string }) =>
