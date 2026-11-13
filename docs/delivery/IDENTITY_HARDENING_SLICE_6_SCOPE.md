@@ -75,4 +75,4 @@ not done.
 | The identity service rewritten as calls to the functions | Account recovery, staff sign-in |
 | Organisation creation limit and timestamps taken from the database, not the caller | Any screen or wording change |
 | A command for the migration role to show and change the settings | Limits per device or network address |
-| Tests as the restricted role | Encryption of connections to the database (a deployment matter, listed in the record) |
+| Tests as the restricted role | Setting up encrypted connections and log settings on a production server (a deployment matter). This slice only refuses to start without them |

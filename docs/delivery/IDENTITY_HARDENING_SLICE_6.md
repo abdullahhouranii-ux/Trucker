@@ -185,12 +185,13 @@ revocation; creation not looking again after its lock). Each was caught.
 | Safe search paths | Every function: `pg_catalog, trucker, pg_temp` (or `pg_catalog, pg_temp`). The functions kept from slice 5 were altered to match | Catalogue check; temporary look-alike tables change nothing |
 | No access to secrets or queue contents | No table privileges; no function returns a hash; there is no queue | Privilege catalogue; answers searched for every stored hash |
 | Idle and absolute expiry | `live_session()` is the only rule, used by the session check, the account functions and `request_person()` | Idle and over-age sessions refused by every function before anything marks them ended |
-| Direct calls as the restricted role | `apps/api/src/identity/hardening.test.ts` connects only as the API's role for the attempts | 29 tests |
+| Direct calls as the restricted role | `apps/api/src/identity/hardening.test.ts` connects only as the API's role for the attempts | 37 tests |
 
 ## 5. Checks and results
 
 Run against PostgreSQL 16, locally and in CI. The first version (`43bdf31`) passed CI run
-43456265992; the run for the version with the time fixes is on the pull request.
+43456265992; the version with the time fixes (`da3556d`) passed run 43466073467.
+All three jobs passed in both.
 
 | Check | Result |
 |---|---|
