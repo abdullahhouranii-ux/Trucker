@@ -1311,35 +1311,73 @@ async function hold(statement: string, values: unknown[] = []): Promise<() => Pr
     client.release();
   };
 }
-/** Resolves once some other connection to this database is waiting for a lock. */
-async function untilSomeoneWaits(): Promise<void> {
+/**
+ * Resolves true once some other connection to this database is waiting for a lock, or false
+ * as soon as `settled` says the work has already finished, so nothing keeps polling after it.
+ */
+async function untilSomeoneWaits(settled: () => boolean = () => false): Promise<boolean> {
   for (let attempt = 0; attempt < 400; attempt += 1) {
+    if (settled()) return false;
     const waiting = await owner.query<{ n: number }>(
       `SELECT count(*)::int AS n FROM pg_locks l JOIN pg_stat_activity a ON a.pid = l.pid
        WHERE NOT l.granted AND a.datname = current_database() AND l.pid <> pg_backend_pid()`,
     );
-    if (waiting.rows[0]!.n > 0) return;
+    if (waiting.rows[0]!.n > 0) return true;
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
   throw new Error('nothing started waiting for the lock');
 }
-/** Runs work that must queue behind the lock, moves the clock while it waits, then lets it go. */
+/**
+ * Runs work that must queue behind the lock, moves the clock while it waits, then lets it go.
+ *
+ * The work's outcome is captured in the same step that starts it, so there is never a moment
+ * in which it can fail with nobody listening. (An earlier version listened only after
+ * releasing the lock. If the refusal arrived first, Node reported an unhandled rejection and
+ * failed the test although the database had done exactly what was expected.) Nothing is
+ * swallowed: a failure is rethrown to the caller, which asserts on it.
+ *
+ * The work must actually wait. If it settles before the database reports it as waiting, that
+ * is reported as such: its own error if it failed, a plain statement if it succeeded.
+ */
+type Outcome<T> = { ok: true; value: T } | { ok: false; error: unknown };
 async function whileBlocked<T>(
   lock: [statement: string, values: unknown[]],
   work: () => Promise<T>,
   seconds: number,
+  /** For the helper's own test: runs after the lock is released, before the outcome is read. */
+  beforeLooking: () => Promise<void> = async () => undefined,
 ): Promise<T> {
   const release = await hold(...lock);
   let released = false;
-  try {
-    const pending = work();
-    await untilSomeoneWaits();
-    await advance(seconds);
+  const letGo = async (): Promise<void> => {
+    if (released) return;
     released = true;
     await release();
-    return await pending;
+  };
+  try {
+    const outcome: Promise<Outcome<T>> = Promise.resolve()
+      .then(work)
+      .then(
+        (value) => ({ ok: true, value }) as const,
+        (error: unknown) => ({ ok: false, error }) as const,
+      );
+    let finished = false;
+    void outcome.then(() => {
+      finished = true;
+    });
+    if (!(await untilSomeoneWaits(() => finished))) {
+      const early = await outcome;
+      if (!early.ok) throw early.error;
+      throw new Error('the work finished without waiting for the lock');
+    }
+    await advance(seconds);
+    await letGo();
+    await beforeLooking();
+    const settled = await outcome;
+    if (!settled.ok) throw settled.error;
+    return settled.value;
   } finally {
-    if (!released) await release();
+    await letGo();
   }
 }
 const lockNumber = (phone: string): [string, unknown[]] => [
@@ -1350,6 +1388,120 @@ const lockRow = (table: string, id: string): [string, unknown[]] => [
   `SELECT 1 FROM trucker.${table} WHERE id = $1 FOR UPDATE`,
   [id],
 ];
+
+test('the blocked-request helper never leaves a failure unobserved, and hides none', async () => {
+  // Counted here as well as by the test runner, which fails a test on any unhandled rejection.
+  const unhandled: unknown[] = [];
+  const note = (reason: unknown): void => void unhandled.push(reason);
+  process.on('unhandledRejection', note);
+  const turns = async (): Promise<void> => {
+    // Unhandled rejections are reported after the microtask queue drains: wait well past it.
+    for (let turn = 0; turn < 5; turn += 1) await new Promise((resolve) => setImmediate(resolve));
+  };
+  const lockFree = async (phone: string): Promise<boolean> => {
+    const client = await owner.connect();
+    try {
+      await client.query('BEGIN');
+      const got = await client.query<{ got: boolean }>(
+        'SELECT pg_try_advisory_xact_lock(hashtextextended($1, 0)) AS got',
+        [phone],
+      );
+      return got.rows[0]!.got;
+    } finally {
+      await client.query('ROLLBACK');
+      client.release();
+    }
+  };
+  try {
+    // 1. Work that fails at once, before anything waits: the earliest a failure can come.
+    const phone = newPhone();
+    const before = testClock.clock().getTime();
+    await assert.rejects(
+      whileBlocked(lockNumber(phone), () => Promise.reject(new Error('refused at once')), 3600),
+      /refused at once/,
+    );
+    await turns();
+    assert.deepEqual(unhandled, []);
+    assert.equal(
+      testClock.clock().getTime(),
+      before,
+      'the clock is not moved for work that never waited',
+    );
+    assert.equal(await lockFree(phone), true, 'the lock was released');
+
+    // 2. Work that throws before it returns a promise at all.
+    await assert.rejects(
+      whileBlocked(
+        lockNumber(phone),
+        () => {
+          throw new Error('thrown at once');
+        },
+        1,
+      ),
+      /thrown at once/,
+    );
+    await turns();
+    assert.deepEqual(unhandled, []);
+    assert.equal(await lockFree(phone), true);
+
+    // 3. Work that succeeds without waiting is a broken test, and is reported as one.
+    await assert.rejects(
+      whileBlocked(lockNumber(phone), async () => 'done', 1),
+      /finished without waiting for the lock/,
+    );
+    await turns();
+    assert.deepEqual(unhandled, []);
+    assert.equal(testClock.clock().getTime(), before);
+
+    // 4. Work that waits and is then refused, with the helper slow to look at the result:
+    // the refusal has arrived, and been sitting there, well before anything reads it. This is
+    // the order of events that failed. The caller listens from the start, as every test does.
+    const other = newPhone();
+    let refusedAt = 0;
+    let lookedAt = 0;
+    await assert.rejects(
+      whileBlocked(
+        lockNumber(other),
+        async () => {
+          await app.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [other]);
+          refusedAt = performance.now();
+          throw new Error('refused after the wait');
+        },
+        1,
+        async () => {
+          await new Promise((resolve) => setTimeout(resolve, 150));
+          await turns();
+          lookedAt = performance.now();
+        },
+      ),
+      /refused after the wait/,
+    );
+    assert.ok(refusedAt > 0 && lookedAt > refusedAt, 'the refusal came before the helper looked');
+    await turns();
+    assert.deepEqual(unhandled, [], 'no failure went unobserved while the helper was busy');
+    assert.equal(
+      testClock.clock().getTime(),
+      before + 1000,
+      'the clock moved once, while it waited',
+    );
+
+    // 5. And the ordinary case still returns the work's value.
+    const third = newPhone();
+    const value = await whileBlocked(
+      lockNumber(third),
+      async () => {
+        await app.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [third]);
+        return 'after the wait';
+      },
+      1,
+    );
+    assert.equal(value, 'after the wait');
+    await turns();
+    assert.deepEqual(unhandled, []);
+  } finally {
+    process.off('unhandledRejection', note);
+  }
+});
 
 test('a verification that waits for a lock until the code has expired is refused', async () => {
   // Behind the lock on the challenge itself, and behind the lock on the number.
