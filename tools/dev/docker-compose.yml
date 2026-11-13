@@ -1,6 +1,6 @@
 # Local development database only. Not a deployment definition.
-# NOT EXECUTED in the session that wrote it (no Docker daemon was available); the same
-# checks were run against a locally installed PostgreSQL 16. Verify on first use.
+# Exercised on Linux by the CI job "compose" through `npm run dev:db:up`.
+# Not verified with Docker Desktop on Windows.
 services:
   postgres:
     image: postgres:16

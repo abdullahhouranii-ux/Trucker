@@ -1,5 +1,10 @@
-# Runs the same commands as `npm run verify`, against a PostgreSQL service.
-# Each run prints the exact runtime versions it used (docs/delivery/FOUNDATION_SLICE_1.md).
+# Three jobs:
+#   verify   - the checks of `npm run verify` against a PostgreSQL service container (Linux)
+#   compose  - the same checks against the database started from tools/dev/docker-compose.yml
+#              through the local helper scripts, proving the Docker setup works
+#   windows  - the documented native Windows setup on a Windows runner, checked out into a
+#              path containing spaces
+# Each job prints the exact runtime versions it used.
 name: ci
 
 on:
@@ -49,3 +54,126 @@ jobs:
       - name: Nothing is pending and nothing was edited after applying
         run: npm run db:status
       - run: npm test
+
+  compose:
+    name: compose (Docker database through tools/dev)
+    runs-on: ubuntu-latest
+    env:
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Create .env from the example
+        run: npm run dev:env
+      - name: Start the database from tools/dev/docker-compose.yml
+        run: npm run dev:db:up
+      - name: Record runtime versions
+        run: node tools/dev/with-env.mjs npm run versions
+      - name: Prerequisite check
+        run: npm run dev:doctor
+      - name: Full verification against the compose database
+        run: npm run dev:verify
+      - name: Migrate, then confirm nothing is pending
+        run: |
+          npm run dev:migrate
+          node tools/dev/with-env.mjs npm run db:status
+      - name: Start the API with .env and call it
+        run: |
+          NODE_ENV=development npm run dev:api > api.log 2>&1 &
+          for i in $(seq 1 60); do curl -fsS http://localhost:3000/health/live > /dev/null 2>&1 && break; sleep 1; done
+          curl -fsS -D - http://localhost:3000/health/live
+          curl -fsS http://localhost:3000/health/ready
+          echo
+          code=$(curl -s -o not-found.json -w '%{http_code}' http://localhost:3000/no-such-route)
+          cat not-found.json; echo
+          test "$code" = "404"
+          grep -q '"code":"not_found"' not-found.json
+          grep -q '"event":"request"' api.log
+      - name: Reset wipes the data volume
+        run: |
+          npm run dev:db:reset
+          if node tools/dev/with-env.mjs npm run db:status; then echo "expected pending migrations after reset"; exit 1; fi
+      - name: Stop the database
+        if: always()
+        run: npm run dev:db:down
+
+  windows:
+    name: windows (native setup from docs/delivery/WINDOWS_SETUP.md)
+    runs-on: windows-latest
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgres://trucker:trucker-local-only@localhost:5432/trucker_dev
+    defaults:
+      run:
+        # The repository is deliberately checked out into a path containing spaces.
+        working-directory: trucker repo with spaces
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: trucker repo with spaces
+      - name: SQL files are checked out with LF endings
+        shell: pwsh
+        run: |
+          $eol = git ls-files --eol -- "db/migrations/*.sql"
+          $eol
+          if (-not $eol) { throw "no SQL files found" }
+          if ($eol -match "w/crlf") { throw "a SQL file was checked out with CRLF endings" }
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: trucker repo with spaces/.nvmrc
+          cache: npm
+          cache-dependency-path: trucker repo with spaces/package-lock.json
+      - name: Start the runner's PostgreSQL and create the local role and database
+        shell: pwsh
+        run: |
+          $service = Get-Service -Name "postgresql*" | Select-Object -First 1
+          if (-not $service) { throw "this runner has no PostgreSQL service" }
+          Set-Service -Name $service.Name -StartupType Manual
+          Start-Service -Name $service.Name
+          $env:PGPASSWORD = "root"
+          $psql = Join-Path $env:PGBIN "psql.exe"
+          & $psql -U postgres -h localhost -v ON_ERROR_STOP=1 -c "CREATE ROLE trucker LOGIN CREATEDB PASSWORD 'trucker-local-only'"
+          if ($LASTEXITCODE -ne 0) { throw "could not create the role" }
+          & $psql -U postgres -h localhost -v ON_ERROR_STOP=1 -c "CREATE DATABASE trucker_dev OWNER trucker"
+          if ($LASTEXITCODE -ne 0) { throw "could not create the database" }
+      - run: npm ci
+      - name: Record runtime versions
+        run: npm run versions
+      - name: Prerequisite check
+        run: npm run dev:doctor
+      - name: Full verification
+        run: npm run verify
+      - name: Migrate, then confirm nothing is pending
+        run: |
+          npm run db:migrate
+          if ($LASTEXITCODE -ne 0) { throw "migration failed" }
+          npm run db:status
+          if ($LASTEXITCODE -ne 0) { throw "migrations pending or inconsistent" }
+      - name: Start the API and call it
+        shell: pwsh
+        run: |
+          $env:NODE_ENV = "development"
+          $env:PORT = "3000"
+          $api = Start-Process node -ArgumentList "apps/api/dist/main.js" -PassThru -NoNewWindow -RedirectStandardOutput api.log
+          try {
+            $up = $false
+            foreach ($i in 1..60) {
+              try { Invoke-RestMethod http://localhost:3000/health/live | Out-Null; $up = $true; break } catch { Start-Sleep -Seconds 1 }
+            }
+            if (-not $up) { throw "the API did not start" }
+            $live = Invoke-WebRequest http://localhost:3000/health/live
+            if (-not $live.Headers["X-Request-Id"]) { throw "no X-Request-Id header" }
+            $ready = Invoke-RestMethod http://localhost:3000/health/ready
+            $ready | ConvertTo-Json -Compress
+            if ($ready.status -ne "ready") { throw "not ready" }
+            $missing = Invoke-WebRequest http://localhost:3000/no-such-route -SkipHttpErrorCheck
+            $missing.Content
+            if ($missing.StatusCode -ne 404) { throw "expected 404" }
+            if (($missing.Content | ConvertFrom-Json).code -ne "not_found") { throw "expected the standard error body" }
+          } finally {
+            Stop-Process -Id $api.Id -Force
+          }
