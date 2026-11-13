@@ -1,0 +1,6 @@
+# Documents and reference files are not reformatted by tooling.
+docs/
+*.md
+package-lock.json
+dist/
+node_modules/

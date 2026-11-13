@@ -23,14 +23,17 @@ Commercial model (D-001), payment approach (D-002) and launch geography (D-003) 
 
 ## Current milestone
 
-M0: requirements baseline and development environment. No API, portal or mobile code exists yet.
+M0: foundation. Foundation slice 1 is on a review branch (not merged): npm workspace,
+pinned tooling, validated configuration, API health and readiness, SQL migration runner with
+checks, CI workflow file. Evidence: docs/delivery/FOUNDATION_SLICE_1.md (17 tests passing
+locally against PostgreSQL 16; CI workflow and Docker compose file not yet executed).
+Only apps/api exists. No business module, portal or mobile code exists.
 
 ## Next executable slice
 
-Set up a NestJS API, PostgreSQL migration/connection, Next.js web portal, environment
-template, local dependency services, health/readiness checks and relevant CI.
-Then implement real sign-in, organisation membership and shipper create/list shipment.
-Use compatible stable versions verified at implementation time and commit lockfiles.
+Remaining foundation: error envelope and request identifier, then the decision-independent
+platform primitives F-07 to F-11 (docs/specs/STAGE_3_ARCHITECTURE.md, section 12), each on
+Abdullah's instruction. Business modules stay gated on their recorded decisions.
 Do not return mock successes or confuse the reference HTML with the hosted product.
 
 ## Open decisions
@@ -43,5 +46,4 @@ Do not return mock successes or confuse the reference HTML with the hosted produ
 ## Environment
 
 Repository cloned and inspected on 13 November 2026 at commit d8107af.
-tools/dev and docs/api are planned locations and do not exist yet.
-No dependencies installed; no application tests run.
+tools/dev holds the local database definition; docs/api does not exist yet.
