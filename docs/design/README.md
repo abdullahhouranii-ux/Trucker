@@ -29,6 +29,11 @@ direction for expansion only. No screen and no accessibility claim is approved.
 | X-01 (second part) | Finish registration: name, optional e-mail | EN, AR, UR (drafts) | Default, validation, success | REGISTRATION_SLICE_4.md |
 | X-05 | Session ended | EN, AR, UR (drafts) | Shown as a message on the sign-in page | REGISTRATION_SLICE_4.md |
 | X-07 (part) | Account: own details, sessions, end a session, sign out | EN, AR, UR (drafts) | Default, success, failure (revocation not confirmed, with retry), service not answering, browser-only sign-out. No editing, no language preference, no device names | REGISTRATION_SLICE_4.md |
+| B-01 | Organisation onboarding: create a draft shipper organisation, see it, change it | EN, AR, UR (drafts) | Default, validation, success, failure (not confirmed, changed elsewhere, limit, closed), service not answering | ORGANISATION_ONBOARDING_SLICE_5.md |
+| X-09 (part) | Choosing an organisation: the list of the person's organisations; the one in use is named on its page | EN, AR, UR (drafts) | Default, empty, service not answering. No role switch, no switcher in the header | ORGANISATION_ONBOARDING_SLICE_5.md |
+
+Components added in slice 5, with no token change: drop-down list, multi-line text box, draft chip,
+organisation card. Tokens stay at 0.3.0.
 
 Components added in slice 4, with no token change: form field, error summary, notice (error, success,
 development), checkbox, primary button, fact list. Tokens stay at 0.3.0.

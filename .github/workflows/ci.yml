@@ -86,6 +86,8 @@ jobs:
         run: |
           npm run dev:migrate
           node tools/dev/with-env.mjs npm run db:status
+      - name: Create the local login for the API's database role (the API in .env connects with it)
+        run: npm run dev:app-role
       - name: Start the API with .env and call it
         run: |
           NODE_ENV=development npm run dev:api > api.log 2>&1 &
@@ -141,7 +143,7 @@ jobs:
           Start-Service -Name $service.Name
           $env:PGPASSWORD = "root"
           $psql = Join-Path $env:PGBIN "psql.exe"
-          & $psql -U postgres -h localhost -v ON_ERROR_STOP=1 -c "CREATE ROLE trucker LOGIN CREATEDB PASSWORD 'trucker-local-only'"
+          & $psql -U postgres -h localhost -v ON_ERROR_STOP=1 -c "CREATE ROLE trucker LOGIN CREATEDB CREATEROLE PASSWORD 'trucker-local-only'"
           if ($LASTEXITCODE -ne 0) { throw "could not create the role" }
           & $psql -U postgres -h localhost -v ON_ERROR_STOP=1 -c "CREATE DATABASE trucker_dev OWNER trucker"
           if ($LASTEXITCODE -ne 0) { throw "could not create the database" }

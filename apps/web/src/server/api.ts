@@ -9,7 +9,7 @@ export type ApiReply<T> =
   | { ok: false; status: number; code: string; details: Record<string, unknown> };
 
 export async function api<T>(
-  method: 'GET' | 'POST' | 'DELETE',
+  method: 'GET' | 'POST' | 'DELETE' | 'PATCH',
   path: string,
   options: {
     body?: unknown;
@@ -75,4 +75,32 @@ export interface Terms {
   title: string;
   notice: string;
   paragraphs: string[];
+}
+
+export interface Organisation {
+  id: string;
+  status: string;
+  requestedCapability: string;
+  legalName: string;
+  tradingName: string | null;
+  countryCode: string;
+  registrationNumber: string;
+  address: string | null;
+  contactName: string | null;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+/** One entry of the organisation chooser. */
+export interface OrganisationSummary {
+  id: string;
+  status: string;
+  legalName: string;
+  registrationNumber: string;
+  createdAt: string;
+}
+export interface Country {
+  code: string;
+  name: { en: string; ar: string; ur: string };
+  fixture: boolean;
 }

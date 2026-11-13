@@ -18,6 +18,9 @@ const apiPort = Number(process.env.API_TEST_PORT ?? 3102);
 const origin = `http://localhost:${port}`;
 const apiMain = fileURLToPath(new URL('../../api/dist/main.js', import.meta.url));
 const apiMigrate = fileURLToPath(new URL('../../api/dist/cli/migrate.js', import.meta.url));
+const apiLocalDatabase = fileURLToPath(
+  new URL('../../api/dist/cli/local-database.js', import.meta.url),
+);
 const appDir = fileURLToPath(new URL('..', import.meta.url));
 const outDir = fileURLToPath(new URL('./output/', import.meta.url));
 const locales = ['en', 'ar', 'ur'];
@@ -30,6 +33,9 @@ const REVOCATIONS = [
   ['POST', /^\/auth\/sign-out$/],
   ['DELETE', /^\/me\/sessions\/[^/]+$/],
   ['POST', /^\/me\/sessions\/revoke-others$/],
+  // Creating and changing an organisation: the same question, was it done or not.
+  ['POST', /^\/organisations$/],
+  ['PATCH', /^\/organisations\/[^/]+$/],
 ];
 function startRelay() {
   const server = http.createServer((request, response) => {
@@ -201,6 +207,9 @@ function findOverflow() {
     const label = `${element.tagName.toLowerCase()}.${element.className}`;
     if (box.right > viewport + 1 || box.left < -1) found.push(`${label} is outside the viewport`);
     const style = getComputedStyle(element);
+    // A single-line text box scrolls a value longer than itself: that is how it works, and a
+    // person can move through it. Everything else must not cut its content off.
+    if (element.tagName === 'INPUT') continue;
     if (
       element.scrollWidth > element.clientWidth + 1 &&
       element.clientWidth > 0 &&
@@ -241,6 +250,15 @@ async function main() {
     SIGN_IN_CODE_MAX_PER_HOUR: '30',
   };
   await run(apiMigrate, ['up'], apiEnv);
+  // The API runs as its own database role, which row security binds, never as the migration
+  // role. The fictional countries are loaded with the explicit acknowledgement they require.
+  const appRole = await run(apiLocalDatabase, ['app-role'], apiEnv);
+  apiEnv.APP_DATABASE_URL = /APP_DATABASE_URL=(\S+)/.exec(appRole)[1];
+  apiEnv.COUNTRY_FIXTURES = 'local-development';
+  await run(apiLocalDatabase, ['fixtures'], {
+    ...apiEnv,
+    TRUCKER_LOCAL_FIXTURES: 'local-development-only',
+  });
   let apiLog = '';
   let apiServer;
   const apiAnswers = async () => {
@@ -574,11 +592,11 @@ async function main() {
     mkdirSync(outDir, { recursive: true });
     // At most five pictures, for design review only.
     const shots = {
-      'en:sign-in error': 'sign-in-error-en-390',
-      'ur:code': 'code-ur-390',
-      'ur:sign-out unconfirmed': 'sign-out-unconfirmed-ur-390',
-      'ur:account unavailable': 'account-unavailable-ur-390',
-      'en:signed out locally': 'signed-out-locally-en-390',
+      'en:organisation new error': 'organisation-new-error-en-390',
+      'ar:organisation new': 'organisation-new-ar-390',
+      'ur:organisation': 'organisation-ur-390',
+      'en:organisations': 'organisations-en-390',
+      'ur:organisation unconfirmed': 'organisation-unconfirmed-ur-390',
     };
     // Fictional numbers: country code 999 is not assigned. Unique per run.
     const stamp = String(Date.now()).slice(-7);
@@ -825,6 +843,199 @@ async function main() {
       );
       await inspect(locale, 'account');
       people[locale] = { phone, name };
+
+      // ----------------------------------------------------------------------------------
+      // Organisation onboarding, in this language
+      // ----------------------------------------------------------------------------------
+      const org = messagesFor(locale).org;
+      const sessionTokenNow = (await browser.cookies()).find(
+        (cookie) => cookie.name === 'trucker_session',
+      )?.value;
+      const apiAs = async (method, route, body) => {
+        const response = await fetch(apiOrigin + route, {
+          method,
+          headers: {
+            authorization: `Bearer ${sessionTokenNow}`,
+            ...(body ? { 'content-type': 'application/json' } : {}),
+          },
+          ...(body ? { body: JSON.stringify(body) } : {}),
+        });
+        return { status: response.status, body: await response.json() };
+      };
+      await submit('#open-organisations');
+      check(
+        'organisation',
+        page.url() === `${origin}/${locale}/organisations` &&
+          (await text('#no-organisations')) === org.none,
+        `${locale}: the organisations page for a new person is ${page.url()}`,
+      );
+      await inspect(locale, 'organisations empty');
+      await submit('#create-organisation');
+      check(
+        'organisation',
+        (await text('#fixture-notice')) === org.fixtureNotice,
+        `${locale}: the fictional countries are not labelled as development-only`,
+      );
+      await inspect(locale, 'organisation new');
+
+      // Nothing typed: each required field is named and linked; focus is on the summary.
+      await submit('#organisation-new-form button[type=submit]');
+      const orgSummary = await page.evaluate(() =>
+        [...document.querySelectorAll('#error-summary a')].map((link) => link.getAttribute('href')),
+      );
+      check(
+        'organisation',
+        orgSummary.join(',') === '#legalName,#countryCode,#registrationNumber' &&
+          (await focusedId()) === 'error-summary',
+        `${locale}: an empty organisation form reported ${orgSummary.join(',')}`,
+      );
+      check(
+        'organisation',
+        (await apiAs('GET', '/organisations')).body.organisations.length === 0,
+        `${locale}: a refused form created an organisation`,
+      );
+      await inspect(locale, 'organisation new error');
+
+      const legalName = {
+        en: 'Fixture Freight Company (fictional)',
+        ar: 'شركة الشحن التجريبية (وهمية)',
+        ur: 'آزمائشی فریٹ کمپنی (فرضی)',
+      }[locale];
+      const registrationNumber = `FX-${stamp}-${index}`;
+      await page.type('#legalName', legalName);
+      await page.select('#countryCode', 'XA');
+      await page.type('#registrationNumber', registrationNumber);
+      await page.type('#address', 'Unit 7, Example Road');
+      // The draft survives a change of language and back.
+      const otherLanguage = locale === 'en' ? 'ar' : 'en';
+      await submit(`.languages a[lang="${otherLanguage}"]`);
+      await page
+        .waitForFunction(() => document.querySelector('#legalName').value !== '', { timeout: 5000 })
+        .catch(() => undefined);
+      await submit(`.languages a[lang="${locale}"]`);
+      await page
+        .waitForFunction(() => document.querySelector('#legalName').value !== '', { timeout: 5000 })
+        .catch(() => undefined);
+      const keptOrganisation = await page.evaluate(() =>
+        ['legalName', 'countryCode', 'registrationNumber', 'address']
+          .map((id) => document.getElementById(id).value)
+          .join('|'),
+      );
+      check(
+        'organisation',
+        keptOrganisation === `${legalName}|XA|${registrationNumber}|Unit 7, Example Road`,
+        `${locale}: after changing language the organisation draft is "${keptOrganisation}"`,
+      );
+      await submit('#organisation-new-form button[type=submit]');
+      const organisationId = /\/organisations\/([0-9a-f-]{36})\?done=created$/.exec(
+        page.url(),
+      )?.[1];
+      check(
+        'organisation',
+        Boolean(organisationId) && (await text('#organisation-confirmation')) === org.created,
+        `${locale}: creating an organisation led to ${page.url()}`,
+      );
+      check(
+        'organisation',
+        ((await text('#organisation-status')) ?? '').includes(org.statusDraft) &&
+          ((await text('#organisation-status')) ?? '').includes(org.draftNotice) &&
+          (await text('h1')) === legalName,
+        `${locale}: the organisation page does not say it is an unverified draft`,
+      );
+      const stored = (await apiAs('GET', `/organisations/${organisationId}`)).body.organisation;
+      check(
+        'organisation',
+        stored?.legalName === legalName &&
+          stored?.status === 'draft' &&
+          stored?.countryCode === 'XA' &&
+          stored?.requestedCapability === 'ship' &&
+          stored?.version === 1,
+        `${locale}: what the API stored is ${JSON.stringify(stored)}`,
+      );
+      await inspect(locale, 'organisation');
+
+      // Change it. The draft of a change also survives a change of language.
+      const formSelector = `#organisation-form-${organisationId}`;
+      await page.type('#tradingName', 'Fixture Freight');
+      await submit(`.languages a[lang="${otherLanguage}"]`);
+      await page
+        .waitForFunction(() => document.querySelector('#tradingName').value !== '', {
+          timeout: 5000,
+        })
+        .catch(() => undefined);
+      await submit(`.languages a[lang="${locale}"]`);
+      await page
+        .waitForFunction(() => document.querySelector('#tradingName').value !== '', {
+          timeout: 5000,
+        })
+        .catch(() => undefined);
+      check(
+        'organisation',
+        (await page.evaluate(() => document.querySelector('#tradingName').value)) ===
+          'Fixture Freight',
+        `${locale}: the draft of a change was lost on a language change`,
+      );
+      await submit(`${formSelector} button[type=submit]`);
+      check(
+        'organisation',
+        page.url() === `${origin}/${locale}/organisations/${organisationId}?done=saved` &&
+          (await text('#organisation-confirmation')) === org.saved &&
+          ((await text('#organisation-facts')) ?? '').includes('Fixture Freight'),
+        `${locale}: saving a change led to ${page.url()}`,
+      );
+      check(
+        'organisation',
+        (await apiAs('GET', `/organisations/${organisationId}`)).body.organisation.version === 2 &&
+          (await apiAs('GET', `/organisations/${organisationId}/history`)).body.entries.length ===
+            2,
+        `${locale}: the change or its history entry is missing on the server`,
+      );
+      await inspect(locale, 'organisation saved');
+
+      // Someone else saves in between (here: the API directly). The form's save is refused,
+      // nothing is overwritten, and the current values are shown.
+      const elsewhere = await apiAs('PATCH', `/organisations/${organisationId}`, {
+        legalName: `${legalName} 2`,
+        tradingName: 'Changed elsewhere',
+        countryCode: 'XA',
+        registrationNumber,
+        version: 2,
+      });
+      await page.type('#contactName', 'Overwrite attempt');
+      await submit(`${formSelector} button[type=submit]`);
+      check(
+        'organisation',
+        elsewhere.status === 200 &&
+          page.url() ===
+            `${origin}/${locale}/organisations/${organisationId}?error=organisation_changed` &&
+          ((await text('#error-summary')) ?? '').includes(org.errors.organisation_changed) &&
+          (await focusedId()) === 'error-summary',
+        `${locale}: a stale save led to ${page.url()}`,
+      );
+      const afterStale = (await apiAs('GET', `/organisations/${organisationId}`)).body.organisation;
+      check(
+        'organisation',
+        afterStale.tradingName === 'Changed elsewhere' &&
+          afterStale.contactName === null &&
+          afterStale.version === 3 &&
+          (await page.evaluate(() => document.querySelector('#tradingName').value)) ===
+            'Changed elsewhere' &&
+          (await page.evaluate(() => document.querySelector('#contactName').value)) === '',
+        `${locale}: a stale save overwrote the other change, or old values are shown`,
+      );
+      await inspect(locale, 'organisation changed elsewhere');
+
+      // Stored, not simulated: the list shows it after a fresh load.
+      await open(`/${locale}/organisations`, 390);
+      check(
+        'organisation',
+        (await page.evaluate(() => document.querySelectorAll('.organisation').length)) === 1 &&
+          ((await text('.organisation h2')) ?? '') === `${legalName} 2`,
+        `${locale}: the list does not show the one organisation`,
+      );
+      await inspect(locale, 'organisations');
+      people[locale].organisationId = organisationId;
+      await open(`/${locale}/account`, 390);
       // Sign out before the next language, so each run starts as a visitor. The last stays signed in.
       if (index < locales.length - 1) {
         const plainToken = (await browser.cookies()).find(
@@ -872,7 +1083,11 @@ async function main() {
       'journey security',
       !apiLog.includes(people.ur.phone.slice(1)) &&
         !/[^0-9][0-9]{6}[^0-9]/.test(
-          apiLog.replace(/"time":"[^"]*"/g, '').replace(/"requestId":"[^"]*"/g, ''),
+          apiLog
+            .replace(/"time":"[^"]*"/g, '')
+            .replace(/"requestId":"[^"]*"/g, '')
+            // Organisation identifiers appear in paths; they are random, not secrets.
+            .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, ''),
         ),
       'the API log contains a number or a code',
     );
@@ -948,6 +1163,118 @@ async function main() {
       'the ended session is not explained',
     );
     await secondContext.close();
+
+    // ------------------------------------------------------------------------------------
+    // Organisations: another person's organisation, and answers lost on the way back
+    // ------------------------------------------------------------------------------------
+    const urOrg = messagesFor('ur').org;
+    const urToken = await tokenOf(browser.defaultBrowserContext());
+    const urApi = async (route) => {
+      const response = await fetch(apiOrigin + route, {
+        headers: { authorization: `Bearer ${urToken}` },
+      });
+      return { status: response.status, body: await response.json() };
+    };
+    // Another person's organisation answers exactly like one that does not exist.
+    const theirs = await open(`/ur/organisations/${people.en.organisationId}`, 390);
+    const nothing = await open('/ur/organisations/00000000-0000-4000-8000-000000000000', 390);
+    check(
+      'organisation',
+      theirs.status() === 404 &&
+        nothing.status() === 404 &&
+        !(await page.content()).includes('Fixture Freight Company'),
+      `another person's organisation answered ${theirs.status()}, a missing one ${nothing.status()}`,
+    );
+    check(
+      'organisation',
+      (await urApi(`/organisations/${people.en.organisationId}`)).status === 404 &&
+        (await urApi('/organisations')).body.organisations.length === 1,
+      'the API shows another person an organisation that is not theirs',
+    );
+
+    // Creating: the server creates the organisation, the answer is lost.
+    await open('/ur/organisations/new', 390);
+    await page.type('#legalName', 'ادارہ جس کا جواب گم ہوا (فرضی)');
+    await page.select('#countryCode', 'XB');
+    await page.type('#registrationNumber', `LOST-${stamp}`);
+    relay.mode = 'lose';
+    await submit('#organisation-new-form button[type=submit]');
+    const afterLostCreate = (await urApi('/organisations')).body.organisations;
+    check(
+      'lost answer',
+      relay.lost.length === 1 &&
+        relay.lost[0] === 'POST /organisations -> 201' &&
+        afterLostCreate.length === 2,
+      `the organisation whose answer was lost was not created on the server: ${relay.lost}`,
+    );
+    const lostCreate = (await text('#error-summary')) ?? '';
+    const retryKeyShown = new URL(page.url()).searchParams.get('retry');
+    check(
+      'lost answer',
+      page.url().startsWith(`${origin}/ur/organisations/new?error=create_unconfirmed`) &&
+        lostCreate.includes(urOrg.errors.create_unconfirmed) &&
+        (await page.evaluate(() => document.getElementById('organisation-confirmation'))) === null,
+      `a lost create answer led to ${page.url()} without the uncertain message`,
+    );
+    await inspect('ur', 'organisation unconfirmed');
+    relay.mode = 'pass';
+    // Trying again with the same details and the same key makes no second organisation.
+    await submit('#retry-organisations');
+    await page
+      .waitForFunction(() => document.querySelector('#legalName')?.value !== '', { timeout: 5000 })
+      .catch(() => undefined);
+    check(
+      'lost answer',
+      (await page.evaluate(() => document.querySelector('input[name=retryKey]')?.value)) ===
+        retryKeyShown &&
+        (await page.evaluate(() => document.querySelector('#registrationNumber')?.value)) ===
+          `LOST-${stamp}`,
+      'after a lost answer the form did not come back with the same retry key and details',
+    );
+    await submit('#organisation-new-form button[type=submit]');
+    const lostId = /\/organisations\/([0-9a-f-]{36})\?done=created$/.exec(page.url())?.[1];
+    const afterRetry = (await urApi('/organisations')).body.organisations;
+    check(
+      'lost answer',
+      Boolean(lostId) &&
+        afterRetry.length === 2 &&
+        afterRetry.some((organisation) => organisation.id === lostId) &&
+        afterLostCreate.some((organisation) => organisation.id === lostId),
+      `the retry made a second organisation, or led to ${page.url()}`,
+    );
+
+    // Saving a change: the server saves it, the answer is lost.
+    await page.evaluate(() => (document.querySelector('#legalName').value = ''));
+    await page.type('#legalName', 'نیا نام (فرضی)');
+    relay.mode = 'lose';
+    await submit(`#organisation-form-${lostId} button[type=submit]`);
+    const savedOnServer = (await urApi(`/organisations/${lostId}`)).body.organisation;
+    check(
+      'lost answer',
+      relay.lost.length === 2 &&
+        relay.lost[1] === `PATCH /organisations/${lostId} -> 200` &&
+        savedOnServer.legalName === 'نیا نام (فرضی)' &&
+        savedOnServer.version === 2,
+      `the change whose answer was lost was not saved on the server: ${relay.lost}`,
+    );
+    check(
+      'lost answer',
+      page.url() === `${origin}/ur/organisations/${lostId}?error=save_unconfirmed` &&
+        ((await text('#error-summary')) ?? '').includes(urOrg.errors.save_unconfirmed),
+      `a lost save answer led to ${page.url()} without the uncertain message`,
+    );
+    relay.mode = 'pass';
+    await submit('#retry-organisations');
+    check(
+      'lost answer',
+      page.url() === `${origin}/ur/organisations/${lostId}` &&
+        (await text('h1')) === 'نیا نام (فرضی)' &&
+        (await text('#error-summary')) === null &&
+        (await page.evaluate(() => document.querySelector('input[name=version]').value)) === '2',
+      `after the connection returned the page does not show the saved state: ${page.url()}`,
+    );
+    relay.lost.length = 0;
+    await open('/ur/account', 390);
 
     // ------------------------------------------------------------------------------------
     // Ending sessions when the API does not confirm it

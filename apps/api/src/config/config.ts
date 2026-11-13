@@ -14,6 +14,16 @@ const schema = z.object({
   DATABASE_URL: z
     .string()
     .regex(/^postgres(ql)?:\/\/\S+$/, 'must be a postgres:// connection string'),
+  /**
+   * Connection string for the API's own database role, which owns nothing and cannot bypass
+   * row security. DATABASE_URL is the migration role. When this is unset the API connects with
+   * DATABASE_URL; if that role turns out to be privileged, organisation data stays closed
+   * (and production refuses to start). See src/database/access.ts.
+   */
+  APP_DATABASE_URL: z
+    .string()
+    .regex(/^postgres(ql)?:\/\/\S+$/, 'must be a postgres:// connection string')
+    .optional(),
   DB_POOL_MAX: z.coerce.number().int().min(1).max(100).default(10),
   /** Limit on establishing a connection. Does not bound a query on an open connection. */
   DB_CONNECT_TIMEOUT_MS: milliseconds(100, 60_000, 3_000),
@@ -52,6 +62,17 @@ const schema = z.object({
   SIGN_IN_CODE_MAX_PER_HOUR: z.coerce.number().int().min(1).max(30).optional(),
   SESSION_IDLE_MINUTES: z.coerce.number().int().min(1).max(1440).optional(),
   SESSION_ABSOLUTE_HOURS: z.coerce.number().int().min(1).max(720).optional(),
+
+  /** How many organisations one person may create. Development default; production sets it. */
+  ORGANISATION_CREATION_LIMIT: z.coerce.number().int().min(1).max(1000).optional(),
+  /** How long a retry key is remembered. After that the same key is treated as new. */
+  RETRY_KEY_RETENTION_HOURS: z.coerce.number().int().min(1).max(720).optional(),
+  /**
+   * Whether fixture countries count as open for registration. `local-development` is refused
+   * in production and with a remote database, and has no effect unless the database itself is
+   * marked local-development or test (db/migrations/0003, trucker.environment).
+   */
+  COUNTRY_FIXTURES: z.enum(['none', 'local-development']).default('none'),
 });
 
 /** Published on purpose: it only exists so local development needs no setup. */
@@ -64,6 +85,8 @@ export const SECURITY_PERIOD_DEFAULTS = {
   SIGN_IN_CODE_MAX_PER_HOUR: 5,
   SESSION_IDLE_MINUTES: 30,
   SESSION_ABSOLUTE_HOURS: 12,
+  ORGANISATION_CREATION_LIMIT: 5,
+  RETRY_KEY_RETENTION_HOURS: 24,
 } as const;
 type PeriodKey = keyof typeof SECURITY_PERIOD_DEFAULTS;
 
@@ -123,9 +146,26 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
         }
       }
     }
+    if (production && parsed.COUNTRY_FIXTURES !== 'none') {
+      problems.push('COUNTRY_FIXTURES must not be set in production');
+    }
+    if (production && !parsed.APP_DATABASE_URL) {
+      problems.push(
+        'APP_DATABASE_URL must be set in production (the API must not use the migration role)',
+      );
+    }
+    if (production && parsed.APP_DATABASE_URL === parsed.DATABASE_URL) {
+      problems.push('APP_DATABASE_URL must differ from DATABASE_URL in production');
+    }
+    if (
+      parsed.COUNTRY_FIXTURES === 'local-development' &&
+      !databaseIsLocal(parsed.APP_DATABASE_URL ?? parsed.DATABASE_URL)
+    ) {
+      problems.push('COUNTRY_FIXTURES local-development needs a database on this machine');
+    }
     if (
       parsed.SIGN_IN_CODE_DELIVERY === 'development-display' &&
-      !databaseIsLocal(parsed.DATABASE_URL)
+      !databaseIsLocal(parsed.APP_DATABASE_URL ?? parsed.DATABASE_URL)
     ) {
       problems.push('SIGN_IN_CODE_DELIVERY development-display needs a database on this machine');
     }

@@ -1,0 +1,32 @@
+{
+  "_notice": "FICTIONAL. Not real countries and not approved configuration. Loaded only into a database marked local-development or test. Codes are from the range reserved for private use.",
+  "countries": [
+    {
+      "code": "XA",
+      "registrationState": "enabled",
+      "name": {
+        "en": "Fixture country A (not real)",
+        "ar": "بلد تجريبي أ (غير حقيقي)",
+        "ur": "آزمائشی ملک الف (حقیقی نہیں)"
+      }
+    },
+    {
+      "code": "XB",
+      "registrationState": "enabled",
+      "name": {
+        "en": "Fixture country B (not real)",
+        "ar": "بلد تجريبي ب (غير حقيقي)",
+        "ur": "آزمائشی ملک ب (حقیقی نہیں)"
+      }
+    },
+    {
+      "code": "XC",
+      "registrationState": "closed",
+      "name": {
+        "en": "Fixture country C, closed (not real)",
+        "ar": "بلد تجريبي ج، مغلق (غير حقيقي)",
+        "ur": "آزمائشی ملک ج، بند (حقیقی نہیں)"
+      }
+    }
+  ]
+}
