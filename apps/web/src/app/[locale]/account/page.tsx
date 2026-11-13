@@ -143,6 +143,16 @@ export default async function AccountPage({ params, searchParams }: Props) {
         </div>
       </dl>
 
+      <section className="section" aria-labelledby="organisations-title">
+        <h2 id="organisations-title">{t.organisations}</h2>
+        <p>{m.org.listLead}</p>
+        <div className="form-inline">
+          <a className="button" href={`/${locale}/organisations`} id="open-organisations">
+            {t.organisations}
+          </a>
+        </div>
+      </section>
+
       <section className="section" aria-labelledby="sessions-title">
         <h2 id="sessions-title">{t.sessionsTitle}</h2>
         <p>{t.sessionsLead}</p>

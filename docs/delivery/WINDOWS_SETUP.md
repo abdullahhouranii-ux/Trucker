@@ -30,11 +30,19 @@ Install PostgreSQL 16, then create the local role and database once (you will be
 `postgres` password chosen during installation):
 
 ```powershell
-& "C:\Program Files\PostgreSQL\16\bin\psql.exe" -U postgres -c "CREATE ROLE trucker LOGIN CREATEDB PASSWORD 'trucker-local-only'"
+& "C:\Program Files\PostgreSQL\16\bin\psql.exe" -U postgres -c "CREATE ROLE trucker LOGIN CREATEDB CREATEROLE PASSWORD 'trucker-local-only'"
 & "C:\Program Files\PostgreSQL\16\bin\psql.exe" -U postgres -c "CREATE DATABASE trucker_dev OWNER trucker"
 ```
 
-`CREATEDB` is needed because each test file creates and drops its own database.
+`CREATEDB` is needed because each test file creates and drops its own database. `CREATEROLE` is
+needed because the migrations create the role the API runs as (`trucker_app`) and
+`npm run db:app-role` creates a local login for it. A role created before 13 November 2026 lacks
+it: run `ALTER ROLE trucker CREATEROLE` once, as `postgres`.
+
+After `npm run db:migrate` (or `npm run dev:migrate`), run `npm run db:app-role` (or
+`npm run dev:app-role`). It prints the `APP_DATABASE_URL` the API must use; `.env.example`
+already holds that value. Without it the API connects as the migration role and keeps
+organisation data closed.
 
 ## Install, check and run
 

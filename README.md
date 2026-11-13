@@ -20,7 +20,11 @@ mobile number with a one-time code, sessions, and registration with demonstratio
 supplier is chosen, so codes are displayed only on a developer's own machine; production refuses
 that setting and has registration closed.
 
-No other business feature exists: no organisations, shipments, bookings, portals or mobile
+Draft shipper organisations can be created and changed (docs/delivery/ORGANISATION_ONBOARDING_SLICE_5.md).
+A draft is not verified and can do nothing commercial. No real country is enabled, so outside
+local development, with its fictional test countries, nothing can be created.
+
+No other business feature exists: no verification, shipments, bookings, portals or mobile
 application. Those are specified provisionally in docs/specs and gated on recorded decisions.
 
 ## Web application

@@ -1,0 +1,66 @@
+# Trucker: final audit backlog (wording, translation, accessibility)
+
+Version 0.2, 13 November 2026. Owner: Abdullah.
+
+Repository copy: `docs/delivery/FINAL_AUDIT_BACKLOG.md`.
+
+## 1. What goes here, and what does not
+
+Rule set by Abdullah on 13 November 2026:
+
+| Kind of finding | Handling |
+|---|---|
+| Wording and translation corrections | Collected here. Fixed together in the final audit, not one at a time |
+| Accessibility observations that need a human or a device to judge | Collected here for the accessibility audit |
+| Security, functionality and data-integrity defects | **Fixed immediately** in the slice where they are found, with a test. Never parked here |
+
+An item leaves this list only when it is fixed and checked, or when Abdullah decides it will not be done. Every entry says where it was seen and what is and is not known.
+
+## 2. Accessibility audit items
+
+| ID | Finding | Where seen | What is known | What is not known | Proposed check |
+|---|---|---|---|---|---|
+| AX-01 | **For a moment after a form is sent, the page has no title.** Next.js swaps the page in place after a server action and the title arrives slightly after the content | Slice 4 (registration), commit `e554d94`. The automated rule `document-title` failed in 2 of 5 full runs of the browser checks; the one captured failure was on the code-entry page in English | The title does arrive. The automated check now waits for it. The same mechanism applies to every form in slice 5 | Whether a screen reader announces the new page without a title, late, or not at all. How long the gap is on a slow phone | Test with TalkBack, VoiceOver and NVDA on the sign-in, code, registration, account and organisation pages. If the announcement is wrong, make the title present with the first content |
+| AX-02 | No screen-reader test has been run on any built page | Slices 3, 4, 5 | Automated rules report 0 violations; focus moves to the error summary after a refused form | Everything a screen reader actually says, in all three languages | Same sessions as AX-01 |
+| AX-03 | No physical phone, Safari or Firefox test | Slices 3, 4, 5 | Emulated widths and doubled text size pass in Chrome | Real text shaping, system font scaling and touch behaviour, especially for Arabic and Urdu | Representative Android and iPhone devices; Safari and Firefox on desktop |
+| AX-04 | A draft survives a language change only with scripts enabled | Slices 4, 5 | Without scripts the page works but typed values are lost on a language change | Whether that matters for the people who will use it | Decide after device testing |
+| AX-05 | A long name in a single-line box is not fully visible on a narrow phone while it is being edited | Slice 5, organisation form at 320 px and with text doubled | The box scrolls, as text boxes do; the full name is shown above the form. The automated overflow check exempts single-line text boxes for this reason | Whether people find it hard to review a long legal name before saving | Consider a multi-line box for the legal name after device testing |
+| AX-06 | The country list is a plain drop-down | Slice 5 | Works with keyboard and passes automated rules with two fixture entries | How it behaves with a real list of countries, in three languages, with a screen reader | Recheck when real countries are approved |
+
+No accessibility conformance is claimed for any page.
+
+## 3. Wording corrections (English source text)
+
+| ID | Finding | Where seen | Note |
+|---|---|---|---|
+| WD-01 | The code page says "We sent a 6-digit code" in a build where no message is sent. A visitor who is not on the developer's machine sees that sentence and no code | Slice 4, code-entry page | Development builds only; production cannot start code delivery |
+| WD-02 | After an unconfirmed "end all other sessions" that had in fact worked, a retry reports "Other sessions ended: 0" | Slice 4, account page | True, but reads oddly |
+| WD-03 | After an unconfirmed "end this session" that had in fact worked, a retry reports "That session was not found. It may have ended already" | Slice 4, account page | True. Consider saying plainly that the session is no longer active |
+| WD-04 | The header shows "Sign in" on every page, including when the person is signed in | Slices 4, 5, header | The header does not read the session. Decide what it should show |
+| WD-05 | Homepage and footer copy is draft, and launch wording depends on decisions not yet made (D-001, D-003b) | Slice 3 | Marked as draft on the page |
+| WD-06 | The details list reuses the form labels, so it shows "Trading name (optional)", "Address (optional)" and "Contact person (optional)" as headings of saved values | Slice 5, organisation page | Needs separate labels without "(optional)" |
+| WD-07 | "Your role: Administrator" is shown for every organisation, because no other role exists yet | Slice 5, organisation page | Review when roles are designed |
+| WD-08 | After a lost answer on create, changing the details and trying again reports "An earlier attempt may already have created this organisation. Check your organisations before trying again." | Slice 5, create form | Correct, but the next step could be clearer |
+| WD-09 | The draft notice states what a draft does not give ("no ownership of the company's name or registration number and no right to trade") | Slice 5, create form and organisation page | Wording follows decision O-1. It is a statement with legal weight and needs review with the terms |
+| WD-10 | "Verification is not available yet" | Slice 5, organisation page | True for this slice; must change when verification is built |
+
+## 4. Translation corrections (Arabic and Urdu)
+
+All Arabic and Urdu text in the repository is a draft written without a native reader. Per the Stage 4 rule, critical text needs human review before any real user sees it.
+
+| ID | Scope | Where | Priority for review |
+|---|---|---|---|
+| TR-01 | Session and sign-out messages, including the "may still be active" wording | Slice 4, `auth.errors` and `auth.account` | High: the distinction between confirmed, not confirmed and browser-only must survive translation |
+| TR-02 | Sign-in, code and registration messages and errors | Slice 4, `auth.signIn`, `auth.code`, `auth.register`, `auth.errors` | High |
+| TR-03 | Demonstration terms notice in three languages | Slice 4, API terms text | Low: placeholder text, to be replaced by approved legal terms, which need professional translation in any case |
+| TR-04 | Homepage, navigation, environment banner, not-found page | Slice 3 | Medium |
+| TR-05 | Urdu typeface: Noto Sans Arabic is provisional for body text; Nastaliq for large display text is undecided | Design tokens 0.3.0 | Needs Urdu readers on phones |
+| TR-06 | Terminology is not yet fixed across languages (for example "session", "sign out", "one-time code", "organisation", "draft", "verified") | All | Agree a short glossary before the review, so corrections are consistent |
+| TR-07 | Organisation messages: the draft notice, the "not confirmed" messages for create and save, the changed-elsewhere message, field labels and errors | Slice 5, `org` | High: the draft notice and the uncertain-outcome messages carry meaning that must not shift |
+| TR-08 | Names of the fictional countries | Slice 5, `db/fixtures/local-development/countries.json` | Low: development data only |
+
+## 5. How this list is used
+
+- Each slice adds what it finds, with the slice and commit.
+- The slice record in `docs/delivery/` keeps the evidence; this list keeps the open work.
+- When the final audit is scheduled, sections 2 to 4 become its checklist.

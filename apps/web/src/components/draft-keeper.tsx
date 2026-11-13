@@ -5,24 +5,34 @@ import { useEffect } from 'react';
 // Keeps what a person has typed in a form while they change language or reload, by saving it
 // in this browser tab only (sessionStorage). Nothing is sent anywhere. One-time codes and
 // anything else not marked with data-draft are never saved. `clear` removes a finished draft.
-export function DraftKeeper({ formId, clear = false }: { formId: string; clear?: boolean }) {
+// `scope` ties a draft to one state of a record (its version): a draft made against an older
+// state is ignored. `overwrite` puts the draft over values the page already shows, for forms
+// that edit a saved record.
+export function DraftKeeper({
+  formId,
+  clear = false,
+  scope = '',
+  overwrite = false,
+}: {
+  formId: string;
+  clear?: boolean;
+  scope?: string;
+  overwrite?: boolean;
+}) {
   useEffect(() => {
-    const storageKey = `trucker-draft:${formId}`;
+    const storageKey = `trucker-draft:${formId}${scope ? `:${scope}` : ''}`;
     let storage: Storage;
     try {
       storage = window.sessionStorage;
-      if (clear) {
-        storage.removeItem(storageKey);
-        return;
-      }
+      // A finished draft is removed; what is typed from now on is kept again.
+      if (clear) storage.removeItem(storageKey);
     } catch {
       return; // storage is unavailable: the form simply does not keep a draft
     }
     const form = document.getElementById(formId);
     if (!(form instanceof HTMLFormElement)) return;
-    const fields = (): (HTMLInputElement | HTMLTextAreaElement)[] => [
-      ...form.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('[data-draft]'),
-    ];
+    type DraftField = HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
+    const fields = (): DraftField[] => [...form.querySelectorAll<DraftField>('[data-draft]')];
     try {
       const saved = JSON.parse(storage.getItem(storageKey) ?? '{}') as Record<
         string,
@@ -32,7 +42,7 @@ export function DraftKeeper({ formId, clear = false }: { formId: string; clear?:
         const value = saved[field.name];
         if (field instanceof HTMLInputElement && field.type === 'checkbox') {
           if (typeof value === 'boolean') field.checked = value;
-        } else if (typeof value === 'string' && field.value === '') {
+        } else if (typeof value === 'string' && (overwrite || field.value === '')) {
           field.value = value;
         }
       }
@@ -59,6 +69,6 @@ export function DraftKeeper({ formId, clear = false }: { formId: string; clear?:
       form.removeEventListener('input', save);
       form.removeEventListener('change', save);
     };
-  }, [formId, clear]);
+  }, [formId, clear, scope, overwrite]);
   return null;
 }

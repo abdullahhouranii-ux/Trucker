@@ -3,7 +3,11 @@ import type { AppConfig } from '../config/config.js';
 
 type PoolConfig = Pick<
   AppConfig,
-  'DATABASE_URL' | 'DB_POOL_MAX' | 'DB_CONNECT_TIMEOUT_MS' | 'DB_STATEMENT_TIMEOUT_MS'
+  | 'DATABASE_URL'
+  | 'APP_DATABASE_URL'
+  | 'DB_POOL_MAX'
+  | 'DB_CONNECT_TIMEOUT_MS'
+  | 'DB_STATEMENT_TIMEOUT_MS'
 >;
 
 /**
@@ -14,7 +18,8 @@ type PoolConfig = Pick<
  */
 export function createPool(config: PoolConfig): pg.Pool {
   const pool = new pg.Pool({
-    connectionString: config.DATABASE_URL,
+    // The API's own role when one is configured; never the migration role in production.
+    connectionString: config.APP_DATABASE_URL ?? config.DATABASE_URL,
     max: config.DB_POOL_MAX,
     connectionTimeoutMillis: config.DB_CONNECT_TIMEOUT_MS,
     statement_timeout: config.DB_STATEMENT_TIMEOUT_MS,

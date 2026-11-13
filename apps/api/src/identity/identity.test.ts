@@ -211,6 +211,9 @@ const production = {
   SIGN_IN_CODE_MAX_PER_HOUR: '5',
   SESSION_IDLE_MINUTES: '30',
   SESSION_ABSOLUTE_HOURS: '12',
+  ORGANISATION_CREATION_LIMIT: '5',
+  RETRY_KEY_RETENTION_HOURS: '24',
+  APP_DATABASE_URL: 'postgres://trucker_api:secret@db.internal:5432/trucker',
 };
 function problems(env: Record<string, string | undefined>): readonly string[] {
   try {
