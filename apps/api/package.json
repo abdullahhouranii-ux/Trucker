@@ -13,7 +13,9 @@
     "db:migrate": "npm run build && node dist/cli/migrate.js up",
     "db:status": "npm run build && node dist/cli/migrate.js status",
     "db:app-role": "npm run build && node dist/cli/local-database.js app-role",
-    "db:fixtures": "npm run build && node dist/cli/local-database.js fixtures"
+    "db:fixtures": "npm run build && node dist/cli/local-database.js fixtures",
+    "db:mark": "npm run build && node dist/cli/local-database.js mark",
+    "db:settings": "npm run build && node dist/cli/security-settings.js"
   },
   "dependencies": {
     "@nestjs/common": "12.5.0",

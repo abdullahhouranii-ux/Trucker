@@ -1,18 +1,20 @@
+import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import type pg from 'pg';
 import type { AppConfig } from '../config/config.js';
 import { ApiError } from '../http/api-error.js';
-import { APP_CONFIG, CLOCK, DB_POOL } from '../tokens.js';
+import { APP_CONFIG, DB_POOL } from '../tokens.js';
 import { maskPhone } from './phone.js';
-import { generateCode, hashCode, hashToken, sameHash, sessionToken } from './secrets.js';
+import { codePepper, hashToken, sessionToken } from './secrets.js';
 import { DEMONSTRATION_TERMS_VERSION, type TermsLanguage } from './terms.js';
 
-export type Clock = () => Date;
-
-/** A repeated sign-in request is answered again only for this long after the code was used. */
-const VERIFY_RETRY_WINDOW_MS = 2 * 60_000;
-/** The "last used" time of a session is rewritten at most this often. */
-const LAST_USED_RESOLUTION_MS = 60_000;
+/**
+ * Sign-in, sessions and registration. The API's database role has no right on the identity
+ * tables: every operation here is one call to a database function that runs as the tables'
+ * owner (db/migrations/0004_identity_hardening.sql). The functions create and compare the
+ * one-time codes, read the limits from a protected settings row and read the time from the
+ * database's own clock, so nothing this service sends can loosen a limit or move time.
+ */
 
 export interface CodeRequestResult {
   readonly challengeId: string;
@@ -47,202 +49,122 @@ export interface SignInResult {
 export interface Authenticated {
   readonly personId: string;
   readonly sessionId: string;
+  /** Hash of the bearer token: what the database functions take to find the caller. */
+  readonly tokenHash: string;
 }
 
-interface ChallengeRow {
-  id: string;
-  phone_e164: string;
-  code_hash: string;
-  created_at: Date;
-  expires_at: Date;
-  failed_attempts: number;
-  superseded_at: Date | null;
-  consumed_at: Date | null;
-  verify_key: string | null;
-  session_id: string | null;
-}
-
-interface SessionRow {
-  id: string;
+interface AccountRow {
   person_id: string;
-  created_at: Date;
-  last_used_at: Date;
-  absolute_expires_at: Date;
-  revoked_at: Date | null;
-}
-
-interface PersonRow {
-  id: string;
   phone_e164: string;
   display_name: string | null;
   contact_email: string | null;
   registration_completed_at: Date | null;
+  session_id: string;
+  session_created_at: Date;
+  session_last_used_at: Date;
+  session_expires_at: Date;
 }
 
-type Outcome<T> = { ok: true; value: T } | { ok: false; error: ApiError };
+const unauthorized = (): ApiError =>
+  new ApiError(401, 'unauthorized', 'Authentication is required.');
+
+function personView(row: AccountRow): PersonView {
+  return {
+    id: row.person_id,
+    phoneMasked: maskPhone(row.phone_e164),
+    displayName: row.display_name,
+    contactEmail: row.contact_email,
+    registrationComplete: row.registration_completed_at !== null,
+  };
+}
+
+function sessionView(row: AccountRow): SessionView {
+  return {
+    id: row.session_id,
+    createdAt: row.session_created_at.toISOString(),
+    lastUsedAt: row.session_last_used_at.toISOString(),
+    expiresAt: row.session_expires_at.toISOString(),
+    current: true,
+  };
+}
 
 @Injectable()
 export class IdentityService {
+  private readonly pepper: string;
+
   constructor(
     @Inject(DB_POOL) private readonly pool: pg.Pool,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
-    @Inject(CLOCK) private readonly clock: Clock,
-  ) {}
-
-  /** Runs work in one transaction. The work reports failure as a value so its writes still commit. */
-  private async transaction<T>(work: (client: pg.PoolClient) => Promise<Outcome<T>>): Promise<T> {
-    const client = await this.pool.connect();
-    let outcome: Outcome<T>;
-    try {
-      await client.query('BEGIN');
-      outcome = await work(client);
-      await client.query('COMMIT');
-    } catch (error) {
-      await client.query('ROLLBACK').catch(() => undefined);
-      throw error;
-    } finally {
-      client.release();
-    }
-    if (!outcome.ok) throw outcome.error;
-    return outcome.value;
+  ) {
+    this.pepper = codePepper(config.IDENTITY_SECRET);
   }
 
-  private idleLimitMs(): number {
-    return this.config.SESSION_IDLE_MINUTES * 60_000;
-  }
-
-  private sessionView(row: SessionRow, currentId: string): SessionView {
-    const idleEnd = row.last_used_at.getTime() + this.idleLimitMs();
-    return {
-      id: row.id,
-      createdAt: row.created_at.toISOString(),
-      lastUsedAt: row.last_used_at.toISOString(),
-      expiresAt: new Date(Math.min(idleEnd, row.absolute_expires_at.getTime())).toISOString(),
-      current: row.id === currentId,
-    };
-  }
-
-  private personView(row: PersonRow): PersonView {
-    return {
-      id: row.id,
-      phoneMasked: maskPhone(row.phone_e164),
-      displayName: row.display_name,
-      contactEmail: row.contact_email,
-      registrationComplete: row.registration_completed_at !== null,
-    };
-  }
-
-  private async record(
-    client: pg.PoolClient | pg.Pool,
-    kind: string,
-    personId: string | null,
-    sessionId: string | null,
-    requestId: string | undefined,
-  ): Promise<void> {
-    await client.query(
-      `INSERT INTO trucker.identity_event (occurred_at, kind, person_id, session_id, request_id)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [this.clock(), kind, personId, sessionId, requestId ?? null],
-    );
+  /** The caller's own person and session, or nothing when the session is no longer live. */
+  private async account(tokenHash: string): Promise<AccountRow | undefined> {
+    const found = await this.pool.query<AccountRow>('SELECT * FROM trucker.my_account($1)', [
+      tokenHash,
+    ]);
+    return found.rows[0];
   }
 
   /**
    * Creates a one-time code for a mobile number. The answer is the same whether or not the
    * number belongs to anyone, so it cannot be used to find out who is registered.
    * Repeating the request with the same retry key returns the same challenge and sends nothing.
+   * The database creates the code. It hands it back only when asked to and only in a database
+   * marked local-development or test; in any other database it creates nothing.
    */
   async requestCode(
     phone: string,
     retryKey: string,
     callerIsLocal: boolean,
   ): Promise<CodeRequestResult> {
-    if (this.config.SIGN_IN_CODE_DELIVERY === 'none') {
-      throw new ApiError(
-        503,
-        'code_delivery_unavailable',
-        'Sign-in codes cannot be sent in this environment.',
-      );
+    const closed = new ApiError(
+      503,
+      'code_delivery_unavailable',
+      'Sign-in codes cannot be sent in this environment.',
+    );
+    if (this.config.SIGN_IN_CODE_DELIVERY === 'none') throw closed;
+    const reveal = this.config.SIGN_IN_CODE_DELIVERY === 'development-display' && callerIsLocal;
+    const result = await this.pool.query<{
+      status: 'created' | 'repeated' | 'too_soon' | 'too_many' | 'closed';
+      challenge_id: string;
+      expires_at: Date;
+      resend_available_at: Date;
+      retry_after_seconds: number | null;
+      development_code: string | null;
+    }>('SELECT * FROM trucker.sign_in_request_code($1, $2, $3, $4)', [
+      phone,
+      retryKey,
+      this.pepper,
+      reveal,
+    ]);
+    const row = result.rows[0]!;
+    switch (row.status) {
+      case 'closed':
+        throw closed;
+      case 'too_soon':
+        throw new ApiError(
+          429,
+          'code_resend_too_soon',
+          'A code was sent a moment ago. Wait before asking again.',
+          { retryAfterSeconds: row.retry_after_seconds },
+        );
+      case 'too_many':
+        throw new ApiError(
+          429,
+          'too_many_code_requests',
+          'Too many codes were requested for this number.',
+          { retryAfterSeconds: row.retry_after_seconds },
+        );
+      default:
+        return {
+          challengeId: row.challenge_id,
+          expiresAt: row.expires_at.toISOString(),
+          resendAvailableAt: row.resend_available_at.toISOString(),
+          ...(reveal && row.development_code ? { developmentCode: row.development_code } : {}),
+        };
     }
-    const now = this.clock();
-    const waitMs = this.config.SIGN_IN_CODE_RESEND_WAIT_SECONDS * 1000;
-    const view = (
-      row: Pick<ChallengeRow, 'id' | 'created_at' | 'expires_at'>,
-      code?: string,
-    ): CodeRequestResult => ({
-      challengeId: row.id,
-      expiresAt: row.expires_at.toISOString(),
-      resendAvailableAt: new Date(row.created_at.getTime() + waitMs).toISOString(),
-      ...(code !== undefined && callerIsLocal ? { developmentCode: code } : {}),
-    });
-
-    return this.transaction<CodeRequestResult>(async (client) => {
-      // One request at a time per number, so the limits below cannot be raced.
-      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [phone]);
-
-      const repeated = await client.query<ChallengeRow>(
-        `SELECT id, created_at, expires_at FROM trucker.sign_in_challenge WHERE phone_e164 = $1 AND request_key = $2`,
-        [phone, retryKey],
-      );
-      if (repeated.rows[0]) return { ok: true, value: view(repeated.rows[0]) };
-
-      const recent = await client.query<{ created_at: Date }>(
-        `SELECT created_at FROM trucker.sign_in_challenge
-         WHERE phone_e164 = $1 AND created_at > $2 ORDER BY created_at DESC`,
-        [phone, new Date(now.getTime() - 3_600_000)],
-      );
-      const latest = recent.rows[0];
-      if (latest && now.getTime() - latest.created_at.getTime() < waitMs) {
-        const retryAfterSeconds = Math.ceil(
-          (latest.created_at.getTime() + waitMs - now.getTime()) / 1000,
-        );
-        return {
-          ok: false,
-          error: new ApiError(
-            429,
-            'code_resend_too_soon',
-            'A code was sent a moment ago. Wait before asking again.',
-            {
-              retryAfterSeconds,
-            },
-          ),
-        };
-      }
-      if (recent.rows.length >= this.config.SIGN_IN_CODE_MAX_PER_HOUR) {
-        const oldest = recent.rows[recent.rows.length - 1] as { created_at: Date };
-        const retryAfterSeconds = Math.ceil(
-          (oldest.created_at.getTime() + 3_600_000 - now.getTime()) / 1000,
-        );
-        return {
-          ok: false,
-          error: new ApiError(
-            429,
-            'too_many_code_requests',
-            'Too many codes were requested for this number.',
-            {
-              retryAfterSeconds,
-            },
-          ),
-        };
-      }
-
-      // Only the newest code can be used.
-      await client.query(
-        `UPDATE trucker.sign_in_challenge SET superseded_at = $2
-         WHERE phone_e164 = $1 AND consumed_at IS NULL AND superseded_at IS NULL`,
-        [phone, now],
-      );
-      const code = generateCode();
-      const created = await client.query<{ id: string }>('SELECT gen_random_uuid() AS id');
-      const id = (created.rows[0] as { id: string }).id;
-      const expiresAt = new Date(now.getTime() + this.config.SIGN_IN_CODE_TTL_SECONDS * 1000);
-      await client.query(
-        `INSERT INTO trucker.sign_in_challenge (id, phone_e164, code_hash, request_key, created_at, expires_at)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [id, phone, hashCode(this.config.IDENTITY_SECRET, id, code), retryKey, now, expiresAt],
-      );
-      // The only delivery mode besides `none` is display to a local caller. Nothing is logged.
-      return { ok: true, value: view({ id, created_at: now, expires_at: expiresAt }, code) };
-    });
   }
 
   /**
@@ -256,176 +178,79 @@ export class IdentityService {
     retryKey: string,
     requestId?: string,
   ): Promise<SignInResult> {
-    const now = this.clock();
-    const secret = this.config.IDENTITY_SECRET;
-    const incorrect = (details?: Record<string, unknown>): Outcome<SignInResult> => ({
-      ok: false,
-      error: new ApiError(400, 'code_incorrect', 'That code is not correct.', details),
-    });
-
-    return this.transaction<SignInResult>(async (client) => {
-      const found = await client.query<ChallengeRow>(
-        `SELECT id, phone_e164, code_hash, created_at, expires_at, failed_attempts, superseded_at,
-                consumed_at, verify_key, session_id
-         FROM trucker.sign_in_challenge WHERE id = $1 FOR UPDATE`,
-        [challengeId],
-      );
-      const challenge = found.rows[0];
-      if (!challenge) return incorrect();
-      const matches = sameHash(challenge.code_hash, hashCode(secret, challenge.id, code));
-
-      if (challenge.consumed_at) {
-        const sameRequest =
-          matches &&
-          challenge.verify_key === retryKey &&
-          now.getTime() - challenge.consumed_at.getTime() <= VERIFY_RETRY_WINDOW_MS;
-        if (sameRequest && challenge.session_id) {
-          const again = await this.signInView(client, challenge.session_id);
-          if (again) return { ok: true, value: again };
-        }
-        return {
-          ok: false,
-          error: new ApiError(409, 'code_already_used', 'That code has already been used.'),
-        };
-      }
-      if (challenge.superseded_at) {
-        return {
-          ok: false,
-          error: new ApiError(410, 'code_replaced', 'A newer code was sent. Use the newest code.'),
-        };
-      }
-      if (challenge.expires_at.getTime() <= now.getTime()) {
-        return {
-          ok: false,
-          error: new ApiError(410, 'code_expired', 'That code has expired. Ask for a new one.'),
-        };
-      }
-      const locked: Outcome<SignInResult> = {
-        ok: false,
-        error: new ApiError(429, 'code_locked', 'Too many incorrect attempts. Ask for a new code.'),
-      };
-      if (challenge.failed_attempts >= this.config.SIGN_IN_CODE_MAX_ATTEMPTS) return locked;
-
-      if (!matches) {
-        const attempts = challenge.failed_attempts + 1;
-        await client.query(
-          'UPDATE trucker.sign_in_challenge SET failed_attempts = $2 WHERE id = $1',
-          [challenge.id, attempts],
+    // The session to create if the code is right. Its token is derived, never stored.
+    const proposedId = randomUUID();
+    const proposedToken = sessionToken(this.config.IDENTITY_SECRET, proposedId);
+    const result = await this.pool.query<{
+      status: 'signed_in' | 'repeated' | 'incorrect' | 'used' | 'replaced' | 'expired' | 'locked';
+      attempts_remaining: number | null;
+      session_id: string | null;
+    }>('SELECT * FROM trucker.sign_in_verify_code($1, $2, $3, $4, $5, $6, $7)', [
+      challengeId,
+      code,
+      retryKey,
+      this.pepper,
+      proposedId,
+      hashToken(proposedToken),
+      requestId ?? null,
+    ]);
+    const row = result.rows[0]!;
+    switch (row.status) {
+      case 'incorrect':
+        throw new ApiError(
+          400,
+          'code_incorrect',
+          'That code is not correct.',
+          row.attempts_remaining === null
+            ? undefined
+            : { attemptsRemaining: row.attempts_remaining },
         );
-        if (attempts >= this.config.SIGN_IN_CODE_MAX_ATTEMPTS) {
-          await this.record(client, 'code_locked', null, null, requestId);
-          return locked;
-        }
-        return incorrect({ attemptsRemaining: this.config.SIGN_IN_CODE_MAX_ATTEMPTS - attempts });
+      case 'used':
+        throw new ApiError(409, 'code_already_used', 'That code has already been used.');
+      case 'replaced':
+        throw new ApiError(410, 'code_replaced', 'A newer code was sent. Use the newest code.');
+      case 'expired':
+        throw new ApiError(410, 'code_expired', 'That code has expired. Ask for a new one.');
+      case 'locked':
+        throw new ApiError(429, 'code_locked', 'Too many incorrect attempts. Ask for a new code.');
+      default: {
+        const token =
+          row.status === 'signed_in'
+            ? proposedToken
+            : sessionToken(this.config.IDENTITY_SECRET, row.session_id!);
+        const account = await this.account(hashToken(token));
+        // Ended between the two statements: the code is spent and there is no session.
+        if (!account)
+          throw new ApiError(409, 'code_already_used', 'That code has already been used.');
+        return { token, session: sessionView(account), person: personView(account) };
       }
-
-      const person = await client.query<{ id: string }>(
-        `INSERT INTO trucker.person (phone_e164) VALUES ($1)
-         ON CONFLICT (phone_e164) DO UPDATE SET phone_e164 = EXCLUDED.phone_e164 RETURNING id`,
-        [challenge.phone_e164],
-      );
-      const personId = (person.rows[0] as { id: string }).id;
-      const created = await client.query<{ id: string }>('SELECT gen_random_uuid() AS id');
-      const sessionId = (created.rows[0] as { id: string }).id;
-      const token = sessionToken(secret, sessionId);
-      await client.query(
-        `INSERT INTO trucker.session (id, person_id, token_hash, created_at, last_used_at, absolute_expires_at)
-         VALUES ($1, $2, $3, $4, $4, $5)`,
-        [
-          sessionId,
-          personId,
-          hashToken(token),
-          now,
-          new Date(now.getTime() + this.config.SESSION_ABSOLUTE_HOURS * 3_600_000),
-        ],
-      );
-      await client.query(
-        `UPDATE trucker.sign_in_challenge SET consumed_at = $2, verify_key = $3, session_id = $4 WHERE id = $1`,
-        [challenge.id, now, retryKey, sessionId],
-      );
-      await this.record(client, 'signed_in', personId, sessionId, requestId);
-      const view = await this.signInView(client, sessionId);
-      if (!view) throw new Error('the session just created was not found');
-      return { ok: true, value: view };
-    });
-  }
-
-  private async signInView(client: pg.PoolClient, sessionId: string): Promise<SignInResult | null> {
-    const session = await client.query<SessionRow>(
-      `SELECT id, person_id, created_at, last_used_at, absolute_expires_at, revoked_at
-       FROM trucker.session WHERE id = $1 AND revoked_at IS NULL`,
-      [sessionId],
-    );
-    const row = session.rows[0];
-    if (!row) return null;
-    const person = await client.query<PersonRow>(
-      `SELECT id, phone_e164, display_name, contact_email, registration_completed_at FROM trucker.person WHERE id = $1`,
-      [row.person_id],
-    );
-    return {
-      token: sessionToken(this.config.IDENTITY_SECRET, row.id),
-      session: this.sessionView(row, row.id),
-      person: this.personView(person.rows[0] as PersonRow),
-    };
+    }
   }
 
   /**
-   * Resolves a bearer token to a person. An idle or over-age session is closed here, recorded,
-   * and refused. Every failure gives the same answer: the caller learns nothing about why.
+   * Resolves a bearer token to a person: one statement. The database ends and records a
+   * session that is past its idle period or its absolute limit. An unknown or ended token and
+   * a missing one get the same answer: the caller learns nothing about why.
    */
   async authenticate(token: string | undefined, requestId?: string): Promise<Authenticated> {
-    const refuse = (code: string, message: string): Outcome<Authenticated> => ({
-      ok: false,
-      error: new ApiError(401, code, message),
-    });
-    const unknown = refuse('unauthorized', 'Authentication is required.');
-    if (!token || token.length > 200) throw (unknown as { error: ApiError }).error;
-    const now = this.clock();
-
-    return this.transaction<Authenticated>(async (client) => {
-      const found = await client.query<SessionRow>(
-        `SELECT id, person_id, created_at, last_used_at, absolute_expires_at, revoked_at
-         FROM trucker.session WHERE token_hash = $1 FOR UPDATE`,
-        [hashToken(token)],
-      );
-      const session = found.rows[0];
-      if (!session || session.revoked_at) return unknown;
-      const expire = async (
-        reason: 'idle_expired' | 'absolute_expired',
-      ): Promise<Outcome<Authenticated>> => {
-        await client.query(
-          'UPDATE trucker.session SET revoked_at = $2, revoked_reason = $3 WHERE id = $1',
-          [session.id, now, reason],
-        );
-        await this.record(client, 'session_expired', session.person_id, session.id, requestId);
-        return refuse('session_expired', 'Your session has ended. Sign in again.');
-      };
-      if (session.absolute_expires_at.getTime() <= now.getTime()) return expire('absolute_expired');
-      if (now.getTime() - session.last_used_at.getTime() >= this.idleLimitMs())
-        return expire('idle_expired');
-      if (now.getTime() - session.last_used_at.getTime() >= LAST_USED_RESOLUTION_MS) {
-        await client.query('UPDATE trucker.session SET last_used_at = $2 WHERE id = $1', [
-          session.id,
-          now,
-        ]);
-      }
-      return { ok: true, value: { personId: session.person_id, sessionId: session.id } };
-    });
+    if (!token || token.length > 200) throw unauthorized();
+    const tokenHash = hashToken(token);
+    const result = await this.pool.query<{
+      status: 'ok' | 'unknown' | 'expired';
+      person_id: string | null;
+      session_id: string | null;
+    }>('SELECT * FROM trucker.session_check($1, $2)', [tokenHash, requestId ?? null]);
+    const row = result.rows[0]!;
+    if (row.status === 'expired')
+      throw new ApiError(401, 'session_expired', 'Your session has ended. Sign in again.');
+    if (row.status !== 'ok' || !row.person_id || !row.session_id) throw unauthorized();
+    return { personId: row.person_id, sessionId: row.session_id, tokenHash };
   }
 
   async me(auth: Authenticated): Promise<{ person: PersonView; session: SessionView }> {
-    const person = await this.pool.query<PersonRow>(
-      `SELECT id, phone_e164, display_name, contact_email, registration_completed_at FROM trucker.person WHERE id = $1`,
-      [auth.personId],
-    );
-    const session = await this.pool.query<SessionRow>(
-      `SELECT id, person_id, created_at, last_used_at, absolute_expires_at, revoked_at FROM trucker.session WHERE id = $1`,
-      [auth.sessionId],
-    );
-    return {
-      person: this.personView(person.rows[0] as PersonRow),
-      session: this.sessionView(session.rows[0] as SessionRow, auth.sessionId),
-    };
+    const account = await this.account(auth.tokenHash);
+    if (!account) throw unauthorized();
+    return { person: personView(account), session: sessionView(account) };
   }
 
   /**
@@ -442,13 +267,12 @@ export class IdentityService {
     },
     requestId?: string,
   ): Promise<PersonView> {
-    if (this.config.REGISTRATION_TERMS !== 'demonstration') {
-      throw new ApiError(
-        503,
-        'registration_closed',
-        'Registration is not open: approved terms do not exist yet.',
-      );
-    }
+    const closed = new ApiError(
+      503,
+      'registration_closed',
+      'Registration is not open: approved terms do not exist yet.',
+    );
+    if (this.config.REGISTRATION_TERMS !== 'demonstration') throw closed;
     if (input.termsVersion !== DEMONSTRATION_TERMS_VERSION) {
       throw new ApiError(
         409,
@@ -459,41 +283,40 @@ export class IdentityService {
         },
       );
     }
-    const now = this.clock();
-    return this.transaction<PersonView>(async (client) => {
-      const locked = await client.query<PersonRow>(
-        `SELECT id, phone_e164, display_name, contact_email, registration_completed_at
-         FROM trucker.person WHERE id = $1 FOR UPDATE`,
-        [auth.personId],
-      );
-      const person = locked.rows[0] as PersonRow;
-      if (person.registration_completed_at) return { ok: true, value: this.personView(person) };
-      await client.query(
-        `INSERT INTO trucker.terms_acceptance (person_id, terms_kind, version, language, accepted_at)
-         VALUES ($1, 'demonstration', $2, $3, $4) ON CONFLICT ON CONSTRAINT terms_acceptance_once DO NOTHING`,
-        [auth.personId, input.termsVersion, input.termsLanguage, now],
-      );
-      const updated = await client.query<PersonRow>(
-        `UPDATE trucker.person SET display_name = $2, contact_email = $3, registration_completed_at = $4
-         WHERE id = $1 RETURNING id, phone_e164, display_name, contact_email, registration_completed_at`,
-        [auth.personId, input.displayName, input.contactEmail, now],
-      );
-      await this.record(client, 'registration_completed', auth.personId, auth.sessionId, requestId);
-      return { ok: true, value: this.personView(updated.rows[0] as PersonRow) };
-    });
+    const result = await this.pool.query<{ status: string }>(
+      'SELECT trucker.complete_registration($1, $2, $3, $4, $5, $6) AS status',
+      [
+        auth.tokenHash,
+        input.displayName,
+        input.contactEmail,
+        input.termsVersion,
+        input.termsLanguage,
+        requestId ?? null,
+      ],
+    );
+    const status = result.rows[0]?.status;
+    if (status === 'closed') throw closed;
+    const account = status === 'unauthorized' ? undefined : await this.account(auth.tokenHash);
+    if (!account) throw unauthorized();
+    return personView(account);
   }
 
   /** The caller's own open sessions, newest first. */
   async listSessions(auth: Authenticated): Promise<SessionView[]> {
-    const now = this.clock();
-    const rows = await this.pool.query<SessionRow>(
-      `SELECT id, person_id, created_at, last_used_at, absolute_expires_at, revoked_at
-       FROM trucker.session
-       WHERE person_id = $1 AND revoked_at IS NULL AND absolute_expires_at > $2 AND last_used_at > $3
-       ORDER BY created_at DESC, id`,
-      [auth.personId, now, new Date(now.getTime() - this.idleLimitMs())],
-    );
-    return rows.rows.map((row) => this.sessionView(row, auth.sessionId));
+    const rows = await this.pool.query<{
+      id: string;
+      created_at: Date;
+      last_used_at: Date;
+      expires_at: Date;
+      current: boolean;
+    }>('SELECT * FROM trucker.my_sessions($1)', [auth.tokenHash]);
+    return rows.rows.map((row) => ({
+      id: row.id,
+      createdAt: row.created_at.toISOString(),
+      lastUsedAt: row.last_used_at.toISOString(),
+      expiresAt: row.expires_at.toISOString(),
+      current: row.current,
+    }));
   }
 
   /**
@@ -501,33 +324,24 @@ export class IdentityService {
    * like one that does not exist.
    */
   async revokeSession(auth: Authenticated, sessionId: string, requestId?: string): Promise<void> {
-    const own = sessionId === auth.sessionId;
-    const result = await this.pool.query(
-      `UPDATE trucker.session SET revoked_at = $3, revoked_reason = $4
-       WHERE id = $1 AND person_id = $2 AND revoked_at IS NULL`,
-      [sessionId, auth.personId, this.clock(), own ? 'signed_out' : 'revoked_by_person'],
+    const result = await this.pool.query<{ status: string }>(
+      'SELECT trucker.revoke_my_session($1, $2, $3) AS status',
+      [auth.tokenHash, sessionId, requestId ?? null],
     );
-    if (result.rowCount === 0)
+    const status = result.rows[0]?.status;
+    if (status === 'unauthorized') throw unauthorized();
+    if (status !== 'revoked')
       throw new ApiError(404, 'not_found', 'The requested resource was not found.');
-    await this.record(
-      this.pool,
-      own ? 'signed_out' : 'session_revoked',
-      auth.personId,
-      sessionId,
-      requestId,
-    );
   }
 
   /** Ends every other session of the caller and reports how many were ended. */
   async revokeOtherSessions(auth: Authenticated, requestId?: string): Promise<number> {
-    const result = await this.pool.query<{ id: string }>(
-      `UPDATE trucker.session SET revoked_at = $3, revoked_reason = 'revoked_by_person'
-       WHERE person_id = $1 AND id <> $2 AND revoked_at IS NULL RETURNING id`,
-      [auth.personId, auth.sessionId, this.clock()],
+    const result = await this.pool.query<{ ended: number | null }>(
+      'SELECT trucker.revoke_my_other_sessions($1, $2) AS ended',
+      [auth.tokenHash, requestId ?? null],
     );
-    for (const row of result.rows) {
-      await this.record(this.pool, 'session_revoked', auth.personId, row.id, requestId);
-    }
-    return result.rows.length;
+    const ended = result.rows[0]?.ended;
+    if (ended === null || ended === undefined) throw unauthorized();
+    return ended;
   }
 }

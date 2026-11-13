@@ -8,23 +8,25 @@ import type { INestApplication } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import pg from 'pg';
 import { AppModule } from '../app.module.js';
-import { ConfigError, loadConfig, SECURITY_PERIOD_DEFAULTS } from '../config/config.js';
+import { ConfigError, loadConfig, MOVED_TO_DATABASE } from '../config/config.js';
+import { appDatabaseUrl, ensureLocalAppLogin, markEnvironment } from '../database/local.js';
 import { defaultMigrationsDir, migrateUp } from '../database/migrations.js';
+import { SECURITY_SETTING_DEFAULTS } from '../database/settings.js';
 import { configureApp } from '../http/configure-app.js';
 import type { Logger } from '../http/logger.js';
+import { createTestClock } from '../testing/test-clock.js';
 import { createTestDatabase, type TestDatabase } from '../testing/test-database.js';
 import { maskPhone, normalizePhone } from './phone.js';
-import { generateCode, hashCode, sessionToken } from './secrets.js';
+import { codePepper, sessionToken } from './secrets.js';
 import { DEMONSTRATION_TERMS_VERSION } from './terms.js';
 
 // ---------------------------------------------------------------------------------------------
-// One API per configuration, all on one migrated test database, with a clock the tests move.
+// One API per configuration, all on one migrated database marked "test", with a clock the
+// tests move. The API connects with the local login of its own role, which has no right on the
+// identity tables; `pool` is the migration role, used to set things up and to look inside.
 // ---------------------------------------------------------------------------------------------
-let now = new Date('2026-11-13T08:00:00.000Z');
-const clock = (): Date => new Date(now);
-const advance = (seconds: number): void => {
-  now = new Date(now.getTime() + seconds * 1000);
-};
+const testClock = createTestClock(new Date('2026-11-13T08:00:00.000Z'));
+const { clock, advance } = testClock;
 
 const logged: string[] = [];
 const collecting: Logger = {
@@ -43,7 +45,12 @@ let closed: Api; // defaults: no delivery, no terms
 const apps: INestApplication[] = [];
 
 async function startApi(overrides: Record<string, string>): Promise<Api> {
-  const config = loadConfig({ NODE_ENV: 'test', DATABASE_URL: database.url, ...overrides });
+  const config = loadConfig({
+    NODE_ENV: 'test',
+    DATABASE_URL: database.url,
+    APP_DATABASE_URL: appDatabaseUrl(database.url),
+    ...overrides,
+  });
   const app = configureApp(
     await NestFactory.create(AppModule.register(config, clock), { logger: false }),
     collecting,
@@ -58,6 +65,9 @@ before(async () => {
   database = await createTestDatabase();
   pool = new pg.Pool({ connectionString: database.url });
   await migrateUp(pool, defaultMigrationsDir());
+  await ensureLocalAppLogin(pool);
+  await markEnvironment(pool, 'test');
+  await testClock.start(pool);
   // The test database is on this machine, which development display requires.
   const local = new URL(database.url);
   assert.ok(
@@ -146,7 +156,7 @@ async function signIn(
   assert.equal(reply.status, 200, JSON.stringify(reply.body));
   const session = reply.body.session as { id: string };
   const person = reply.body.person as { id: string };
-  advance(SECURITY_PERIOD_DEFAULTS.SIGN_IN_CODE_RESEND_WAIT_SECONDS + 1);
+  await advance(SECURITY_SETTING_DEFAULTS.code_resend_wait_seconds + 1);
   return { token: reply.body.token as string, sessionId: session.id, personId: person.id, phone };
 }
 const wrongCode = (code: string): string => (code === '000000' ? '000001' : '000000');
@@ -186,12 +196,12 @@ test('a masked phone number hides all but its start and last two digits', () => 
   assert.equal(maskPhone('+971501234567'), '+971•••••••67');
 });
 
-test('codes are six digits; hashes are keyed and bound to the challenge', () => {
-  for (let i = 0; i < 200; i += 1) assert.match(generateCode(), /^[0-9]{6}$/);
-  const a = hashCode('k'.repeat(32), 'challenge-1', '123456');
-  assert.notEqual(a, hashCode('k'.repeat(32), 'challenge-2', '123456'));
-  assert.notEqual(a, hashCode('j'.repeat(32), 'challenge-1', '123456'));
-  assert.equal(a, hashCode('k'.repeat(32), 'challenge-1', '123456'));
+test('the key for code hashes is derived from the secret and is not the secret', () => {
+  const secret = 'k'.repeat(32);
+  assert.match(codePepper(secret), /^[0-9a-f]{64}$/);
+  assert.equal(codePepper(secret), codePepper(secret));
+  assert.notEqual(codePepper(secret), codePepper('j'.repeat(32)));
+  assert.ok(!sessionToken(secret, 'session-1').includes(codePepper(secret)));
   assert.notEqual(
     sessionToken('k'.repeat(32), 'session-1'),
     sessionToken('j'.repeat(32), 'session-1'),
@@ -205,13 +215,6 @@ const production = {
   NODE_ENV: 'production',
   DATABASE_URL: 'postgres://app:value@db.internal.example:5432/trucker',
   IDENTITY_SECRET: 'a-real-secret-of-sufficient-length-000000',
-  SIGN_IN_CODE_TTL_SECONDS: '300',
-  SIGN_IN_CODE_MAX_ATTEMPTS: '5',
-  SIGN_IN_CODE_RESEND_WAIT_SECONDS: '60',
-  SIGN_IN_CODE_MAX_PER_HOUR: '5',
-  SESSION_IDLE_MINUTES: '30',
-  SESSION_ABSOLUTE_HOURS: '12',
-  ORGANISATION_CREATION_LIMIT: '5',
   RETRY_KEY_RETENTION_HOURS: '24',
   APP_DATABASE_URL: 'postgres://trucker_api:secret@db.internal:5432/trucker',
 };
@@ -264,13 +267,20 @@ test('production refuses a missing secret and the published development secret',
   );
 });
 
-test('production refuses every security period left at its development default', () => {
-  for (const name of Object.keys(SECURITY_PERIOD_DEFAULTS)) {
-    const found = problems({ ...production, [name]: undefined });
-    assert.ok(
-      found.some((p) => p.startsWith(`${name} must be set explicitly`)),
-      name,
-    );
+test('production refuses a retry retention period left at its development default', () => {
+  const found = problems({ ...production, RETRY_KEY_RETENTION_HOURS: undefined });
+  assert.ok(found.some((p) => p.startsWith('RETRY_KEY_RETENTION_HOURS must be set explicitly')));
+});
+
+test('a limit that moved to the database is refused in the configuration, not ignored', () => {
+  for (const name of MOVED_TO_DATABASE) {
+    for (const environment of ['production', 'development']) {
+      const found = problems({ ...production, NODE_ENV: environment, [name]: '1' });
+      assert.ok(
+        found.some((p) => p.startsWith(`${name} is no longer read by the API`)),
+        `${name} in ${environment}`,
+      );
+    }
   }
 });
 
@@ -350,7 +360,7 @@ test('safe retry: repeating the same sign-in request returns the same session, n
 
   // The retry is tied to the key and the code, and to a short time.
   assert.equal((await verify(challengeId, wrongCode(code), retryKey)).status, 409);
-  advance(121);
+  await advance(121);
   assert.equal((await verify(challengeId, code, retryKey)).status, 409);
 });
 
@@ -389,9 +399,9 @@ test('both sign-in requests need a retry key', async () => {
 
 test('an expired code is refused, and the boundary is exact', async () => {
   const { challengeId, code } = await requestCode(newPhone());
-  advance(SECURITY_PERIOD_DEFAULTS.SIGN_IN_CODE_TTL_SECONDS - 1);
+  await advance(SECURITY_SETTING_DEFAULTS.code_ttl_seconds - 1);
   const late = await requestCode(newPhone());
-  advance(1);
+  await advance(1);
   const expired = await verify(challengeId, code);
   assert.equal(expired.status, 410);
   assert.equal(expired.body.code, 'code_expired');
@@ -404,7 +414,7 @@ test('an expired code is refused, and the boundary is exact', async () => {
 
 test('incorrect codes are counted, the last attempt locks the code, and the right code no longer works', async () => {
   const { challengeId, code } = await requestCode(newPhone());
-  const max = SECURITY_PERIOD_DEFAULTS.SIGN_IN_CODE_MAX_ATTEMPTS;
+  const max = SECURITY_SETTING_DEFAULTS.code_max_attempts;
   for (let attempt = 1; attempt < max; attempt += 1) {
     const reply = await verify(challengeId, wrongCode(code));
     assert.equal(reply.status, 400);
@@ -429,7 +439,7 @@ test('incorrect attempts sent at the same moment cannot exceed the limit', async
     'SELECT failed_attempts FROM trucker.sign_in_challenge WHERE id = $1',
     [challengeId],
   );
-  assert.equal(row.rows[0].failed_attempts, SECURITY_PERIOD_DEFAULTS.SIGN_IN_CODE_MAX_ATTEMPTS);
+  assert.equal(row.rows[0].failed_attempts, SECURITY_SETTING_DEFAULTS.code_max_attempts);
   assert.equal((await verify(challengeId, code)).status, 429);
 });
 
@@ -459,19 +469,19 @@ test('an unknown challenge and a malformed code are refused without detail', asy
 test('asking again too soon is refused and says how long to wait', async () => {
   const phone = newPhone();
   await requestCode(phone);
-  advance(SECURITY_PERIOD_DEFAULTS.SIGN_IN_CODE_RESEND_WAIT_SECONDS - 1);
+  await advance(SECURITY_SETTING_DEFAULTS.code_resend_wait_seconds - 1);
   const soon = await call(api, 'POST', '/auth/code-requests', { body: { phone } });
   assert.equal(soon.status, 429);
   assert.equal(soon.body.code, 'code_resend_too_soon');
   assert.deepEqual(soon.body.details, { retryAfterSeconds: 1 });
-  advance(1);
+  await advance(1);
   assert.equal((await call(api, 'POST', '/auth/code-requests', { body: { phone } })).status, 202);
 });
 
 test('a new code replaces the previous one', async () => {
   const phone = newPhone();
   const first = await requestCode(phone);
-  advance(SECURITY_PERIOD_DEFAULTS.SIGN_IN_CODE_RESEND_WAIT_SECONDS);
+  await advance(SECURITY_SETTING_DEFAULTS.code_resend_wait_seconds);
   const second = await requestCode(phone);
   const old = await verify(first.challengeId, first.code);
   assert.equal(old.status, 410);
@@ -481,10 +491,10 @@ test('a new code replaces the previous one', async () => {
 
 test('no more than the hourly number of codes is created for one number', async () => {
   const phone = newPhone();
-  const max = SECURITY_PERIOD_DEFAULTS.SIGN_IN_CODE_MAX_PER_HOUR;
+  const max = SECURITY_SETTING_DEFAULTS.code_max_per_hour;
   for (let i = 0; i < max; i += 1) {
     await requestCode(phone);
-    advance(SECURITY_PERIOD_DEFAULTS.SIGN_IN_CODE_RESEND_WAIT_SECONDS);
+    await advance(SECURITY_SETTING_DEFAULTS.code_resend_wait_seconds);
   }
   const over = await call(api, 'POST', '/auth/code-requests', { body: { phone } });
   assert.equal(over.status, 429);
@@ -495,7 +505,7 @@ test('no more than the hourly number of codes is created for one number', async 
     [phone],
   );
   assert.equal(rows.rows[0].n, max);
-  advance(3600);
+  await advance(3600);
   assert.equal((await call(api, 'POST', '/auth/code-requests', { body: { phone } })).status, 202);
 });
 
@@ -708,16 +718,16 @@ test('ending all other sessions keeps the current one', async () => {
 
 test('a session unused for the idle period is ended; use inside the period keeps it', async () => {
   const session = await signIn();
-  const idleSeconds = SECURITY_PERIOD_DEFAULTS.SESSION_IDLE_MINUTES * 60;
-  advance(idleSeconds - 120);
+  const idleSeconds = SECURITY_SETTING_DEFAULTS.session_idle_minutes * 60;
+  await advance(idleSeconds - 120);
   assert.equal((await call(api, 'GET', '/me', { token: session.token })).status, 200);
-  advance(idleSeconds - 120);
+  await advance(idleSeconds - 120);
   assert.equal(
     (await call(api, 'GET', '/me', { token: session.token })).status,
     200,
     'use restarted the idle period',
   );
-  advance(idleSeconds);
+  await advance(idleSeconds);
   const idle = await call(api, 'GET', '/me', { token: session.token });
   assert.equal(idle.status, 401);
   assert.equal(idle.body.code, 'session_expired');
@@ -730,17 +740,17 @@ test('a session unused for the idle period is ended; use inside the period keeps
 
 test('a session ends at its absolute limit even when used all the time', async () => {
   const session = await signIn();
-  const step = (SECURITY_PERIOD_DEFAULTS.SESSION_IDLE_MINUTES - 1) * 60;
-  const limit = SECURITY_PERIOD_DEFAULTS.SESSION_ABSOLUTE_HOURS * 3600;
-  let elapsed = SECURITY_PERIOD_DEFAULTS.SIGN_IN_CODE_RESEND_WAIT_SECONDS + 1;
+  const step = (SECURITY_SETTING_DEFAULTS.session_idle_minutes - 1) * 60;
+  const limit = SECURITY_SETTING_DEFAULTS.session_absolute_hours * 3600;
+  let elapsed = SECURITY_SETTING_DEFAULTS.code_resend_wait_seconds + 1;
   // signIn moved the clock past the resend wait; using the session now restarts its idle period.
   assert.equal((await call(api, 'GET', '/me', { token: session.token })).status, 200);
   while (elapsed + step < limit) {
-    advance(step);
+    await advance(step);
     elapsed += step;
     assert.equal((await call(api, 'GET', '/me', { token: session.token })).status, 200);
   }
-  advance(limit - elapsed);
+  await advance(limit - elapsed);
   const over = await call(api, 'GET', '/me', { token: session.token });
   assert.equal(over.status, 401);
   assert.equal(over.body.code, 'session_expired');

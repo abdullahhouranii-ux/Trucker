@@ -12,10 +12,10 @@ import { createPool } from './database/pool.js';
 import { HealthController } from './health/health.controller.js';
 import { HealthService } from './health/health.service.js';
 import { IdentityController } from './identity/identity.controller.js';
-import { IdentityService, type Clock } from './identity/identity.service.js';
+import { IdentityService } from './identity/identity.service.js';
 import { OrganisationController } from './organisation/organisation.controller.js';
 import { OrganisationService } from './organisation/organisation.service.js';
-import { APP_CONFIG, CLOCK, DB_POOL } from './tokens.js';
+import { APP_CONFIG, CLOCK, DB_POOL, type Clock } from './tokens.js';
 
 @Injectable()
 class PoolLifecycle implements OnModuleDestroy {

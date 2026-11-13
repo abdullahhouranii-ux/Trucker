@@ -38,7 +38,11 @@
     "dev:api": "npm run build -w @trucker/api && node tools/dev/with-env.mjs npm run start:api",
     "verify": "npm run format:check && npm run lint && npm run typecheck && npm run db:check && npm run test",
     "start:web": "npm run start -w @trucker/web",
-    "test:browser": "npm run build -w @trucker/api && npm run build -w @trucker/web && npm run test:browser -w @trucker/web"
+    "test:browser": "npm run build -w @trucker/api && npm run build -w @trucker/web && npm run test:browser -w @trucker/web",
+    "db:mark": "npm run db:mark -w @trucker/api",
+    "db:settings": "npm run db:settings -w @trucker/api --",
+    "dev:mark": "node tools/dev/with-env.mjs npm run db:mark",
+    "dev:settings": "node tools/dev/with-env.mjs npm run db:settings --"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

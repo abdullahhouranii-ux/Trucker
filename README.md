@@ -24,6 +24,12 @@ Draft shipper organisations can be created and changed (docs/delivery/ORGANISATI
 A draft is not verified and can do nothing commercial. No real country is enabled, so outside
 local development, with its fictional test countries, nothing can be created.
 
+The API's database role has no right on people, sessions or sign-in codes: it calls database
+functions that create and check codes, enforce the limits from a protected settings row and
+read the database's own clock (docs/delivery/IDENTITY_HARDENING_SLICE_6.md). Limits are changed
+with `npm run db:settings`, not in the API's environment. Local sign-in needs the database
+marked local-development (`npm run db:mark` or `npm run db:fixtures`).
+
 No other business feature exists: no verification, shipments, bookings, portals or mobile
 application. Those are specified provisionally in docs/specs and gated on recorded decisions.
 

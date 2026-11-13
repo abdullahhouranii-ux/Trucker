@@ -4,8 +4,7 @@ import type pg from 'pg';
 import type { AppConfig } from '../config/config.js';
 import { AccessGuard } from '../database/access.js';
 import { ApiError } from '../http/api-error.js';
-import type { Clock } from '../identity/identity.service.js';
-import { APP_CONFIG, CLOCK, DB_POOL } from '../tokens.js';
+import { APP_CONFIG, CLOCK, DB_POOL, type Clock } from '../tokens.js';
 
 export interface OrganisationInput {
   readonly legalName: string;
@@ -94,8 +93,8 @@ const notFound = (): ApiError =>
   new ApiError(404, 'not_found', 'The requested resource was not found.');
 
 /** Errors raised on purpose by trucker.create_organisation, by their SQLSTATE. */
-function creationError(error: unknown, limit: number): ApiError | undefined {
-  const code = (error as { code?: string }).code;
+function creationError(error: unknown): ApiError | undefined {
+  const { code, detail } = error as { code?: string; detail?: string };
   if (code === '42501') return new ApiError(401, 'unauthorized', 'Authentication is required.');
   if (code === 'TR001')
     return new ApiError(403, 'registration_incomplete', 'Finish registration first.');
@@ -104,7 +103,8 @@ function creationError(error: unknown, limit: number): ApiError | undefined {
       409,
       'organisation_limit_reached',
       'You have created as many organisations as one person may.',
-      { limit },
+      // The limit is a protected database setting; the function reports the one it applied.
+      { limit: Number(detail) },
     );
   if (code === 'TR003')
     return new ApiError(422, 'validation_failed', 'Some fields are missing or not valid.', {
@@ -203,7 +203,6 @@ export class OrganisationService {
     const access = await this.access.requireBoundRole();
     const allowFixtures = this.access.fixturesAllowed(access);
     const now = this.clock();
-    const limit = this.config.ORGANISATION_CREATION_LIMIT;
     const requestHash = createHash('sha256').update(JSON.stringify(input)).digest('hex');
     const retainedSince = new Date(
       now.getTime() - this.config.RETRY_KEY_RETENTION_HOURS * 3_600_000,
@@ -261,7 +260,7 @@ export class OrganisationService {
         // A savepoint, so a refusal by the function leaves the transaction usable.
         await client.query('SAVEPOINT creating');
         const created = await client.query<{ id: string }>(
-          'SELECT trucker.create_organisation($1, $2, $3, $4, $5, $6, $7, $8, $9) AS id',
+          'SELECT trucker.create_organisation($1, $2, $3, $4, $5, $6, $7) AS id',
           [
             input.legalName,
             input.tradingName,
@@ -269,14 +268,12 @@ export class OrganisationService {
             input.registrationNumber,
             input.address,
             input.contactName,
-            now,
-            limit,
             allowFixtures,
           ],
         );
         createdId = created.rows[0]!.id;
       } catch (error) {
-        const refused = creationError(error, limit);
+        const refused = creationError(error);
         if (refused) throw refused;
         throw error;
       }
@@ -347,7 +344,6 @@ export class OrganisationService {
   ): Promise<OrganisationView> {
     const access = await this.access.requireBoundRole();
     const allowFixtures = this.access.fixturesAllowed(access);
-    const now = this.clock();
     return this.asCaller(caller, id, async (client) => {
       // Read first without a lock: a row lock is allowed only on rows the caller may change,
       // so locking straight away could not tell "not yours" from "no longer a draft".
@@ -388,7 +384,7 @@ export class OrganisationService {
       const changed = await client.query<OrganisationRow>(
         `UPDATE trucker.organisation
          SET legal_name = $2, trading_name = $3, country_code = $4, registration_number = $5,
-             address = $6, contact_name = $7, version = version + 1, updated_at = $8
+             address = $6, contact_name = $7, version = version + 1
          WHERE id = $1 RETURNING ${COLUMNS}`,
         [
           id,
@@ -398,7 +394,6 @@ export class OrganisationService {
           input.registrationNumber,
           input.address,
           input.contactName,
-          now,
         ],
       );
       // Row security refused the change: a member who is not an administrator.

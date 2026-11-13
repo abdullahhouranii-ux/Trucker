@@ -22,21 +22,20 @@ import {
   markEnvironment,
 } from '../database/local.js';
 import { defaultMigrationsDir, migrateUp } from '../database/migrations.js';
+import { SECURITY_SETTING_DEFAULTS, writeSecuritySettings } from '../database/settings.js';
 import { configureApp } from '../http/configure-app.js';
 import type { Logger } from '../http/logger.js';
 import { hashToken } from '../identity/secrets.js';
 import { DEMONSTRATION_TERMS_VERSION } from '../identity/terms.js';
+import { createTestClock } from '../testing/test-clock.js';
 import { createTestDatabase, type TestDatabase } from '../testing/test-database.js';
 
 // ---------------------------------------------------------------------------------------------
 // A migrated test database, marked "test", holding the fictional countries. The API under test
 // connects with the local login of the API's role, never with the migration role.
 // ---------------------------------------------------------------------------------------------
-let now = new Date();
-const clock = (): Date => new Date(now);
-const advance = (seconds: number): void => {
-  now = new Date(now.getTime() + seconds * 1000);
-};
+const testClock = createTestClock();
+const { clock, advance } = testClock;
 
 const logged: string[] = [];
 const collecting: Logger = {
@@ -80,6 +79,7 @@ before(async () => {
   await migrateUp(owner, defaultMigrationsDir());
   await ensureLocalAppLogin(owner);
   await markEnvironment(owner, 'test');
+  await testClock.start(owner);
   await loadCountryFixtures(owner);
   const appUrl = appDatabaseUrl(database.url);
   app = new pg.Pool({ connectionString: appUrl, max: 2 });
@@ -150,7 +150,7 @@ async function signInAs(phone: string): Promise<Person> {
     body: { challengeId: asked.body.challengeId, code: asked.body.developmentCode },
   });
   assert.equal(verified.status, 200, JSON.stringify(verified.body));
-  advance(SECURITY_PERIOD_DEFAULTS.SIGN_IN_CODE_RESEND_WAIT_SECONDS + 1);
+  await advance(SECURITY_SETTING_DEFAULTS.code_resend_wait_seconds + 1);
   return {
     token: verified.body.token as string,
     personId: (verified.body.person as { id: string }).id,
@@ -302,25 +302,49 @@ test('the API role cannot write organisations, memberships, history, countries o
   }
 });
 
-test('every table that belongs to an organisation or a person has row security and a policy', async () => {
-  // Tables that hold no organisation data. A new table is not on this list, so it must carry
-  // row security and a policy, or this test fails.
-  const exempt = new Set([
+test('every table has row security: a policy, or no right at all for the API', async () => {
+  // Tables the API may read whole: they hold no data about an organisation or a person.
+  const open = new Set(['environment', 'country']);
+  // Tables the API's role has no right on at all. Row security with no policy is their second
+  // barrier. A new table is on neither list, so it must carry row security and a policy, or
+  // this test fails.
+  const closed = [
+    'identity_event',
     'person',
+    'security_setting',
     'session',
     'sign_in_challenge',
     'terms_acceptance',
-    'identity_event',
-    'environment',
-    'country',
-  ]);
-  const tables = await owner.query<{ name: string; secured: boolean; policies: number }>(
+    'test_clock',
+  ];
+  const tables = await owner.query<{
+    name: string;
+    secured: boolean;
+    policies: number;
+    rights: number;
+  }>(
     `SELECT c.relname AS name, c.relrowsecurity AS secured,
-            (SELECT count(*)::int FROM pg_policy p WHERE p.polrelid = c.oid) AS policies
+            (SELECT count(*)::int FROM pg_policy p WHERE p.polrelid = c.oid) AS policies,
+            (SELECT count(*)::int FROM information_schema.role_table_grants g
+              WHERE g.table_schema = 'trucker' AND g.table_name = c.relname
+                AND g.grantee IN ('trucker_app', 'PUBLIC'))
+            + (SELECT count(*)::int FROM information_schema.column_privileges g
+              WHERE g.table_schema = 'trucker' AND g.table_name = c.relname
+                AND g.grantee IN ('trucker_app', 'PUBLIC')) AS rights
      FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
      WHERE n.nspname = 'trucker' AND c.relkind = 'r' ORDER BY 1`,
   );
-  const checked = tables.rows.filter((table) => !exempt.has(table.name));
+  const byName = new Map(tables.rows.map((table) => [table.name, table]));
+  for (const name of closed) {
+    const table = byName.get(name);
+    assert.ok(table, `${name} is missing`);
+    assert.ok(table.secured, `${name} has no row security`);
+    assert.equal(table.policies, 0, `${name} has a policy: nothing should reach it`);
+    assert.equal(table.rights, 0, `the API's role has a right on ${name}`);
+  }
+  const checked = tables.rows.filter(
+    (table) => !open.has(table.name) && !closed.includes(table.name),
+  );
   assert.deepEqual(
     checked.map((table) => table.name),
     ['audit_entry', 'membership', 'organisation', 'retry_key'],
@@ -502,7 +526,88 @@ test('one person may create five organisations by default, and no more (O-4)', a
   assert.equal(over.body.code, 'organisation_limit_reached');
   assert.deepEqual(over.body.details, { limit: 5 });
   assert.equal(await count('organisation', 'created_by = $1', [person.personId]), 5);
-  assert.equal(SECURITY_PERIOD_DEFAULTS.ORGANISATION_CREATION_LIMIT, 5);
+  assert.equal(SECURITY_SETTING_DEFAULTS.organisation_creation_limit, 5);
+});
+
+test("the creation limit and the time of a change are the database's: a caller can set neither", async () => {
+  const person = await newPerson();
+  const first = await createOrganisation(person);
+  const context = { tokenHash: hashToken(person.token) };
+  // The limit is a protected setting. Tightened by the migration role, it applies at once,
+  // to the API and to a direct call alike; nothing the caller sets is read.
+  await writeSecuritySettings(owner, { organisation_creation_limit: 1 }, false);
+  try {
+    const viaApi = await call(api, 'POST', '/organisations', {
+      token: person.token,
+      key: key(),
+      body: details(),
+    });
+    assert.equal(viaApi.status, 409);
+    assert.deepEqual(viaApi.body.details, { limit: 1 });
+    await refused(
+      () =>
+        asApiRole(context, async (client) => {
+          await client.query(
+            `SELECT set_config('trucker.organisation_creation_limit', '1000', true)`,
+          );
+          return client.query(
+            `SELECT trucker.create_organisation('Over the limit', NULL, 'XA', 'X-2', NULL, NULL, true)`,
+          );
+        }),
+      /creation limit reached/,
+    );
+    await refused(
+      () =>
+        asApiRole(context, (client) =>
+          client.query(`UPDATE trucker.security_setting SET organisation_creation_limit = 1000`),
+        ),
+      /permission denied/,
+    );
+  } finally {
+    await writeSecuritySettings(owner, { ...SECURITY_SETTING_DEFAULTS }, false);
+  }
+  assert.equal(await count('organisation', 'created_by = $1', [person.personId]), 1);
+
+  // The time of a change: the API's role may not write it, and what it leaves out is filled
+  // in from the database's clock and copied into the history.
+  const selected = { ...context, organisationId: first.id };
+  await refused(
+    () =>
+      asApiRole(selected, (client) =>
+        client.query(
+          `UPDATE trucker.organisation SET legal_name = 'Backdated', version = version + 1,
+             updated_at = '2000-01-01' WHERE id = $1`,
+          [first.id],
+        ),
+      ),
+    /permission denied/,
+  );
+  await advance(90);
+  const client = await app.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `SELECT set_config('trucker.session_token_hash', $1, true),
+              set_config('trucker.organisation_id', $2, true)`,
+      [selected.tokenHash, first.id],
+    );
+    const changed = await client.query<{ updated_at: Date }>(
+      `UPDATE trucker.organisation SET legal_name = 'Stamped by the database', version = version + 1
+       WHERE id = $1 RETURNING updated_at`,
+      [first.id],
+    );
+    await client.query('COMMIT');
+    assert.equal(changed.rows[0]!.updated_at.toISOString(), clock().toISOString());
+  } finally {
+    await client.query('ROLLBACK').catch(() => undefined);
+    client.release();
+  }
+  const entry = await owner.query<{ occurred_at: Date }>(
+    `SELECT occurred_at FROM trucker.audit_entry
+     WHERE organisation_id = $1 AND action = 'organisation.updated'`,
+    [first.id],
+  );
+  assert.equal(entry.rows[0]!.occurred_at.toISOString(), clock().toISOString());
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -573,7 +678,7 @@ test('an organisation that is no longer a draft cannot be changed, by the API or
     { tokenHash: hashToken(person.token), organisationId: created.id },
     (client) =>
       client.query(
-        `UPDATE trucker.organisation SET legal_name = 'Too late', version = version + 1, updated_at = now() WHERE id = $1`,
+        `UPDATE trucker.organisation SET legal_name = 'Too late', version = version + 1 WHERE id = $1`,
         [created.id],
       ),
   );
@@ -622,7 +727,7 @@ test('a forged context selects nothing: the organisation identifier is not trust
   assert.equal(
     await rows(
       forgedOrganisation,
-      `UPDATE trucker.organisation SET legal_name = 'taken', version = version + 1, updated_at = now() WHERE id = '${theirOrganisation.id}'`,
+      `UPDATE trucker.organisation SET legal_name = 'taken', version = version + 1 WHERE id = '${theirOrganisation.id}'`,
     ),
     0,
   );
@@ -671,7 +776,7 @@ test('selecting one organisation hides every other, even for a member of both', 
     legalName: 'Organisation A',
     registrationNumber: 'A-1',
   });
-  advance(1);
+  await advance(1);
   const b = await createOrganisation(person, {
     legalName: 'Organisation B',
     registrationNumber: 'B-1',
@@ -683,7 +788,7 @@ test('selecting one organisation hides every other, even for a member of both', 
   const retryKey = key();
   await createOrganisation(stranger, { legalName: 'Keyed' }, retryKey);
   // A later creation time, so the newest-first order below does not depend on chance.
-  advance(1);
+  await advance(1);
   await createOrganisation(person, { legalName: 'Organisation A2' }, key());
   const tokenHash = hashToken(person.token);
   const seen = (context: { tokenHash?: string; organisationId?: string }) =>
@@ -735,7 +840,7 @@ test('selecting one organisation hides every other, even for a member of both', 
     ).rowCount,
     changed: (
       await client.query(
-        `UPDATE trucker.organisation SET legal_name = 'Reached from A', version = version + 1, updated_at = now() WHERE id = $1`,
+        `UPDATE trucker.organisation SET legal_name = 'Reached from A', version = version + 1 WHERE id = $1`,
         [b.id],
       )
     ).rowCount,
@@ -817,7 +922,7 @@ test('selecting one organisation hides every other, even for a member of both', 
 });
 
 test('creating an organisation needs a live session too: a forged one is refused by the database', async () => {
-  const create = `SELECT trucker.create_organisation('Forged', NULL, 'XA', 'X-1', NULL, NULL, now(), 5, true)`;
+  const create = `SELECT trucker.create_organisation('Forged', NULL, 'XA', 'X-1', NULL, NULL, true)`;
   for (const tokenHash of ['', hashToken('invented-token')])
     await refused(
       () => asApiRole({ tokenHash }, (client) => client.query(create)),
@@ -876,7 +981,7 @@ test('each person lists only the organisations they belong to; a member of two s
   const first = await newPerson();
   const second = await newPerson();
   const a = await createOrganisation(first, { legalName: 'A' });
-  advance(1);
+  await advance(1);
   const b = await createOrganisation(second, { legalName: 'B' });
   const ids = async (person: Person): Promise<string[]> =>
     (
@@ -1009,7 +1114,7 @@ test('every create and change writes one history entry, with who, what, when and
     body: details(),
   });
   const organisation = made.body.organisation as Organisation;
-  advance(5);
+  await advance(5);
   const changed = await call(api, 'PATCH', `/organisations/${organisation.id}`, {
     token: person.token,
     body: { ...details({ legalName: 'Second name (fictional)' }), version: 1 },
@@ -1061,7 +1166,7 @@ test('a change and its history entry stand or fall together', async () => {
   // The change is made, then the transaction fails: neither the change nor an entry remains.
   await asApiRole(context, async (client) => {
     const changed = await client.query(
-      `UPDATE trucker.organisation SET legal_name = 'Lost', version = version + 1, updated_at = now() WHERE id = $1`,
+      `UPDATE trucker.organisation SET legal_name = 'Lost', version = version + 1 WHERE id = $1`,
       [organisation.id],
     );
     assert.equal(changed.rowCount, 1);
@@ -1077,7 +1182,7 @@ test('a change and its history entry stand or fall together', async () => {
     () =>
       asApiRole(context, (client) =>
         client.query(
-          `UPDATE trucker.organisation SET legal_name = 'No entry', version = version + 2, updated_at = now() WHERE id = $1`,
+          `UPDATE trucker.organisation SET legal_name = 'No entry', version = version + 2 WHERE id = $1`,
           [organisation.id],
         ),
       ),
@@ -1282,10 +1387,10 @@ test('a retry key is remembered for 24 hours by default; after that it is treate
   const person = await newPerson();
   const retryKey = key();
   const first = await createOrganisation(person, {}, retryKey);
-  advance(23 * 3600);
+  await advance(23 * 3600);
   const within = await signInAs(person.phone);
   assert.equal((await createOrganisation(within, {}, retryKey)).id, first.id);
-  advance(2 * 3600);
+  await advance(2 * 3600);
   const later = await signInAs(person.phone);
   const second = await createOrganisation(later, {}, retryKey);
   assert.notEqual(second.id, first.id);
@@ -1313,9 +1418,7 @@ test('with fixtures switched off no country is open, and creation says registrat
   await refused(
     () =>
       asApiRole({ tokenHash: hashToken(person.token) }, (client) =>
-        client.query(
-          `SELECT trucker.create_organisation('x', NULL, 'XC', 'x', NULL, NULL, now(), 5, true)`,
-        ),
+        client.query(`SELECT trucker.create_organisation('x', NULL, 'XC', 'x', NULL, NULL, true)`),
       ),
     /not open for registration/,
   );
@@ -1385,7 +1488,12 @@ test('the database itself refuses fixture countries unless it is marked for them
       /duplicate key/,
     );
     assert.deepEqual(
-      productionStartProblems({ rowSecurityBinds: true, problems: [], environment: 'production' }),
+      productionStartProblems({
+        rowSecurityBinds: true,
+        problems: [],
+        environment: 'production',
+        settingsReviewed: true,
+      }),
       [],
     );
   } finally {
@@ -1465,8 +1573,8 @@ test('loading fixtures needs every safeguard at once; production configuration r
     /must differ/,
   );
   assert.match(
-    problemsOf({ ...production, ORGANISATION_CREATION_LIMIT: undefined }),
-    /ORGANISATION_CREATION_LIMIT must be set explicitly/,
+    problemsOf({ ...production, ORGANISATION_CREATION_LIMIT: '5' }),
+    /ORGANISATION_CREATION_LIMIT is no longer read by the API/,
   );
   assert.match(
     problemsOf({ ...production, RETRY_KEY_RETENTION_HOURS: undefined }),
@@ -1484,7 +1592,12 @@ test('loading fixtures needs every safeguard at once; production configuration r
   // Production does not start against a database that is not marked production, or with a
   // role that row security does not bind.
   assert.match(
-    productionStartProblems({ rowSecurityBinds: true, problems: [], environment: 'test' }).join(),
+    productionStartProblems({
+      rowSecurityBinds: true,
+      problems: [],
+      environment: 'test',
+      settingsReviewed: true,
+    }).join(),
     /not "production"/,
   );
   assert.match(
@@ -1492,6 +1605,7 @@ test('loading fixtures needs every safeguard at once; production configuration r
       rowSecurityBinds: true,
       problems: [],
       environment: 'unmarked',
+      settingsReviewed: true,
     }).join(),
     /not "production"/,
   );
@@ -1500,8 +1614,19 @@ test('loading fixtures needs every safeguard at once; production configuration r
       rowSecurityBinds: false,
       problems: ['the database role is a superuser'],
       environment: 'production',
+      settingsReviewed: true,
     }).length,
     1,
+  );
+  // Nor with limits in the database that nobody has recorded as reviewed for production.
+  assert.match(
+    productionStartProblems({
+      rowSecurityBinds: true,
+      problems: [],
+      environment: 'production',
+      settingsReviewed: false,
+    }).join(),
+    /have not been recorded as reviewed for production/,
   );
 });
 
@@ -1536,6 +1661,7 @@ test('a production API does not start against a database that is not marked prod
   assert.equal(marked.code, 1, marked.output);
   assert.match(marked.output, /Refusing to start in production/);
   assert.match(marked.output, /marked "test", not "production"/);
+  assert.match(marked.output, /have not been recorded as reviewed for production/);
   // The migration role, under another name so that the two connection strings differ.
   const ownerAgain = new URL(database.url);
   ownerAgain.searchParams.set('application_name', 'same-role');

@@ -11,6 +11,8 @@ export interface DatabaseAccess {
   readonly rowSecurityBinds: boolean;
   readonly problems: readonly string[];
   readonly environment: EnvironmentKind;
+  /** The protected security settings have been recorded as reviewed for production. */
+  readonly settingsReviewed: boolean;
 }
 
 /**
@@ -47,10 +49,14 @@ export async function inspectAccess(pool: Pick<pg.Pool, 'query'>): Promise<Datab
     if (!found.member) problems.push('the database role is not a member of trucker_app');
   }
   const mark = await pool.query<{ kind: EnvironmentKind }>('SELECT kind FROM trucker.environment');
+  const reviewed = await pool.query<{ reviewed: boolean | null }>(
+    'SELECT trucker.security_settings_reviewed() AS reviewed',
+  );
   return {
     rowSecurityBinds: problems.length === 0,
     problems,
     environment: mark.rows[0]?.kind ?? 'unmarked',
+    settingsReviewed: reviewed.rows[0]?.reviewed === true,
   };
 }
 
@@ -108,15 +114,20 @@ export class AccessGuard {
 }
 
 /**
- * Production does not start on a guess. The role must be bound by row security and the
+ * Production does not start on a guess. The role must be bound by row security, the
  * database must have been marked production, which is possible only when it holds no fixture
- * data and can never be undone.
+ * data and can never be undone, and the limits it enforces must have been reviewed.
  */
 export function productionStartProblems(access: DatabaseAccess): string[] {
   const problems = [...access.problems];
   if (access.environment !== 'production') {
     problems.push(
       `the database is marked "${access.environment}", not "production" (mark it once, deliberately, before the first production start)`,
+    );
+  }
+  if (!access.settingsReviewed) {
+    problems.push(
+      'the security settings in the database are development defaults that have not been recorded as reviewed for production (npm run db:settings)',
     );
   }
   return problems;
