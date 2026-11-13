@@ -10,12 +10,14 @@ import pg from 'pg';
 import { createTestDatabase, type TestDatabase } from '../testing/test-database.js';
 import {
   MigrationError,
+  applyMigrations,
   checksumOf,
   defaultMigrationsDir,
   findUnsupportedStatements,
   migrateUp,
   migrationStatus,
   readMigrationFiles,
+  splitSqlStatements,
 } from './migrations.js';
 
 async function migrationsDir(files: Record<string, string>): Promise<string> {
@@ -255,36 +257,197 @@ test('a migration statement waiting on a table lock fails within its bound and i
   });
 });
 
-test('after a runner is killed mid-migration, nothing is half-applied and the next run completes', async () => {
+const HIDDEN_COMMIT =
+  "CREATE TABLE leaked (id integer); SELECT '--'; COMMIT; SELECT * FROM missing_table;";
+
+test('a comment marker inside a string does not hide a later COMMIT (review finding P1)', async () => {
+  assert.deepEqual(splitSqlStatements(HIDDEN_COMMIT), [
+    'CREATE TABLE leaked (id integer)',
+    'SELECT',
+    'COMMIT',
+    'SELECT * FROM missing_table',
+  ]);
+  assert.equal(findUnsupportedStatements(HIDDEN_COMMIT).length, 1);
+
+  const migrations = await dir({ '0001_hidden_commit.sql': HIDDEN_COMMIT });
+  await withDatabase(async (pool) => {
+    await assert.rejects(migrateUp(pool, migrations), MigrationError);
+    // Refused before execution: nothing ran, so nothing leaked and no history table exists.
+    const state = await pool.query<{ leaked: boolean; history: boolean }>(
+      `SELECT to_regclass('public.leaked') IS NOT NULL AS leaked,
+              to_regclass('public.schema_migrations') IS NOT NULL AS history`,
+    );
+    assert.deepEqual(state.rows[0], { leaked: false, history: false });
+  });
+});
+
+test('transaction control is found whatever precedes it', () => {
+  for (const sql of [
+    "SELECT '--'; COMMIT;",
+    "SELECT '/*'; COMMIT; SELECT '*/';",
+    'SELECT "--" FROM t; ROLLBACK;',
+    'SELECT "a""--" FROM t; COMMIT;',
+    'SELECT $$--$$; COMMIT;',
+    "SELECT $tag$ ' -- /* $tag$; COMMIT;",
+    "SELECT 'it''s -- not a comment'; COMMIT;",
+    "SELECT E'\\'--'; COMMIT;",
+    "SELECT e'a\\\\'; COMMIT;",
+    '/* outer /* inner */ still comment */ COMMIT;',
+    'SELECT 1 -- trailing comment\n; COMMIT;',
+    "SELECT '$$'; COMMIT; SELECT '$$';",
+    'SELECT $1; COMMIT;',
+    '  \n  commit ;',
+    'Start   Transaction;',
+  ]) {
+    assert.ok(findUnsupportedStatements(sql).length > 0, `not detected: ${sql}`);
+  }
+});
+
+test('transaction words that are not statements are left alone', () => {
+  for (const sql of [
+    "SELECT 'COMMIT; ROLLBACK;';",
+    'SELECT $$ BEGIN; COMMIT; $$;',
+    '/* COMMIT; /* ROLLBACK; */ BEGIN; */ SELECT 1;',
+    '-- COMMIT;\nSELECT 1;',
+    'CREATE TABLE "COMMIT; BEGIN" (id integer);',
+    "SELECT E'\\'; COMMIT; --';",
+    "SELECT 'a' || '--' || 'COMMIT;';",
+    'CREATE TABLE commit_log (begin_at timestamptz, end_at timestamptz);',
+    'SELECT col$name FROM t;',
+  ]) {
+    assert.deepEqual(findUnsupportedStatements(sql), [], `wrongly refused: ${sql}`);
+  }
+});
+
+test('unterminated strings, comments and dollar quotes are refused', async () => {
+  for (const sql of ["SELECT 'open;", 'SELECT 1; /* open', 'SELECT $x$ open;', 'SELECT "open;']) {
+    assert.throws(() => splitSqlStatements(sql), MigrationError, sql);
+    await assert.rejects(readMigrationFiles(await dir({ '0001_bad.sql': sql })), MigrationError);
+  }
+});
+
+test('second barrier: a file that ends the runner transaction is detected even if the statement check is bypassed', async () => {
+  // applyMigrations is given the file directly, so the statement check never sees it.
+  const sql = 'CREATE TABLE leaked (id integer); COMMIT;';
+  await withDatabase(async (pool) => {
+    const bypassed = [{ version: 1, name: 'bypassed', checksum: checksumOf(sql), sql }];
+    await assert.rejects(
+      applyMigrations(pool, bypassed),
+      /ended the transaction opened by the runner/,
+    );
+    // The barrier detects and stops; it cannot undo what the file itself committed.
+    const history = await pool.query<{ n: string }>(
+      'SELECT count(*) AS n FROM public.schema_migrations',
+    );
+    assert.equal(history.rows[0]?.n, '0');
+  });
+});
+
+test('transaction control inside a DO block is rejected by the database and rolled back', async () => {
+  const migrations = await dir({
+    '0001_do_commit.sql':
+      'CREATE TABLE a (id integer); DO $$ BEGIN COMMIT; END $$; CREATE TABLE b (id integer);',
+  });
+  await withDatabase(async (pool) => {
+    await assert.rejects(migrateUp(pool, migrations), MigrationError);
+    const tables = await pool.query<{ a: boolean; b: boolean }>(
+      `SELECT to_regclass('public.a') IS NOT NULL AS a, to_regclass('public.b') IS NOT NULL AS b`,
+    );
+    assert.deepEqual(tables.rows[0], { a: false, b: false });
+    assert.deepEqual((await migrationStatus(pool, migrations)).applied, []);
+  });
+});
+
+test('a runner killed while migration 2 holds an uncommitted change leaves nothing behind (review finding P2)', async () => {
+  // Migration 2 creates a table and then waits on a barrier lock that this test holds, so the
+  // runner is provably inside migration 2, after an uncommitted change, when it is killed.
+  const BARRIER = 918273645;
   const migrations = await dir({
     '0001_first.sql': 'CREATE TABLE a (id integer);',
-    '0002_slow.sql': 'CREATE TABLE b (id integer); SELECT pg_sleep(2);',
+    '0002_barrier.sql': `CREATE TABLE b (id integer); SELECT pg_advisory_xact_lock(${BARRIER});`,
     '0003_third.sql': 'CREATE TABLE c (id integer);',
   });
   const cli = fileURLToPath(new URL('../cli/migrate.js', import.meta.url));
   await withDatabase(async (pool, url) => {
-    const child = spawn(process.execPath, [cli, 'up'], {
-      env: { ...process.env, NODE_ENV: 'test', DATABASE_URL: url, MIGRATIONS_DIR: migrations },
-      stdio: 'ignore',
-    });
-    const exited = new Promise<void>((resolve) => child.once('exit', () => resolve()));
-    // Wait until the first migration is recorded and the second is in flight, then kill hard.
-    for (let i = 0; i < 100; i += 1) {
-      const applied = (await migrationStatus(pool, migrations)).applied;
-      if (applied.length === 1) break;
-      await sleep(50);
+    const barrier = await pool.connect();
+    let barrierHeld = false;
+    try {
+      await barrier.query('SELECT pg_advisory_lock($1::bigint)', [BARRIER]);
+      barrierHeld = true;
+
+      const child = spawn(process.execPath, [cli, 'up'], {
+        env: {
+          ...process.env,
+          NODE_ENV: 'test',
+          DATABASE_URL: url,
+          MIGRATIONS_DIR: migrations,
+          MIGRATION_STATEMENT_LOCK_TIMEOUT_MS: '120000',
+        },
+        stdio: 'ignore',
+      });
+      const exited = new Promise<void>((resolve) => child.once('exit', () => resolve()));
+
+      // 1. Confirm the runner's session is blocked on the barrier, inside an open transaction
+      //    that has already written (it has a transaction id), running migration 2's SQL.
+      type Waiter = { pid: number; has_xid: boolean; in_xact: boolean; query: string };
+      let waiter: Waiter | undefined;
+      for (let i = 0; i < 200 && !waiter; i += 1) {
+        const found = await pool.query<Waiter>(
+          `SELECT a.pid, a.backend_xid IS NOT NULL AS has_xid,
+                  a.xact_start IS NOT NULL AS in_xact, a.query
+             FROM pg_locks l JOIN pg_stat_activity a ON a.pid = l.pid
+            WHERE l.locktype = 'advisory' AND NOT l.granted
+              AND a.datname = current_database()`,
+        );
+        waiter = found.rows[0];
+        if (!waiter) await sleep(50);
+      }
+      assert.ok(waiter, 'the runner never reached the barrier in migration 2');
+      assert.equal(waiter.in_xact, true);
+      assert.equal(waiter.has_xid, true);
+      assert.match(waiter.query, /CREATE TABLE b/);
+
+      // 2. Its change is uncommitted: migration 1 is recorded, table b is invisible to others.
+      assert.deepEqual((await migrationStatus(pool, migrations)).applied, [1]);
+      const beforeKill = await pool.query<{ b: boolean }>(
+        "SELECT to_regclass('public.b') IS NOT NULL AS b",
+      );
+      assert.equal(beforeKill.rows[0]?.b, false);
+
+      // 3. Kill the runner hard while it is still blocked, then let its session proceed.
+      child.kill('SIGKILL');
+      await exited;
+      await barrier.query('SELECT pg_advisory_unlock($1::bigint)', [BARRIER]);
+      barrierHeld = false;
+
+      // 4. The server discovers the dead client, aborts the transaction and ends the session.
+      let gone = false;
+      for (let i = 0; i < 300 && !gone; i += 1) {
+        const alive = await pool.query('SELECT 1 FROM pg_stat_activity WHERE pid = $1', [
+          waiter.pid,
+        ]);
+        gone = alive.rowCount === 0;
+        if (!gone) await sleep(50);
+      }
+      assert.ok(gone, 'the killed runner session did not end');
+
+      // 5. Rolled back: nothing from migration 2 exists and it is not recorded.
+      const afterKill = await pool.query<{ a: boolean; b: boolean; c: boolean }>(
+        `SELECT to_regclass('public.a') IS NOT NULL AS a,
+                to_regclass('public.b') IS NOT NULL AS b,
+                to_regclass('public.c') IS NOT NULL AS c`,
+      );
+      assert.deepEqual(afterKill.rows[0], { a: true, b: false, c: false });
+      const status = await migrationStatus(pool, migrations);
+      assert.deepEqual(status.applied, [1]);
+      assert.deepEqual(status.problems, []);
+    } finally {
+      if (barrierHeld) await barrier.query('SELECT pg_advisory_unlock($1::bigint)', [BARRIER]);
+      barrier.release();
     }
-    await sleep(300);
-    child.kill('SIGKILL');
-    await exited;
 
-    const afterKill = await migrationStatus(pool, migrations);
-    assert.deepEqual(afterKill.applied, [1]);
-    assert.deepEqual(afterKill.problems, []);
-
-    // The server ends the dead session, rolls back and frees the lock; the next run waits for that.
-    const applied = await migrateUp(pool, migrations, { lockWaitMs: 15_000 });
-    assert.deepEqual(applied, [2, 3]);
+    // 6. The next run completes the remaining migrations exactly once.
+    assert.deepEqual(await migrateUp(pool, migrations, { lockWaitMs: 15_000 }), [2, 3]);
     const tables = await pool.query<{ a: boolean; b: boolean; c: boolean }>(
       `SELECT to_regclass('public.a') IS NOT NULL AS a,
               to_regclass('public.b') IS NOT NULL AS b,

@@ -44,7 +44,7 @@ Decision (Abdullah, 13 Nov 2026): keep Node 22 and PostgreSQL 16 as major-versio
 | Run | Node.js | npm | PostgreSQL | Platform |
 |---|---|---|---|---|
 | Local, slice 1 as first delivered (17 tests) | 22.23.4 | 10.9.9 | 16.15 | Linux x64 |
-| Local, review fixes (28 tests) | 22.23.4 | 10.9.9 | 16.15 | Linux x64 |
+| Local, review fixes (28 tests, then 34 after the second review) | 22.23.4 | 10.9.9 | 16.15 | Linux x64 |
 | GitHub CI, pull request 1 (commits `0899c08`, `a627ae3`) | not recorded: the versions step did not exist yet | | | ubuntu-latest |
 | GitHub CI, review-fixes pull request | recorded in that run's "Record runtime versions" step and in the pull request | | | ubuntu-latest |
 
@@ -93,15 +93,15 @@ All of the following was executed on 13 November 2026 against a locally installe
 
 ## Review fixes (13 November 2026, after Abdullah's review of the patch)
 
-On branch `foundation/review-fixes-slice-1`, for review against `staging`. Re-run locally against PostgreSQL 16.15: format, lint, type check, migration file check, and the full suite, now 28 tests, 28 pass, repeated three times.
+On branch `foundation/review-fixes-slice-1`, for review against `staging`. Re-run locally against PostgreSQL 16.15: format, lint, type check, migration file check, and the full suite. After the first review: 28 tests. After the second review (P1, P2): 34 tests, 34 pass, repeated three times.
 
 | # | Finding | Change | Evidence | Result |
 |---|---|---|---|---|
 | R1 | Migration checksums could differ between Windows and Linux checkouts | `.gitattributes` forces LF for SQL (and normalises text generally). Independently, the runner hashes and executes normalised text: no byte-order mark, LF only | Unit test: LF, CRLF, CR and BOM variants give one checksum. Integration test: a file applied with LF and then rewritten with CRLF is not reported as edited. Simulated checkouts with `core.autocrlf=true`: with `.gitattributes` the file is LF; without it the file is CRLF (8 CR lines) and the checksum is still identical | Pass |
 | R2 | Readiness had no execution deadline | One overall deadline for the readiness check (`HEALTH_CHECK_TIMEOUT_MS`, default 2 s); a server-side `statement_timeout` and a driver `query_timeout` on the API pool (`DB_STATEMENT_TIMEOUT_MS`, default 5 s), separate from the connection timeout | Stalled query on an open connection (table lock held): 503 `{"database":"ok","migrations":"unknown"}` inside the deadline, liveness 200, and 200 again after release. Server that accepts connections and never answers: 503 inside the deadline. Query that never resolves (stub): answer inside the deadline | Pass |
 | R3 | Migration lock waiting must be bounded separately | Waiting for another runner is bounded (`MIGRATION_LOCK_WAIT_MS`, default 30 s). Waiting for a table lock inside a migration is bounded (`MIGRATION_STATEMENT_LOCK_TIMEOUT_MS`, default 10 s). The migration connection has no statement timeout | Test: second runner gives up after its wait and succeeds once the lock is free. Test: a statement blocked by a table lock fails within its bound, is rolled back, and applies later | Pass |
-| R4 | Migration files must not control transactions | Files containing BEGIN, COMMIT, ROLLBACK, SAVEPOINT and similar, or statements that cannot run in a transaction, are refused when read, before any database work. `db:check` therefore catches them in CI without a database | Tests: six refused examples; keywords inside comments, strings and dollar-quoted function bodies are not mistaken for statements | Pass |
-| R5 | Recovery after a runner is terminated | No code change needed; behaviour proved | Test: the runner process is killed during the second of three migrations. Afterwards only the first is recorded, nothing is half-applied, and the next run applies the second and third exactly once | Pass |
+| R4 | Migration files must not control transactions | Files containing BEGIN, COMMIT, ROLLBACK, SAVEPOINT and similar, or statements that cannot run in a transaction, are refused when read, before any database work. `db:check` therefore catches them in CI without a database. **Revised after the second review (P1):** the first version stripped comments before strings, so `SELECT '--'; COMMIT;` hid the COMMIT. It is replaced by a single-pass scanner that reads the text in order (line and nested block comments, standard and escape strings, dollar quoting, quoted identifiers) and refuses anything unterminated. A second barrier checks, after each file has run, that the session is still in the transaction the runner opened | Regression test with the reviewer's exact input: refused before execution, table not created, no history table. Fifteen inputs where transaction control follows a string, comment, dollar quote or quoted identifier are all detected; nine inputs with the words inside text are not refused; four unterminated inputs are refused. Second barrier proved with the statement check bypassed. Transaction control inside a DO block is rejected by PostgreSQL and rolled back | Pass |
+| R5 | Recovery after a runner is terminated | No code change needed; behaviour proved. **Revised after the second review (P2):** the first test only slept and could have passed without migration 2 starting. It now uses a database barrier | Migration 2 creates a table and then waits on a lock the test holds. The test confirms the runner's session is blocked there, inside an open transaction that has already written, with the table still invisible to others; kills the runner; releases the barrier; waits for the session to end; and asserts nothing from migration 2 exists or is recorded. The next run then applies migrations 2 and 3 exactly once | Pass |
 
 ### Migration runner: scope and limits
 
@@ -111,7 +111,7 @@ The runner is accepted for **transactional SQL only**. It does not support, and 
 - `CREATE INDEX CONCURRENTLY`, `DROP INDEX CONCURRENTLY`, `REINDEX ... CONCURRENTLY`, `VACUUM`, `CREATE` or `DROP DATABASE`, `CREATE` or `DROP TABLESPACE`, `ALTER SYSTEM`;
 - SQL-standard function bodies written with `BEGIN ATOMIC` (use a dollar-quoted body).
 
-Also outside its scope: large data backfills that should commit in batches, and down migrations (it is forward-only). Any of these needs a separately reviewed procedure. The refusal is a text check on statement beginnings; it is a guard against mistakes, not a security control.
+Also outside its scope: large data backfills that should commit in batches, and down migrations (it is forward-only). Any of these needs a separately reviewed procedure. The refusal is a lexical check on the beginning of each top-level statement; it is a guard against mistakes, not a security control or a full SQL parser. The second barrier detects a file that ended the runner's transaction after the fact; it stops the run and reports it, but cannot undo what such a file committed. If a file both ends the transaction and then fails, the failure is reported without that specific diagnosis.
 
 ## Not verified
 

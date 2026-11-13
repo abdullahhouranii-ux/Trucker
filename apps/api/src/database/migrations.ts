@@ -19,6 +19,12 @@ import type pg from 'pg';
  *    REINDEX CONCURRENTLY, VACUUM, CREATE/DROP DATABASE, CREATE/DROP TABLESPACE, ALTER SYSTEM);
  *  - SQL-standard function bodies written with BEGIN ATOMIC (use a dollar-quoted body).
  * Work of those kinds needs a separately reviewed procedure outside this runner.
+ *
+ * Two barriers stop a file from ending the runner's transaction: the statement check above,
+ * which refuses the file before anything runs, and a check after the file has run that the
+ * session is still inside the very transaction the runner opened. Transaction control hidden
+ * inside a DO block or a called procedure is rejected by PostgreSQL itself, because the runner
+ * has an open transaction.
  */
 
 const FILE_PATTERN = /^(\d{4})_([a-z0-9_]+)\.sql$/;
@@ -72,14 +78,110 @@ export function checksumOf(raw: string): string {
   return createHash('sha256').update(normaliseSql(raw), 'utf8').digest('hex');
 }
 
-/** Removes comments, string literals, dollar-quoted bodies and quoted identifiers. */
-function stripNonCode(sql: string): string {
-  return sql
-    .replace(/\$([A-Za-z_][A-Za-z0-9_]*)?\$[\s\S]*?\$\1\$/g, ' ')
-    .replace(/--[^\n]*/g, ' ')
-    .replace(/\/\*[\s\S]*?\*\//g, ' ')
-    .replace(/'(?:[^']|'')*'/g, ' ')
-    .replace(/"(?:[^"]|"")*"/g, ' ');
+const IDENTIFIER_CHAR = /[A-Za-z0-9_$\u0080-￿]/;
+const DOLLAR_TAG = /^\$([A-Za-z_\u0080-￿][A-Za-z0-9_\u0080-￿]*)?\$/;
+
+/**
+ * Splits SQL into top-level statements, with comments, string literals, dollar-quoted bodies
+ * and quoted identifiers blanked out. It reads the text once, left to right, the way
+ * PostgreSQL's own lexer decides what is code: whichever construct starts first wins, so a
+ * comment marker inside a string is text and a quote inside a comment is comment.
+ *
+ * Handled: line comments, nested block comments, standard strings (doubled quote), escape strings
+ * (E prefix, backslash escapes), dollar quoting with or without a tag, quoted identifiers.
+ * Anything left unterminated is an error: the file is refused.
+ */
+export function splitSqlStatements(sql: string): string[] {
+  const text = normaliseSql(sql);
+  const statements: string[] = [];
+  let current = '';
+  let i = 0;
+  const unterminated = (what: string): never => {
+    throw new MigrationError(`unterminated ${what} in migration SQL`);
+  };
+
+  while (i < text.length) {
+    const ch = text[i] as string;
+    const next = text[i + 1];
+
+    if (ch === '-' && next === '-') {
+      const end = text.indexOf('\n', i);
+      i = end === -1 ? text.length : end;
+      current += ' ';
+    } else if (ch === '/' && next === '*') {
+      let depth = 1;
+      i += 2;
+      while (depth > 0) {
+        if (i >= text.length) unterminated('block comment');
+        if (text[i] === '/' && text[i + 1] === '*') {
+          depth += 1;
+          i += 2;
+        } else if (text[i] === '*' && text[i + 1] === '/') {
+          depth -= 1;
+          i += 2;
+        } else {
+          i += 1;
+        }
+      }
+      current += ' ';
+    } else if (ch === "'") {
+      const previous = text[i - 1];
+      const beforePrevious = text[i - 2];
+      const escapeString =
+        (previous === 'e' || previous === 'E') &&
+        (beforePrevious === undefined || !IDENTIFIER_CHAR.test(beforePrevious));
+      i += 1;
+      for (;;) {
+        if (i >= text.length) unterminated('string literal');
+        if (escapeString && text[i] === '\\') {
+          i += 2;
+        } else if (text[i] === "'" && text[i + 1] === "'") {
+          i += 2;
+        } else if (text[i] === "'") {
+          i += 1;
+          break;
+        } else {
+          i += 1;
+        }
+      }
+      current += ' ';
+    } else if (ch === '"') {
+      i += 1;
+      for (;;) {
+        if (i >= text.length) unterminated('quoted identifier');
+        if (text[i] === '"' && text[i + 1] === '"') {
+          i += 2;
+        } else if (text[i] === '"') {
+          i += 1;
+          break;
+        } else {
+          i += 1;
+        }
+      }
+      current += ' ';
+    } else if (ch === '$' && !(i > 0 && IDENTIFIER_CHAR.test(text[i - 1] as string))) {
+      const tag = DOLLAR_TAG.exec(text.slice(i, i + 80))?.[0];
+      if (tag === undefined) {
+        // A positional parameter such as $1, or a stray dollar sign: ordinary code.
+        current += ch;
+        i += 1;
+      } else {
+        const close = text.indexOf(tag, i + tag.length);
+        if (close === -1) unterminated('dollar-quoted string');
+        i = close + tag.length;
+        current += ' ';
+      }
+    } else if (ch === ';') {
+      statements.push(current);
+      current = '';
+      i += 1;
+    } else {
+      current += ch;
+      i += 1;
+    }
+  }
+  statements.push(current);
+  return statements.map((statement) => statement.trim()).filter((statement) => statement !== '');
 }
 
 const FORBIDDEN: ReadonlyArray<readonly [RegExp, string]> = [
@@ -100,9 +202,7 @@ const FORBIDDEN: ReadonlyArray<readonly [RegExp, string]> = [
 /** Returns the reasons a migration file is not acceptable to this runner. */
 export function findUnsupportedStatements(sql: string): string[] {
   const reasons: string[] = [];
-  for (const statement of stripNonCode(normaliseSql(sql)).split(';')) {
-    const text = statement.trim();
-    if (!text) continue;
+  for (const text of splitSqlStatements(sql)) {
     for (const [pattern, reason] of FORBIDDEN) {
       if (pattern.test(text)) {
         reasons.push(`"${text.split(/\s+/).slice(0, 3).join(' ')}" ${reason}`);
@@ -209,9 +309,21 @@ export async function migrateUp(
   dir: string,
   options: MigrateOptions = {},
 ): Promise<number[]> {
+  return applyMigrations(pool, await readMigrationFiles(dir), options);
+}
+
+/**
+ * Applies already-read migration files. Use migrateUp: it is the only path that runs the
+ * statement check first. This function is exported so that tests can prove the second barrier
+ * (the transaction check after each file) works even if the first were bypassed.
+ */
+export async function applyMigrations(
+  pool: pg.Pool,
+  files: readonly MigrationFile[],
+  options: MigrateOptions = {},
+): Promise<number[]> {
   const lockWaitMs = options.lockWaitMs ?? 30_000;
   const statementLockTimeoutMs = options.statementLockTimeoutMs ?? 10_000;
-  const files = await readMigrationFiles(dir);
   const client = await pool.connect();
   let broken = false;
   try {
@@ -235,7 +347,19 @@ export async function migrateUp(
       for (const file of files.filter((f) => status.pending.includes(f.version))) {
         await client.query('BEGIN');
         try {
+          const before = await client.query<{ id: string }>(
+            'SELECT pg_current_xact_id()::text AS id',
+          );
           await client.query(file.sql);
+          const after = await client.query<{ id: string | null }>(
+            'SELECT pg_current_xact_id_if_assigned()::text AS id',
+          );
+          if (after.rows[0]?.id !== before.rows[0]?.id) {
+            throw new MigrationError(
+              'the file ended the transaction opened by the runner; its changes may be ' +
+                'committed without a history entry and must be inspected by hand',
+            );
+          }
           await client.query(
             'INSERT INTO public.schema_migrations (version, name, checksum) VALUES ($1, $2, $3)',
             [file.version, file.name, file.checksum],
