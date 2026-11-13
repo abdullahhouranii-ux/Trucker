@@ -6,11 +6,12 @@ import {
   migrationStatus,
   readMigrationFiles,
 } from '../database/migrations.js';
-import { createPool } from '../database/pool.js';
+import { createMigrationPool } from '../database/pool.js';
 
 /**
  * check  - validates migration files only; needs no database.
- * up     - applies pending migrations.
+ * up     - applies pending migrations. Run this before the API serves traffic: readiness
+ *          stays 503 while anything is pending.
  * status - exits 1 when anything is pending or inconsistent.
  */
 async function main(command: string | undefined): Promise<number> {
@@ -26,10 +27,14 @@ async function main(command: string | undefined): Promise<number> {
     return 2;
   }
 
-  const pool = createPool(loadConfig(process.env));
+  const config = loadConfig(process.env);
+  const pool = createMigrationPool(config);
   try {
     if (command === 'up') {
-      const applied = await migrateUp(pool, dir);
+      const applied = await migrateUp(pool, dir, {
+        lockWaitMs: config.MIGRATION_LOCK_WAIT_MS,
+        statementLockTimeoutMs: config.MIGRATION_STATEMENT_LOCK_TIMEOUT_MS,
+      });
       console.log(applied.length > 0 ? `applied: ${applied.join(', ')}` : 'applied: none');
       return 0;
     }

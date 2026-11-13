@@ -6,10 +6,13 @@ Remote: https://github.com/abdullahhouranii-ux/Trucker
 
 ## Current status
 
-Documents only (13 November 2026). The repository holds project rules, delivery status,
-the backlog and reference files. No API, portal, mobile, database, test or CI code exists yet.
-Files were moved from a nested `Trucker/` folder to the repository root in a housekeeping change;
-no content of the reference files was altered.
+Foundation only (13 November 2026). Implemented and tested: an npm workspace with `apps/api`
+(validated configuration, `/health/live`, `/health/ready`) and a forward-only SQL migration
+runner. Evidence and limits: docs/delivery/FOUNDATION_SLICE_1.md. Windows setup:
+docs/delivery/WINDOWS_SETUP.md (not yet executed on Windows).
+
+No business feature exists: no sign-in, organisations, shipments, bookings, portals or mobile
+application. Those are specified provisionally in docs/specs and gated on recorded decisions.
 
 ## Product reference
 
@@ -37,7 +40,8 @@ Never copy real credentials, private customer data, local environments or user-s
 
 docs/specs is the single authoritative set of specifications; see docs/specs/README.md for the
 index and versions. Copies in the Claude project are synchronised references. All documents are
-provisional: nothing in them is implemented and no application tests have been run.
+provisional. Only the foundation slice is implemented and tested
+(docs/delivery/FOUNDATION_SLICE_1.md); no business feature is implemented.
 
 Commercial model (D-001), payment approach (D-002) and launch geography (D-003) are undecided.
 

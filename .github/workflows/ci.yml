@@ -1,5 +1,5 @@
-# NOT YET RUN on GitHub: nothing has been pushed. The same commands were run locally
-# (docs/delivery/FOUNDATION_SLICE_1.md). Confirm action versions on first run.
+# Runs the same commands as `npm run verify`, against a PostgreSQL service.
+# Each run prints the exact runtime versions it used (docs/delivery/FOUNDATION_SLICE_1.md).
 name: ci
 
 on:
@@ -37,6 +37,8 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      - name: Record runtime versions
+        run: npm run versions
       - run: npm run format:check
       - run: npm run lint
       - run: npm run typecheck

@@ -6,6 +6,11 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
+    // Plain Node.js helper scripts.
+    files: ['tools/**/*.mjs'],
+    languageOptions: { globals: { process: 'readonly', console: 'readonly' } },
+  },
+  {
     files: ['**/*.ts'],
     rules: {
       '@typescript-eslint/consistent-type-imports': 'error',

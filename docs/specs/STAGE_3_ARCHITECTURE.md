@@ -1,8 +1,8 @@
 # Trucker — Stage 3: architecture evaluation (provisional)
 
-Version 0.2, 13 Nov 2026. Owner: Abdullah. Changes in 0.2: T-001 to T-006 accepted with conditions (section 13); the rigid dependency chain is replaced by orchestration interfaces and a shared-transaction rule (section 3); resource release is modelled as occupancy episodes (section 4); worker leases specified (section 8); foundation slice 1 recorded (section 12). Builds on the Stage 1 baseline and Stage 2 Parts 1 to 4. Authoritative copy: `docs/specs` in the repository; Claude-project copies are synchronised references.
+Version 0.4, 13 Nov 2026. Owner: Abdullah. Changes in 0.4: stale progress line in section 12 corrected. Changes in 0.3: status distinguishes the working foundation from unimplemented business features; T-007 accepted with limits. Changes in 0.2: T-001 to T-006 accepted with conditions (section 13); the rigid dependency chain is replaced by orchestration interfaces and a shared-transaction rule (section 3); resource release is modelled as occupancy episodes (section 4); worker leases specified (section 8); foundation slice 1 recorded (section 12). Builds on the Stage 1 baseline and Stage 2 Parts 1 to 4. Authoritative copy: `docs/specs` in the repository; Claude-project copies are synchronised references.
 
-**Status.** A recommendation for your review; nothing is implemented, no supplier is selected and no application tests were run. D-001 (commercial model), D-002 (payment approach) and D-003 (launch geography) remain **TBD**, and so do the approved rules listed in Stage 2. This document gives **one** recommended architecture. It does not design competing commercial models: gated areas are named, given a boundary, and left empty. Product and library versions are not fixed here; they are chosen at the first foundation task against each vendor's current documentation and pinned in lockfiles. No legal, security or privacy compliance is asserted.
+**Status.** The architecture is a recommendation under review. **Implemented and tested:** foundation slice 1 only (workspace, configuration, health and readiness, migration runner; evidence in `docs/delivery/FOUNDATION_SLICE_1.md`). **Not implemented:** every business feature and every module in section 3 other than the configuration, database and migration parts of `platform`. No supplier is selected. D-001 (commercial model), D-002 (payment approach) and D-003 (launch geography) remain **TBD**, and so do the approved rules listed in Stage 2. This document gives **one** recommended architecture. It does not design competing commercial models: gated areas are named, given a boundary, and left empty. Library versions are pinned exactly in the lockfile; Node.js and PostgreSQL are major-version selections (see the evidence record). No legal, security or privacy compliance is asserted.
 
 ## 1. Evaluation of the reference direction
 
@@ -259,7 +259,7 @@ One repository, so contracts and translations cannot drift between clients.
 
 No estimates are given: delivery capacity is not yet known. Nothing here is started without your instruction.
 
-**Progress.** Foundation slice 1 (instructed 13 Nov 2026) covers F-01, the configuration and health parts of F-03, F-04 without reference data, and the F-05 workflow file (written, not yet run on GitHub). It is prepared for review, not committed. Evidence: `docs/delivery/FOUNDATION_SLICE_1.md`. F-01 depends on no business or supplier decision. Only `apps/api` exists; no other application or module is scaffolded.
+**Progress.** Foundation slice 1 (instructed 13 Nov 2026) covers F-01, the configuration and health parts of F-03, F-04 without reference data, and the F-05 CI workflow. It was merged into the `staging` branch on 13 Nov 2026 after CI passed on GitHub; `main` is unchanged. Review fixes to it are tracked in the evidence record. Evidence: `docs/delivery/FOUNDATION_SLICE_1.md`. F-01 depends on no business or supplier decision. Only `apps/api` exists; no other application or module is scaffolded.
 
 **F-A. Foundation only (repository structure, configuration, database connectivity, CI)**
 
@@ -294,7 +294,7 @@ Accepted by Abdullah on 13 Nov 2026, each subject to the condition shown. The co
 | T-004 | SQL-first migrations | Accepted | Typed queries; migrations reviewed like code; constraints tested against a real database |
 | T-005 | API contract generated from the code | Accepted | Compatibility check between the published contract and the previous one in CI; requests validated at run time by explicit validation, because generated documentation does not validate anything (https://docs.nestjs.com/openapi/cli-plugin) |
 | T-006 | Live updates deferred | Accepted | Introduced with the tracking requirements |
-| T-007 | Migration runner: small in-repository runner used in foundation slice 1 | **For your confirmation** | Alternative: an established library. See docs/delivery/FOUNDATION_SLICE_1.md |
+| T-007 | Migration runner: small in-repository runner | Accepted for transactional SQL only | Unsupported operations documented and refused; files cannot control transactions; recovery after a terminated runner tested. See docs/delivery/FOUNDATION_SLICE_1.md |
 
 ## 14. Risks carried into implementation
 

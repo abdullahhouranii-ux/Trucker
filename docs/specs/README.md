@@ -4,7 +4,7 @@ This folder is the single authoritative set of Trucker specifications.
 Copies kept in the Claude project are synchronised references; if they differ, this folder wins.
 Change a specification here first, then synchronise the reference copy.
 
-All documents are provisional. Nothing in them is implemented and no application tests have been run.
+All documents are provisional. Only foundation slice 1 is implemented and tested (docs/delivery/FOUNDATION_SLICE_1.md): workspace, configuration, health and readiness, migration runner. No business feature described in these documents is implemented. Part 4's unresolved policies (section 13) stay gated.
 Commercial model (D-001), payment approach (D-002) and launch geography (D-003) are undecided.
 
 | Document | Version | Covers |
@@ -14,7 +14,7 @@ Commercial model (D-001), payment approach (D-002) and launch geography (D-003) 
 | STAGE_2_PART_2_PUBLICATION_QUOTATION_BOOKING.md | 0.3 | Shipment publication, quotation, acceptance, booking, reservation, substitution, occupancy |
 | STAGE_2_PART_3_DISPATCH_TRACKING_EXCEPTIONS.md | 0.2 | Assignment, dispatch authorisation, trip events, offline rules, tracking and consent, exceptions |
 | STAGE_2_PART_4_POD_DISPUTES.md | 0.2 | Proof of delivery, review, disputes, post-dispatch cancellation, adjustment records. Five open design issues (DI-401 to DI-405) in section 13 |
-| STAGE_3_ARCHITECTURE.md | 0.2 | Recommended architecture, modules, data relationships, permission enforcement, offline synchronisation, environments, foundation backlog |
+| STAGE_3_ARCHITECTURE.md | 0.4 | Recommended architecture, modules, data relationships, permission enforcement, offline synchronisation, environments, foundation backlog |
 
 Not yet written: invoice, payment and reconciliation (waits for D-001 and D-002); design system (Stage 4).
 
