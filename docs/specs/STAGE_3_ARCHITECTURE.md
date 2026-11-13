@@ -1,6 +1,6 @@
 # Trucker — Stage 3: architecture evaluation (provisional)
 
-Version 0.4, 13 Nov 2026. Owner: Abdullah. Changes in 0.4: stale progress line in section 12 corrected. Changes in 0.3: status distinguishes the working foundation from unimplemented business features; T-007 accepted with limits. Changes in 0.2: T-001 to T-006 accepted with conditions (section 13); the rigid dependency chain is replaced by orchestration interfaces and a shared-transaction rule (section 3); resource release is modelled as occupancy episodes (section 4); worker leases specified (section 8); foundation slice 1 recorded (section 12). Builds on the Stage 1 baseline and Stage 2 Parts 1 to 4. Authoritative copy: `docs/specs` in the repository; Claude-project copies are synchronised references.
+Version 0.5, 13 Nov 2026. Owner: Abdullah. Changes in 0.5: the claim that more countries are only catalogue rows is withdrawn; country readiness, lanes with transit countries and named time zones added to section 4; gates restated (REGIONAL_GEOGRAPHY.md). Changes in 0.4: stale progress line in section 12 corrected. Changes in 0.3: status distinguishes the working foundation from unimplemented business features; T-007 accepted with limits. Changes in 0.2: T-001 to T-006 accepted with conditions (section 13); the rigid dependency chain is replaced by orchestration interfaces and a shared-transaction rule (section 3); resource release is modelled as occupancy episodes (section 4); worker leases specified (section 8); foundation slice 1 recorded (section 12). Builds on the Stage 1 baseline and Stage 2 Parts 1 to 4. Authoritative copy: `docs/specs` in the repository; Claude-project copies are synchronised references.
 
 **Status.** The architecture is a recommendation under review. **Implemented and tested:** foundation slice 1 only (workspace, configuration, health and readiness, migration runner; evidence in `docs/delivery/FOUNDATION_SLICE_1.md`). **Not implemented:** every business feature and every module in section 3 other than the configuration, database and migration parts of `platform`. No supplier is selected. D-001 (commercial model), D-002 (payment approach) and D-003 (launch geography) remain **TBD**, and so do the approved rules listed in Stage 2. This document gives **one** recommended architecture. It does not design competing commercial models: gated areas are named, given a boundary, and left empty. Library versions are pinned exactly in the lockfile; Node.js and PostgreSQL are major-version selections (see the evidence record). No legal, security or privacy compliance is asserted.
 
@@ -144,7 +144,8 @@ Representation rules:
 - Every tenant-owned row carries its organisation; rows shared by two organisations (a booking) carry both.
 - Money is an integer number of minor units plus a currency code; precision comes from the currency table. No floating-point amounts anywhere.
 - Every moment is stored as an absolute instant; local time is derived from the location's time zone.
-- Country, currency and time zone are on organisation, location and booking from the first migration, so one country or several is a matter of catalogue rows (D-003).
+- Country, currency and a named time zone (never a fixed offset) are on organisation, location and booking from the first migration. This keeps the model open to several countries; a country is still configuration plus rules plus a readiness process (REGIONAL_GEOGRAPHY.md, section 7).
+- Each country has a readiness record and separate enabled states: registration, booking and transit. A lane holds its origin, destination, ordered transit countries and border crossings as configuration; publication and dispatch check all of them.
 - The terms snapshot is a versioned document with a schema version. Its **content** is gated; its immutability is not.
 
 ## 5. Permission enforcement
@@ -244,8 +245,8 @@ One repository, so contracts and translations cannot drift between clients.
 |---|---|---|
 | Foundation (section 12, group F-A) | Yes | Nothing |
 | Platform primitives (group F-B) | Yes | Nothing |
-| Sign-in, organisations, verification, assets | Design ready | Q-101, first country, document list review, Q-102 |
-| Shipments | Design ready | First country, D-006 |
+| Sign-in, organisations, verification, assets | Design ready | Q-101, countries enabled for registration (D-003b, D-003d), document matrix review, Q-102 |
+| Shipments | Design ready | Enabled countries and lanes (D-003b, D-003c), D-006 |
 | Reservation and occupancy mechanism | Design ready | DI-403 for the release rule |
 | Quotations, bookings | **No** | D-001, D-005, Part 2 section 10 A |
 | Dispatch, interventions | **No** | R-301, R-302 |

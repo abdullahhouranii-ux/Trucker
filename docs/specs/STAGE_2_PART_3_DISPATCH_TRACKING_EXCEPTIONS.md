@@ -1,8 +1,8 @@
 # Trucker — Stage 2, Part 3: dispatch, tracking and exceptions (provisional)
 
-Version 0.2, 13 Nov 2026. Owner: Abdullah. Builds on the Stage 1 baseline, Stage 2 Part 1 (v0.3) and Part 2 (v0.3). Authoritative copy: `docs/specs` in the repository; Claude-project copies are synchronised references. Changes in 0.2 after review: dispatch authorisation is invalidated by later changes and re-checked at trip start; event ordering is defined across devices and recorders; bad timestamps are flagged, not rejected; consent cannot be overridden and live subscriptions end with access; restricted trip mode has its own operations-only channel; an occupied resource blocks dispatch of its next booking.
+Version 0.3, 13 Nov 2026. Owner: Abdullah. Changes in 0.3: border milestones are per border and include transit borders (REGIONAL_GEOGRAPHY.md). Builds on the Stage 1 baseline, Stage 2 Part 1 (v0.3) and Part 2 (v0.3). Authoritative copy: `docs/specs` in the repository; Claude-project copies are synchronised references. Changes in 0.2 after review: dispatch authorisation is invalidated by later changes and re-checked at trip start; event ordering is defined across devices and recorders; bad timestamps are flagged, not rejected; consent cannot be overridden and live subscriptions end with access; restricted trip mode has its own operations-only channel; an occupied resource blocks dispatch of its next booking.
 
-**Status.** Provisional design; nothing is implemented and no application tests were run. D-001 (commercial model), D-002 (payment approach) and D-003 (launch geography) remain **TBD**; section 10 shows where they change this part. No supplier is selected (maps, messaging, push, GPS devices) and no legal, safety or privacy compliance is asserted. Location, consent and retention rules need qualified review. POD and disputes are Part 4.
+**Status.** Provisional design; nothing is implemented and no application tests were run. D-001 (commercial model) and D-002 (payment approach) remain **TBD**; D-003 has a confirmed target geography (Middle East, GCC first) with initial countries, lanes and eligibility **TBD** (REGIONAL_GEOGRAPHY.md); section 10 shows where they change this part. No supplier is selected (maps, messaging, push, GPS devices) and no legal, safety or privacy compliance is asserted. Location, consent and retention rules need qualified review. POD and disputes are Part 4.
 
 ## 1. Surfaces in this part
 
@@ -52,7 +52,7 @@ All seven surfaces remain in scope.
 | Aspect | Specification |
 |---|---|
 | Actors and permissions | The assigned driver records milestones. A dispatcher of the operating controller, or operations staff, may record one on the driver's behalf with a reason; it is marked as recorded by someone else. Shipper and partner clients read only |
-| Milestones | Departed for pick-up; arrived at pick-up; loading started; loaded and departed; arrived at delivery; unloading started; delivered. Border and customs milestones are added only if cross-border lanes are approved (D-003) |
+| Milestones | Departed for pick-up; arrived at pick-up; loading started; loaded and departed; arrived at delivery; unloading started; delivered. On cross-border lanes, once enabled (D-003c), each border adds an exit and an entry milestone, including borders of transit countries |
 | Event fields | Event identifier; trip; **assignment** under which it was recorded; recorder (the user); **device installation** identifier, or "console" for staff and dispatchers; sequence number within its stream (section 5); milestone type; time it happened (device clock); position at that moment, only if consent is granted; optional note and photos; time received by the server |
 | Server authority | The server holds the trip state. An event is applied only if it is an allowed next step for the current state; the device shows a pending mark until the server confirms |
 | Validation | Grounds for rejection: recorder is not entitled (not the current assignment, no valid session), or the step is not an allowed transition, or a file is of the wrong type or size. **An implausible time is not a ground for rejection**; it is flagged (section 5) |
@@ -190,7 +190,7 @@ Illustrative only; the final rules follow the approved contracts and professiona
 |---|---|
 | **D-001 Commercial model** | Decides who is answerable to the shipper for performance and therefore who holds dispatch authority (R-301), who instructs the driver in an exception, and whose staff the shipper talks to. Under an agent arrangement the carrier or owner typically runs the trip with Trucker overseeing; under a principal arrangement Trucker operations would typically direct it. The milestone, offline and tracking mechanics do not change |
 | **D-002 Payment approach** | A prepayment or deposit approach could add "payment condition met" to the dispatch preconditions. Not designed |
-| **D-003 Geography** | Cross-border lanes add border and customs milestones, document checks at dispatch for each country, longer offline periods, and more than one emergency number and time zone |
+| **D-003 Geography** | Cross-border lanes add an exit and entry milestone pair for every border on the route, including transit borders; document checks at dispatch for each country crossed; longer offline periods; and more than one emergency number and named time zone. Dispatch is refused if a transit country on the lane is no longer transit-ready |
 
 ## 11. Requirements and traceability
 

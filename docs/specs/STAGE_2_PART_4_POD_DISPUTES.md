@@ -1,8 +1,8 @@
 # Trucker — Stage 2, Part 4: proof of delivery and disputes (provisional)
 
-Version 0.2, 13 Nov 2026. Owner: Abdullah. Changes in 0.2: five open design issues from review recorded in section 13; where they conflict with sections 2 to 6, section 13 prevails until those sections are rewritten. Builds on the Stage 1 baseline, Stage 2 Part 1 (v0.3), Part 2 (v0.3) and Part 3 (v0.2). Authoritative copy: `docs/specs` in the repository; Claude-project copies are synchronised references.
+Version 0.3, 13 Nov 2026. Owner: Abdullah. Changes in 0.3: the D-003 row in section 10 names transit documents (REGIONAL_GEOGRAPHY.md). Changes in 0.2: five open design issues from review recorded in section 13; where they conflict with sections 2 to 6, section 13 prevails until those sections are rewritten. Builds on the Stage 1 baseline, Stage 2 Part 1 (v0.3), Part 2 (v0.3) and Part 3 (v0.2). Authoritative copy: `docs/specs` in the repository; Claude-project copies are synchronised references.
 
-**Status.** Provisional design; nothing is implemented and no application tests were run. D-001 (commercial model), D-002 (payment approach) and D-003 (launch geography) remain **TBD**. The review and dispute flow drafted here is **agent-shaped** (Trucker stands between a shipper and a carrier or owner) and must be redrawn if principal is chosen, because Trucker would then be a party to the shipper's claim. No fees, refunds, invoices or settlements are calculated; this part records the facts those later steps need. Liability, claims periods, evidence standards and retention need legal and insurance review. No supplier is selected.
+**Status.** Provisional design; nothing is implemented and no application tests were run. D-001 (commercial model) and D-002 (payment approach) remain **TBD**; D-003 has a confirmed target geography (Middle East, GCC first) with initial countries, lanes and eligibility **TBD** (REGIONAL_GEOGRAPHY.md). The review and dispute flow drafted here is **agent-shaped** (Trucker stands between a shipper and a carrier or owner) and must be redrawn if principal is chosen, because Trucker would then be a party to the shipper's claim. No fees, refunds, invoices or settlements are calculated; this part records the facts those later steps need. Liability, claims periods, evidence standards and retention need legal and insurance review. No supplier is selected.
 
 ## 1. Surfaces in this part
 
@@ -133,7 +133,7 @@ Illustrative only; the final rules follow the approved contracts and professiona
 |---|---|
 | **D-001 Commercial model** | Under an agent arrangement Trucker typically stands between the two parties, so a mediated dispute between shipper and carrier is coherent. Under a principal arrangement the shipper's claim would be against Trucker, with a separate matching claim by Trucker against the carrier; Trucker cannot neutrally decide a claim against itself, so review, decision authority and appeal must be redesigned. POD capture, integrity, custody records and evidence handling do not change |
 | **D-002 Payment approach** | Decides what the hold flag acts on (a provider payout, an invoice due date, or nothing automatic) and when acceptance of a POD makes a booking eligible for settlement. Eligibility is never the same as confirmed movement of funds |
-| **D-003 Geography** | Cross-border work adds customs and border documents to delivery evidence, and may bring different claims periods and document requirements per country |
+| **D-003 Geography** | Cross-border work adds customs, border and transit documents to delivery evidence, and may bring different claims periods and document requirements per country, including transit countries |
 
 ## 11. Requirements and traceability
 
