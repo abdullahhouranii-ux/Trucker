@@ -12,7 +12,8 @@
   "nav": {
     "how": "How it works",
     "who": "Who it is for",
-    "languages": "Languages"
+    "languages": "Languages",
+    "signIn": "Sign in"
   },
   "hero": {
     "title": "Road freight across the Gulf, one signed step at a time",
@@ -82,5 +83,91 @@
     "title": "This page does not exist",
     "text": "The address may be mistyped, or the page may have moved.",
     "home": "Go to the home page"
+  },
+  "auth": {
+    "signIn": {
+      "title": "Sign in or register",
+      "lead": "Enter your mobile number. We send a one-time code to it. If the number is new, you continue to registration.",
+      "phoneLabel": "Mobile number with country code",
+      "phoneHint": "Start with + and the country code, for example +971 5X XXX XXXX.",
+      "phoneNote": "Any country's number can be used. The country of the number does not decide what your company may do.",
+      "submit": "Send the code"
+    },
+    "code": {
+      "title": "Enter the code",
+      "lead": "We sent a 6-digit code to {phone}.",
+      "codeLabel": "One-time code",
+      "codeHint": "6 digits. The code works once and for a few minutes only.",
+      "submit": "Check the code and continue",
+      "resend": "Send a new code",
+      "resendNote": "A new code replaces the old one.",
+      "changeNumber": "Use a different number",
+      "developmentTitle": "Development only",
+      "developmentText": "No text message is sent in this build. The code is {code}."
+    },
+    "register": {
+      "title": "Finish registration",
+      "lead": "Tell us your name. Your mobile number is already confirmed.",
+      "nameLabel": "Your full name",
+      "nameHint": "As you want other people on Trucker to see it.",
+      "emailLabel": "E-mail address (optional)",
+      "emailHint": "For contact only. It is not used to sign in or to recover your account.",
+      "termsVersion": "Version {version}",
+      "termsSeen": "I have read this notice",
+      "submit": "Finish registration"
+    },
+    "account": {
+      "title": "Your account",
+      "name": "Name",
+      "phone": "Mobile number",
+      "email": "E-mail",
+      "none": "Not given",
+      "sessionsTitle": "Where you are signed in",
+      "sessionsLead": "Each sign-in is a session. End any session you do not recognise.",
+      "current": "This session",
+      "started": "Started",
+      "lastUsed": "Last used",
+      "ends": "Ends if unused",
+      "endSession": "End this session",
+      "endOthers": "End all other sessions",
+      "signOut": "Sign out",
+      "signedIn": "You are signed in.",
+      "registered": "Registration is complete.",
+      "retry": "Try again",
+      "signOutLocal": "Remove sign-in from this browser only",
+      "signOutLocalNote": "Use this only if sign-out keeps failing. It does not end the session on the server: if the session is still active there, it stays active until it expires.",
+      "signedOut": "You are signed out. The server confirmed that the session has ended.",
+      "signedOutLocal": "Sign-in was removed from this browser only. The server did not confirm sign-out, so the session may stay active until it expires. When the service answers again, sign in and end that session.",
+      "sessionEnded": "That session has ended. The server confirmed it.",
+      "othersEnded": "Other sessions ended: {n}. The server confirmed it.",
+      "unavailableTitle": "Your account cannot be shown right now"
+    },
+    "errors": {
+      "summary": "There is a problem",
+      "phone": "Enter the mobile number with + and the country code.",
+      "code_format": "Enter the 6 digits of the code.",
+      "code_incorrect": "That code is not correct.",
+      "attemptsRemaining": "Attempts left: {n}.",
+      "code_expired": "That code has expired. Send a new code.",
+      "code_replaced": "A newer code was sent. Use the newest code.",
+      "code_locked": "Too many incorrect attempts. Send a new code.",
+      "code_already_used": "That code has already been used. Send a new code.",
+      "code_resend_too_soon": "A code was sent a moment ago. Wait {seconds} seconds, then try again.",
+      "too_many_code_requests": "Too many codes were requested for this number. Try again later.",
+      "code_delivery_unavailable": "Codes cannot be sent in this environment.",
+      "registration_closed": "Registration is not open in this environment.",
+      "terms_version_changed": "The notice has changed. Read the current text and try again.",
+      "session_ended": "Your session has ended. Sign in again.",
+      "name": "Enter your name.",
+      "email": "Enter a complete e-mail address, or leave the field empty.",
+      "terms": "Tick the box to confirm that you have read the notice.",
+      "unavailable": "The service did not answer. Nothing was saved. Try again.",
+      "no_challenge": "Start again: enter your mobile number.",
+      "sign_out_unconfirmed": "Sign-out was not confirmed, so this session may still be active. Try again.",
+      "end_session_unconfirmed": "It was not confirmed that the session ended, so it may still be active. Try again.",
+      "end_others_unconfirmed": "It was not confirmed that the other sessions ended, so they may still be active. Try again.",
+      "session_not_found": "That session was not found. It may have ended already.",
+      "account_unavailable": "The service did not answer. You may still be signed in. Try again."
+    }
   }
 }

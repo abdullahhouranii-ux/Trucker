@@ -49,3 +49,31 @@ test('Arabic and Urdu messages are written in Arabic script, apart from the prod
     }
   }
 });
+
+test('an unconfirmed revocation is worded as uncertain, never as still active', () => {
+  // The request may have been carried out and only the answer lost, so the session may or may
+  // not be active. Each language must say "may", and must not say it is still signed in.
+  const uncertain: Record<string, string> = {
+    en: 'may still be active',
+    ar: 'قد تكون',
+    ur: 'ہو سکت',
+  };
+  const definite: Record<string, string[]> = {
+    en: ['is still active', 'are still active', 'still signed in'],
+    ar: ['ما زلت مسجّل', 'لذلك ما زالت'],
+    ur: ['ابھی تک سائن اِن ہیں', 'ابھی فعال ہے۔', 'ابھی فعال ہیں۔'],
+  };
+  for (const locale of locales) {
+    const messages = flatten(load(locale));
+    for (const key of [
+      'sign_out_unconfirmed',
+      'end_session_unconfirmed',
+      'end_others_unconfirmed',
+    ]) {
+      const text = messages.get(`auth.errors.${key}`) ?? '';
+      assert.ok(text.includes(uncertain[locale] ?? '?'), `${locale} ${key}: ${text}`);
+      for (const phrase of definite[locale] ?? [])
+        assert.ok(!text.includes(phrase), `${locale} ${key} says "${phrase}"`);
+    }
+  }
+});
