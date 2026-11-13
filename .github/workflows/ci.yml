@@ -1,0 +1,49 @@
+# NOT YET RUN on GitHub: nothing has been pushed. The same commands were run locally
+# (docs/delivery/FOUNDATION_SLICE_1.md). Confirm action versions on first run.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main, staging]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: trucker
+          POSTGRES_PASSWORD: trucker-ci-only
+          POSTGRES_DB: trucker_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U trucker -d trucker_ci"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgres://trucker:trucker-ci-only@localhost:5432/trucker_ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run format:check
+      - run: npm run lint
+      - run: npm run typecheck
+      - name: Migration files are valid
+        run: npm run db:check
+      - name: Migrations apply to an empty database
+        run: npm run db:migrate
+      - name: Nothing is pending and nothing was edited after applying
+        run: npm run db:status
+      - run: npm test
