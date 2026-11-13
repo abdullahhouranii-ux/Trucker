@@ -626,8 +626,16 @@ test('a forged context selects nothing: the organisation identifier is not trust
     ),
     0,
   );
-  // I still see my own, so the zeroes above are the rule and not an empty table.
-  assert.equal(await rows(forgedOrganisation, `SELECT 1 FROM trucker.organisation`), 1);
+  // Naming an organisation I do not belong to shows me nothing at all, not even my own.
+  assert.equal(await rows(forgedOrganisation, `SELECT 1 FROM trucker.organisation`), 0);
+  // With my own selected I do see it, so the zeroes above are the rule and not an empty table.
+  assert.equal(
+    await rows(
+      { tokenHash: hashToken(mine.token), organisationId: myOrganisation.id },
+      `SELECT 1 FROM trucker.organisation`,
+    ),
+    1,
+  );
 
   // No session, or an invented one, with a real organisation identifier.
   for (const tokenHash of ['', hashToken('invented-token'), 'x'.repeat(64)]) {
@@ -653,6 +661,157 @@ test('a forged context selects nothing: the organisation identifier is not trust
     ).rows[0].legal_name,
     'Theirs',
   );
+});
+
+test('selecting one organisation hides every other, even for a member of both', async () => {
+  // One person, an administrator of A and of B. A third organisation, C, belongs to someone else.
+  const person = await newPerson();
+  const stranger = await newPerson();
+  const a = await createOrganisation(person, {
+    legalName: 'Organisation A',
+    registrationNumber: 'A-1',
+  });
+  advance(1);
+  const b = await createOrganisation(person, {
+    legalName: 'Organisation B',
+    registrationNumber: 'B-1',
+  });
+  const c = await createOrganisation(stranger, {
+    legalName: 'Organisation C',
+    registrationNumber: 'C-1',
+  });
+  const retryKey = key();
+  await createOrganisation(stranger, { legalName: 'Keyed' }, retryKey);
+  await createOrganisation(person, { legalName: 'Organisation A2' }, key());
+  const tokenHash = hashToken(person.token);
+  const seen = (context: { tokenHash?: string; organisationId?: string }) =>
+    asApiRole(context, async (client) => ({
+      organisations: (
+        await client.query<{ legal_name: string }>(
+          'SELECT legal_name FROM trucker.organisation ORDER BY 1',
+        )
+      ).rows.map((row) => row.legal_name),
+      memberships: (
+        await client.query<{ organisation_id: string }>(
+          'SELECT organisation_id FROM trucker.membership',
+        )
+      ).rows.map((row) => row.organisation_id),
+      history: [
+        ...new Set(
+          (
+            await client.query<{ organisation_id: string }>(
+              'SELECT organisation_id FROM trucker.audit_entry',
+            )
+          ).rows.map((row) => row.organisation_id),
+        ),
+      ],
+      retryKeys: (await client.query('SELECT 1 FROM trucker.retry_key')).rowCount,
+    }));
+
+  // Selected A: A only. B is the same person's organisation and is still not readable.
+  assert.deepEqual(await seen({ tokenHash, organisationId: a.id }), {
+    organisations: ['Organisation A'],
+    memberships: [a.id],
+    history: [a.id],
+    retryKeys: 0,
+  });
+  // Selected B: B only.
+  assert.deepEqual(await seen({ tokenHash, organisationId: b.id }), {
+    organisations: ['Organisation B'],
+    memberships: [b.id],
+    history: [b.id],
+    retryKeys: 0,
+  });
+  // Selecting A does not let B be read or changed by naming it in the statement.
+  const reach = await asApiRole({ tokenHash, organisationId: a.id }, async (client) => ({
+    read: (await client.query('SELECT 1 FROM trucker.organisation WHERE id = $1', [b.id])).rowCount,
+    history: (
+      await client.query('SELECT 1 FROM trucker.audit_entry WHERE organisation_id = $1', [b.id])
+    ).rowCount,
+    membership: (
+      await client.query('SELECT 1 FROM trucker.membership WHERE organisation_id = $1', [b.id])
+    ).rowCount,
+    changed: (
+      await client.query(
+        `UPDATE trucker.organisation SET legal_name = 'Reached from A', version = version + 1, updated_at = now() WHERE id = $1`,
+        [b.id],
+      )
+    ).rowCount,
+  }));
+  assert.deepEqual(reach, { read: 0, history: 0, membership: 0, changed: 0 });
+
+  // Absent context: a real session with no organisation selected reads no organisation table.
+  // The person's own retry keys are reachable there, and only there.
+  assert.deepEqual(await seen({ tokenHash }), {
+    organisations: [],
+    memberships: [],
+    history: [],
+    retryKeys: 3,
+  });
+  // No session and no organisation: nothing.
+  assert.deepEqual(await seen({}), {
+    organisations: [],
+    memberships: [],
+    history: [],
+    retryKeys: 0,
+  });
+
+  // Forged context: an organisation the person does not belong to, a made-up one, and a
+  // malformed one. Nothing is visible, including the person's own organisations.
+  for (const organisationId of [c.id, randomUUID(), 'not-an-identifier', `${a.id}' OR '1'='1`])
+    assert.deepEqual(
+      await seen({ tokenHash, organisationId }),
+      { organisations: [], memberships: [], history: [], retryKeys: 0 },
+      organisationId,
+    );
+  // Forged person with a real organisation selected: nothing.
+  for (const forged of ['', hashToken('invented-token')])
+    assert.deepEqual(await seen({ tokenHash: forged, organisationId: a.id }), {
+      organisations: [],
+      memberships: [],
+      history: [],
+      retryKeys: 0,
+    });
+
+  // The chooser is its own path. It answers only a request with no organisation selected,
+  // lists exactly the person's organisations, and returns only what a chooser needs.
+  const chooser = (context: { tokenHash?: string; organisationId?: string }) =>
+    asApiRole(context, async (client) => {
+      const found = await client.query('SELECT * FROM trucker.my_organisations()');
+      return {
+        names: found.rows.map((row: { legal_name: string }) => row.legal_name),
+        columns: found.fields.map((field) => field.name),
+      };
+    });
+  assert.deepEqual(await chooser({ tokenHash }), {
+    names: ['Organisation A2', 'Organisation B', 'Organisation A'],
+    columns: ['id', 'status', 'legal_name', 'registration_number', 'created_at'],
+  });
+  for (const organisationId of [a.id, b.id, c.id])
+    await refused(
+      () => chooser({ tokenHash, organisationId }),
+      /not available to a request that has selected an organisation/,
+    );
+  assert.deepEqual((await chooser({})).names, []);
+  assert.deepEqual((await chooser({ tokenHash: hashToken('invented-token') })).names, []);
+
+  // The same through the API: each organisation is read by selecting it, and the list holds
+  // summaries only.
+  const listed = await call(api, 'GET', '/organisations', { token: person.token });
+  assert.deepEqual(
+    (listed.body.organisations as Record<string, unknown>[]).map((entry) =>
+      Object.keys(entry).sort(),
+    ),
+    [1, 2, 3].map(() => ['createdAt', 'id', 'legalName', 'registrationNumber', 'status']),
+  );
+  const readA = await call(api, 'GET', `/organisations/${a.id}`, { token: person.token });
+  assert.equal((readA.body.organisation as Organisation).legalName, 'Organisation A');
+  assert.ok(!JSON.stringify(readA.body).includes('Organisation B'));
+  const historyA = await call(api, 'GET', `/organisations/${a.id}/history`, {
+    token: person.token,
+  });
+  assert.ok(!JSON.stringify(historyA.body).includes(b.id));
+  assert.equal(await count('organisation', `id = $1 AND legal_name = 'Organisation B'`, [b.id]), 1);
 });
 
 test('creating an organisation needs a live session too: a forged one is refused by the database', async () => {

@@ -91,6 +91,14 @@ export interface Organisation {
   createdAt: string;
   updatedAt: string;
 }
+/** One entry of the organisation chooser. */
+export interface OrganisationSummary {
+  id: string;
+  status: string;
+  legalName: string;
+  registrationNumber: string;
+  createdAt: string;
+}
 export interface Country {
   code: string;
   name: { en: string; ar: string; ur: string };

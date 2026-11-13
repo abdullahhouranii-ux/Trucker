@@ -1,6 +1,6 @@
 # Trucker: organisation onboarding slice — scope and acceptance criteria (approved)
 
-Version 1.0, 13 November 2026. Owner: Abdullah.
+Version 1.1, 13 November 2026. Owner: Abdullah. Version 1.1 adds TI-12 and rewrites TI-7 after review of pull request #7.
 
 **Status: scope approved by Abdullah on 13 November 2026, with decisions O-1 to O-4 and three
 instructions to strengthen the criteria (section 2).** The build is in the pull request recorded
@@ -94,7 +94,8 @@ identifier supplied by the API, for a person or an organisation, selects nothing
 | TI-4 | **Forged organisation.** A real session that names another person's organisation as the one it acts for reads nothing, changes nothing and sees none of its history |
 | TI-5 | **Forged person.** No session, an invented session, or a revoked session, together with a real organisation identifier, reads nothing. Settings the policies do not read change nothing |
 | TI-6 | **Creation.** An organisation can be created only through one database function, which itself establishes who is asking. The API's role cannot insert an organisation, a membership or an audit entry directly, and the function refuses a forged or revoked session |
-| TI-7 | **Listing.** A person lists exactly the organisations they are a member of. A member of two sees both; when a membership ends, that organisation disappears at the next request |
+| TI-7 | **Listing, through its own path.** The chooser is one database function. It answers only a request that has selected no organisation, lists exactly the organisations the person is a member of, and returns only what a chooser needs (identifier, status, legal name, registration number, creation time). When a membership ends, that organisation disappears at the next request |
+| TI-12 | **Selecting one organisation hides every other, even for a member of both** (added on review, 13 November 2026). With A selected, the API's role reads A's organisation, membership and history and nothing of B; with B selected, the reverse. Naming B in a statement while A is selected reads nothing and changes nothing. With no organisation selected, the organisation tables show nothing. The chooser function refuses a request that has selected an organisation. Retry keys, which point at records, are reachable only by a request that has selected none |
 | TI-8 | **Cross-person.** Asking for an organisation the person does not belong to answers exactly as for one that does not exist, for read, change and history, in the API and in the web application |
 | TI-9 | Context is set per transaction and gone at its end. Tests reuse one pooled connection across different people, after a refused request, after a failed one, after a rollback and after a statement timeout, and nothing carries over |
 | TI-10 | Ending a session ends organisation access at the next request, in the API and in the database |

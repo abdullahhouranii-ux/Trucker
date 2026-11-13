@@ -25,6 +25,15 @@ export interface OrganisationView extends OrganisationInput {
   readonly updatedAt: string;
 }
 
+/** What the chooser shows: enough to tell organisations apart, and no more. */
+export interface OrganisationSummary {
+  readonly id: string;
+  readonly status: string;
+  readonly legalName: string;
+  readonly registrationNumber: string;
+  readonly createdAt: string;
+}
+
 export interface CountryView {
   readonly code: string;
   readonly name: { readonly en: string; readonly ar: string; readonly ur: string };
@@ -143,6 +152,14 @@ export class OrganisationService {
     }
   }
 
+  /**
+   * Makes one organisation the subject of the rest of the transaction. Row security then
+   * shows that organisation only, and only if the caller is a member of it.
+   */
+  private async select(client: pg.PoolClient, organisationId: string): Promise<void> {
+    await client.query(`SELECT set_config('trucker.organisation_id', $1, true)`, [organisationId]);
+  }
+
   private async openCountries(
     client: Pick<pg.PoolClient, 'query'>,
     allowFixtures: boolean,
@@ -220,6 +237,9 @@ export class OrganisationService {
             'retry_key_conflict',
             'This retry key was already used for a different request.',
           );
+        // The stored key only points at a record. It is read by selecting it, like any
+        // organisation: a caller who is no longer a member sees nothing.
+        await this.select(client, previous.record_id);
         const again = await client.query<OrganisationRow>(
           `SELECT ${COLUMNS} FROM trucker.organisation WHERE id = $1`,
           [previous.record_id],
@@ -265,6 +285,7 @@ export class OrganisationService {
          VALUES ($1, $2, 'organisation.create', $3, $4, $5)`,
         [caller.personId, retryKey, requestHash, createdId, now],
       );
+      await this.select(client, createdId);
       const fresh = await client.query<OrganisationRow>(
         `SELECT ${COLUMNS} FROM trucker.organisation WHERE id = $1`,
         [createdId],
@@ -273,14 +294,31 @@ export class OrganisationService {
     });
   }
 
-  /** Every organisation the caller belongs to, newest first. */
-  async list(caller: Caller): Promise<OrganisationView[]> {
+  /**
+   * The chooser: every organisation the caller belongs to, newest first, with only what is
+   * needed to tell them apart. This is the one path that crosses organisations, so it runs
+   * with no organisation selected and through a database function made for it; the tables
+   * themselves show nothing to such a request.
+   */
+  async list(caller: Caller): Promise<OrganisationSummary[]> {
     await this.access.requireBoundRole();
     return this.asCaller(caller, null, async (client) => {
-      const found = await client.query<OrganisationRow>(
-        `SELECT ${COLUMNS} FROM trucker.organisation ORDER BY created_at DESC, id`,
+      const found = await client.query<{
+        id: string;
+        status: string;
+        legal_name: string;
+        registration_number: string;
+        created_at: Date;
+      }>(
+        'SELECT id, status, legal_name, registration_number, created_at FROM trucker.my_organisations()',
       );
-      return found.rows.map(view);
+      return found.rows.map((row) => ({
+        id: row.id,
+        status: row.status,
+        legalName: row.legal_name,
+        registrationNumber: row.registration_number,
+        createdAt: row.created_at.toISOString(),
+      }));
     });
   }
 

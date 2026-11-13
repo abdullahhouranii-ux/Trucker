@@ -5,7 +5,7 @@ import { organisationProblems } from '../../../components/organisation-form.tsx'
 import { Ltr } from '../../../components/ltr.tsx';
 import { isLocale } from '../../../i18n/config.ts';
 import { getMessages } from '../../../i18n/messages.ts';
-import { api, type Organisation } from '../../../server/api.ts';
+import { api, type OrganisationSummary } from '../../../server/api.ts';
 import { requirePerson } from '../../../server/session.ts';
 
 type Props = {
@@ -28,7 +28,7 @@ export default async function OrganisationsPage({ params, searchParams }: Props)
   const found = await requirePerson(locale);
   const list =
     found.state === 'signed-in'
-      ? await api<{ organisations: Organisation[] }>('GET', '/organisations', {
+      ? await api<{ organisations: OrganisationSummary[] }>('GET', '/organisations', {
           token: found.token,
         })
       : undefined;

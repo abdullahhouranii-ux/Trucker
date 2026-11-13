@@ -20,6 +20,7 @@ import {
   type CountryView,
   type HistoryEntry,
   type OrganisationInput,
+  type OrganisationSummary,
   type OrganisationView,
 } from './organisation.service.js';
 
@@ -122,7 +123,7 @@ export class OrganisationController {
   }
 
   @Get('organisations')
-  async list(@Req() request: IncomingRequest): Promise<{ organisations: OrganisationView[] }> {
+  async list(@Req() request: IncomingRequest): Promise<{ organisations: OrganisationSummary[] }> {
     const caller = await this.caller(request);
     return { organisations: await this.organisations.list(caller) };
   }

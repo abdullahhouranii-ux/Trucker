@@ -10,7 +10,8 @@
 --
 -- Who is asking is decided by the database, not by the API. The API passes the hash of the
 -- session token; the functions below find the live session and its person themselves. A
--- forged person or organisation identifier therefore selects nothing.
+-- forged person or organisation identifier therefore selects nothing. And membership is not
+-- enough to read: a request sees only the one organisation it selected.
 
 -- ---------------------------------------------------------------------------------------------
 -- The API's role. No login of its own: an operator creates a login role that is a member.
@@ -234,6 +235,33 @@ BEGIN
 END
 $$;
 
+-- Whether the request names an organisation at all, member or not.
+CREATE FUNCTION trucker.organisation_selected() RETURNS boolean
+LANGUAGE sql STABLE AS $$
+  SELECT nullif(current_setting('trucker.organisation_id', true), '') IS NOT NULL
+$$;
+
+-- The organisation chooser: the one place where a person sees more than one organisation.
+-- It answers only a request that has NOT selected an organisation, and returns only what a
+-- chooser needs to tell them apart. Everything else about an organisation is read after
+-- selecting it, under the policies below.
+CREATE FUNCTION trucker.my_organisations()
+RETURNS TABLE (id uuid, status text, legal_name text, registration_number text, created_at timestamptz)
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, trucker AS $$
+BEGIN
+  IF trucker.organisation_selected() THEN
+    RAISE EXCEPTION 'the organisation list is not available to a request that has selected an organisation'
+      USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  RETURN QUERY
+    SELECT o.id, o.status, o.legal_name, o.registration_number, o.created_at
+    FROM trucker.organisation o
+    JOIN trucker.membership m ON m.organisation_id = o.id
+    WHERE m.person_id = trucker.request_person() AND m.ended_at IS NULL
+    ORDER BY o.created_at DESC, o.id;
+END
+$$;
+
 -- ---------------------------------------------------------------------------------------------
 -- Row security. It binds the API's role, which owns nothing. The table owner (the migration
 -- role) is not bound: the functions above run as the owner and must see every row to decide
@@ -244,26 +272,31 @@ ALTER TABLE trucker.membership ENABLE ROW LEVEL SECURITY;
 ALTER TABLE trucker.audit_entry ENABLE ROW LEVEL SECURITY;
 ALTER TABLE trucker.retry_key ENABLE ROW LEVEL SECURITY;
 
--- A person sees every organisation they belong to (the list), and may change only the one the
--- request is about, as its administrator, while it is a draft.
+-- A request is about one organisation at most. Rows of that organisation are visible, and of
+-- no other, even one the same person also belongs to: selecting A never shows B. With no
+-- organisation selected, nothing is visible here; the chooser has its own path below.
+-- The selected organisation may be changed by its administrator while it is a draft.
 CREATE POLICY organisation_read ON trucker.organisation FOR SELECT TO trucker_app
-  USING (trucker.is_member(id));
+  USING (id = trucker.request_organisation());
 CREATE POLICY organisation_change ON trucker.organisation FOR UPDATE TO trucker_app
   USING (id = trucker.request_organisation() AND trucker.is_admin(id) AND status = 'draft')
   WITH CHECK (id = trucker.request_organisation() AND trucker.is_admin(id) AND status = 'draft');
 
--- A person sees their own memberships. Nothing else is granted on this table.
+-- A person sees their own membership of the selected organisation, and no other.
 CREATE POLICY membership_read ON trucker.membership FOR SELECT TO trucker_app
-  USING (person_id = trucker.request_person());
+  USING (person_id = trucker.request_person()
+         AND organisation_id = trucker.request_organisation());
 
 -- History is read by an administrator of the organisation the request is about.
 CREATE POLICY audit_read ON trucker.audit_entry FOR SELECT TO trucker_app
   USING (organisation_id = trucker.request_organisation() AND trucker.is_admin(organisation_id));
 
--- Retry keys belong to the person who used them.
+-- Retry keys belong to the person who used them, and are reachable only by a request that is
+-- not about any organisation (creating one is such a request). A key points at a record, so a
+-- request about organisation A must not be able to read keys that point at organisation B.
 CREATE POLICY retry_key_own ON trucker.retry_key FOR ALL TO trucker_app
-  USING (person_id = trucker.request_person())
-  WITH CHECK (person_id = trucker.request_person());
+  USING (person_id = trucker.request_person() AND NOT trucker.organisation_selected())
+  WITH CHECK (person_id = trucker.request_person() AND NOT trucker.organisation_selected());
 
 GRANT SELECT ON trucker.organisation, trucker.membership, trucker.audit_entry TO trucker_app;
 -- Only the editable columns, and the two the API maintains with them.
@@ -382,6 +415,8 @@ $$;
 REVOKE ALL ON FUNCTION trucker.create_organisation(text, text, text, text, text, text, timestamptz, integer, boolean) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION trucker.create_organisation(text, text, text, text, text, text, timestamptz, integer, boolean) TO trucker_app;
 REVOKE ALL ON FUNCTION trucker.request_person(), trucker.request_organisation(),
-  trucker.is_member(uuid), trucker.is_admin(uuid) FROM PUBLIC;
+  trucker.is_member(uuid), trucker.is_admin(uuid), trucker.organisation_selected(),
+  trucker.my_organisations() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION trucker.request_person(), trucker.request_organisation(),
-  trucker.is_member(uuid), trucker.is_admin(uuid) TO trucker_app;
+  trucker.is_member(uuid), trucker.is_admin(uuid), trucker.organisation_selected(),
+  trucker.my_organisations() TO trucker_app;
