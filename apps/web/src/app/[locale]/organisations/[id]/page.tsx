@@ -107,6 +107,15 @@ export default async function OrganisationPage({ params, searchParams }: Props) 
           {confirmation}
         </p>
       ) : null}
+      <div className="form-inline">
+        <a
+          className="button"
+          id="open-shipments"
+          href={`/${locale}/organisations/${organisation.id}/shipments`}
+        >
+          {t.shipmentsLink}
+        </a>
+      </div>
       <div className="notice" role="note" id="organisation-status">
         <h2>
           {t.statusLabel}: {draft ? t.statusDraft : t.statusOther}

@@ -18,6 +18,7 @@ import {
   SECURITY_SETTING_DEFAULTS,
   writeSecuritySettings,
 } from '../database/settings.js';
+import { blockedRequests } from '../testing/blocked-request.js';
 import { createTestClock } from '../testing/test-clock.js';
 import { createTestDatabase, type TestDatabase } from '../testing/test-database.js';
 import { IdentityService } from './identity.service.js';
@@ -208,20 +209,26 @@ const count = async (table: string, where: string, values: unknown[]): Promise<n
 const CALLABLE = [
   'complete_registration(p_token_hash text, p_display_name text, p_contact_email text, p_terms_version text, p_terms_language text, p_request_id text)',
   'create_organisation(p_legal_name text, p_trading_name text, p_country_code text, p_registration_number text, p_address text, p_contact_name text, p_allow_fixtures boolean)',
+  'create_shipment_draft(p_key text, p_content jsonb, p_allow_fixtures boolean)',
+  'discard_shipment_draft(p_draft uuid, p_expected_version integer, p_key text)',
   'is_admin(organisation uuid)',
   'is_member(organisation uuid)',
+  'list_shipment_drafts(p_status text, p_after uuid)',
   'my_account(p_token_hash text)',
   'my_organisations()',
   'my_sessions(p_token_hash text)',
+  'offset_choices(p_draft uuid)',
   'organisation_selected()',
   'request_organisation()',
   'request_person()',
   'revoke_my_other_sessions(p_token_hash text, p_request_id text)',
   'revoke_my_session(p_token_hash text, p_session uuid, p_request_id text)',
+  'route_check(p_origin text, p_destination text, p_allow_fixtures boolean)',
   'security_settings_reviewed()',
   'session_check(p_token_hash text, p_request_id text)',
   'sign_in_request_code(p_phone text, p_request_key text, p_pepper text, p_reveal boolean)',
   'sign_in_verify_code(p_challenge uuid, p_code text, p_request_key text, p_pepper text, p_session uuid, p_token_hash text, p_request_id text)',
+  'update_shipment_draft(p_draft uuid, p_expected_version integer, p_key text, p_content jsonb, p_allow_fixtures boolean)',
 ];
 
 // ---------------------------------------------------------------------------------------------
@@ -304,11 +311,20 @@ test('the privilege catalogue shows no right for the API role or PUBLIC on the c
   assert.deepEqual([...byTable.keys()].sort(), [
     'audit_entry',
     'country',
+    'country_time_zone',
     'environment',
+    'lane',
+    'lane_transit',
     'membership',
     'organisation',
     'retry_key',
+    'shipment_draft',
   ]);
+  // Shipment drafts can be read and nothing else: every write goes through a function.
+  assert.deepEqual(
+    [...new Set(byTable.get('shipment_draft')!.map((right) => right.split(' ')[0]))],
+    ['SELECT'],
+  );
   // The time of a change is no longer the caller's to write.
   assert.ok(!byTable.get('organisation')!.includes('UPDATE (column updated_at)'));
   assert.ok(byTable.get('organisation')!.includes('UPDATE (column legal_name)'));
@@ -330,7 +346,7 @@ test('the API role may run exactly the named functions; nothing in the schema is
      FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
      WHERE n.nspname = 'trucker' ORDER BY 1`,
   );
-  assert.ok(functions.rows.length >= 28, 'the catalogue was read');
+  assert.ok(functions.rows.length >= 40, 'the catalogue was read');
   assert.deepEqual(
     functions.rows.filter((row) => row.open).map((row) => row.signature),
     [],
@@ -731,10 +747,23 @@ test('the API role cannot move time: settings it invents are not read, and no fu
   assert.equal(inputs.rowCount, CALLABLE.length);
   // Nothing the API's role can call takes a time, a period or a number: there is no
   // parameter through which a limit or the clock could be supplied.
+  // (A draft's content travels as JSON, and a change names the version it was made against:
+  // neither is a limit or a clock. The one whole number allowed is that version.)
   for (const row of inputs.rows) {
     for (const type of row.types)
-      assert.ok(['text', 'uuid', 'boolean'].includes(type), `${row.signature} takes ${type}`);
-    assert.doesNotMatch(row.signature, /limit|max|ttl|attempt|idle|hour|minute|second|now|time/i);
+      assert.ok(
+        ['text', 'uuid', 'boolean', 'jsonb', 'integer'].includes(type),
+        `${row.signature} takes ${type}`,
+      );
+    const wholeNumbers = [...row.signature.matchAll(/(\w+) integer/g)].map((match) => match[1]);
+    assert.ok(
+      wholeNumbers.every((name) => name === 'p_expected_version'),
+      `${row.signature} takes a number that is not a version`,
+    );
+    assert.doesNotMatch(
+      row.signature,
+      /limit|max|ttl|attempt|idle|hour|minute|second|now|time|size|page/i,
+    );
   }
 });
 
@@ -1301,93 +1330,7 @@ test('shortening the absolute limit ends older sessions at once; lengthening it 
 // step happens to take. A second connection holds a lock, the test waits until the database
 // itself reports the first one as waiting, then the clock is moved, then the lock is released.
 // ---------------------------------------------------------------------------------------------
-/** Holds a lock in an open transaction of the migration role until released. */
-async function hold(statement: string, values: unknown[] = []): Promise<() => Promise<void>> {
-  const client = await owner.connect();
-  await client.query('BEGIN');
-  await client.query(statement, values);
-  return async () => {
-    await client.query('COMMIT');
-    client.release();
-  };
-}
-/**
- * Resolves true once some other connection to this database is waiting for a lock, or false
- * as soon as `settled` says the work has already finished, so nothing keeps polling after it.
- */
-async function untilSomeoneWaits(settled: () => boolean = () => false): Promise<boolean> {
-  for (let attempt = 0; attempt < 400; attempt += 1) {
-    if (settled()) return false;
-    const waiting = await owner.query<{ n: number }>(
-      `SELECT count(*)::int AS n FROM pg_locks l JOIN pg_stat_activity a ON a.pid = l.pid
-       WHERE NOT l.granted AND a.datname = current_database() AND l.pid <> pg_backend_pid()`,
-    );
-    if (waiting.rows[0]!.n > 0) return true;
-    await new Promise((resolve) => setTimeout(resolve, 25));
-  }
-  throw new Error('nothing started waiting for the lock');
-}
-/**
- * Runs work that must queue behind the lock, moves the clock while it waits, then lets it go.
- *
- * The work's outcome is captured in the same step that starts it, so there is never a moment
- * in which it can fail with nobody listening. (An earlier version listened only after
- * releasing the lock. If the refusal arrived first, Node reported an unhandled rejection and
- * failed the test although the database had done exactly what was expected.) Nothing is
- * swallowed: a failure is rethrown to the caller, which asserts on it.
- *
- * The work must actually wait. If it settles before the database reports it as waiting, that
- * is reported as such: its own error if it failed, a plain statement if it succeeded.
- */
-type Outcome<T> = { ok: true; value: T } | { ok: false; error: unknown };
-async function whileBlocked<T>(
-  lock: [statement: string, values: unknown[]],
-  work: () => Promise<T>,
-  seconds: number,
-  /** For the helper's own test: runs after the lock is released, before the outcome is read. */
-  beforeLooking: () => Promise<void> = async () => undefined,
-): Promise<T> {
-  const release = await hold(...lock);
-  let released = false;
-  const letGo = async (): Promise<void> => {
-    if (released) return;
-    released = true;
-    await release();
-  };
-  try {
-    const outcome: Promise<Outcome<T>> = Promise.resolve()
-      .then(work)
-      .then(
-        (value) => ({ ok: true, value }) as const,
-        (error: unknown) => ({ ok: false, error }) as const,
-      );
-    let finished = false;
-    void outcome.then(() => {
-      finished = true;
-    });
-    if (!(await untilSomeoneWaits(() => finished))) {
-      const early = await outcome;
-      if (!early.ok) throw early.error;
-      throw new Error('the work finished without waiting for the lock');
-    }
-    await advance(seconds);
-    await letGo();
-    await beforeLooking();
-    const settled = await outcome;
-    if (!settled.ok) throw settled.error;
-    return settled.value;
-  } finally {
-    await letGo();
-  }
-}
-const lockNumber = (phone: string): [string, unknown[]] => [
-  'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
-  [phone],
-];
-const lockRow = (table: string, id: string): [string, unknown[]] => [
-  `SELECT 1 FROM trucker.${table} WHERE id = $1 FOR UPDATE`,
-  [id],
-];
+const { whileBlocked, lockNumber, lockRow } = blockedRequests(() => owner, advance);
 
 test('the blocked-request helper never leaves a failure unobserved, and hides none', async () => {
   // Counted here as well as by the test runner, which fails a test on any unhandled rejection.

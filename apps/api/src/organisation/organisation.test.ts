@@ -304,7 +304,7 @@ test('the API role cannot write organisations, memberships, history, countries o
 
 test('every table has row security: a policy, or no right at all for the API', async () => {
   // Tables the API may read whole: they hold no data about an organisation or a person.
-  const open = new Set(['environment', 'country']);
+  const open = new Set(['environment', 'country', 'country_time_zone', 'lane', 'lane_transit']);
   // Tables the API's role has no right on at all. Row security with no policy is their second
   // barrier. A new table is on neither list, so it must carry row security and a policy, or
   // this test fails.
@@ -313,6 +313,7 @@ test('every table has row security: a policy, or no right at all for the API', a
     'person',
     'security_setting',
     'session',
+    'shipment_retry_key',
     'sign_in_challenge',
     'terms_acceptance',
     'test_clock',
@@ -347,7 +348,7 @@ test('every table has row security: a policy, or no right at all for the API', a
   );
   assert.deepEqual(
     checked.map((table) => table.name),
-    ['audit_entry', 'membership', 'organisation', 'retry_key'],
+    ['audit_entry', 'membership', 'organisation', 'retry_key', 'shipment_draft'],
   );
   for (const table of checked) {
     assert.ok(table.secured, `${table.name} has no row security`);
@@ -1706,6 +1707,9 @@ test('no country, currency or time zone name is written into migrations or organ
     ...readdirSync(path.join(root, 'apps/api/src/organisation'))
       .filter((name) => !name.endsWith('.test.ts'))
       .map((name) => path.join(root, 'apps/api/src/organisation', name)),
+    ...readdirSync(path.join(root, 'apps/api/src/shipment'))
+      .filter((name) => !name.endsWith('.test.ts'))
+      .map((name) => path.join(root, 'apps/api/src/shipment', name)),
     path.join(root, 'apps/api/src/database/access.ts'),
     path.join(root, 'apps/api/src/database/local.ts'),
     path.join(root, 'db/fixtures/local-development/countries.json'),

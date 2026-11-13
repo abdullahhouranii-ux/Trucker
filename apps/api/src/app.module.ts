@@ -15,6 +15,8 @@ import { IdentityController } from './identity/identity.controller.js';
 import { IdentityService } from './identity/identity.service.js';
 import { OrganisationController } from './organisation/organisation.controller.js';
 import { OrganisationService } from './organisation/organisation.service.js';
+import { ShipmentController } from './shipment/shipment.controller.js';
+import { ShipmentService } from './shipment/shipment.service.js';
 import { APP_CONFIG, CLOCK, DB_POOL, type Clock } from './tokens.js';
 
 @Injectable()
@@ -28,7 +30,7 @@ class PoolLifecycle implements OnModuleDestroy {
 
 /**
  * Configuration, database pool, health, identity (sign-in by one-time code, sessions,
- * registration) and draft organisations. Other business modules are gated on recorded decisions
+ * registration), draft organisations and private shipment drafts. Other business modules are gated on recorded decisions
  * (docs/specs/STAGE_3_ARCHITECTURE.md, section 11) and are not scaffolded.
  */
 @Module({})
@@ -36,7 +38,12 @@ export class AppModule {
   static register(config: AppConfig, clock: Clock = () => new Date()): DynamicModule {
     return {
       module: AppModule,
-      controllers: [HealthController, IdentityController, OrganisationController],
+      controllers: [
+        HealthController,
+        IdentityController,
+        OrganisationController,
+        ShipmentController,
+      ],
       providers: [
         { provide: APP_CONFIG, useValue: config },
         { provide: DB_POOL, useFactory: () => createPool(config) },
@@ -46,6 +53,7 @@ export class AppModule {
         IdentityService,
         AccessGuard,
         OrganisationService,
+        ShipmentService,
       ],
     };
   }

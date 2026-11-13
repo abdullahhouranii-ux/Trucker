@@ -5,6 +5,7 @@
 // What these checks do not cover is listed in docs/delivery/WEB_FOUNDATION_SLICE_3.md.
 import { Buffer } from 'node:buffer';
 import { spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import http from 'node:http';
 import { createRequire } from 'node:module';
@@ -39,6 +40,10 @@ const REVOCATIONS = [
   // Creating and changing an organisation: the same question, was it done or not.
   ['POST', /^\/organisations$/],
   ['PATCH', /^\/organisations\/[^/]+$/],
+  // Saving, changing and discarding a shipment draft.
+  ['POST', /^\/organisations\/[^/]+\/shipments$/],
+  ['PATCH', /^\/organisations\/[^/]+\/shipments\/[^/]+$/],
+  ['POST', /^\/organisations\/[^/]+\/shipments\/[^/]+\/discard$/],
 ];
 function startRelay() {
   const server = http.createServer((request, response) => {
@@ -262,11 +267,17 @@ async function main() {
         'set',
         `code_resend_wait_seconds=${settingsBefore.code_resend_wait_seconds}`,
         `code_max_per_hour=${settingsBefore.code_max_per_hour}`,
+        `shipment_page_size=${settingsBefore.shipment_page_size}`,
         ...(settingsBefore.reviewed_for_production ? ['--reviewed-for-production'] : []),
       ],
       apiEnv,
     );
-  await run(apiSettings, ['set', 'code_resend_wait_seconds=10', 'code_max_per_hour=30'], apiEnv);
+  // Two drafts to a page, so that paging is seen with a handful of drafts.
+  await run(
+    apiSettings,
+    ['set', 'code_resend_wait_seconds=10', 'code_max_per_hour=30', 'shipment_page_size=2'],
+    apiEnv,
+  );
   // The API runs as its own database role, which row security binds, never as the migration
   // role. The fictional countries are loaded with the explicit acknowledgement they require.
   const appRole = await run(apiLocalDatabase, ['app-role'], apiEnv);
@@ -276,6 +287,26 @@ async function main() {
     ...apiEnv,
     TRUCKER_LOCAL_FIXTURES: 'local-development-only',
   });
+  // A zone whose clocks change, for the fictional country XA, so that a time that occurs twice
+  // and one that does not exist can be shown. The fixtures have fixed-offset zones only. It is
+  // removed when the checks end.
+  const owner = new (createRequire(new URL('../../api/package.json', import.meta.url))(
+    'pg',
+  ).Client)({ connectionString: process.env.DATABASE_URL });
+  await owner.connect();
+  await owner.query(
+    `INSERT INTO trucker.country_time_zone (country_code, zone_name)
+     VALUES ('XA', 'America/New_York') ON CONFLICT DO NOTHING`,
+  );
+  const removeTestZone = async () => {
+    await owner.query(
+      `DELETE FROM trucker.country_time_zone z
+       WHERE z.country_code = 'XA' AND z.zone_name = 'America/New_York'
+         AND NOT EXISTS (SELECT 1 FROM trucker.shipment_draft d
+                         WHERE 'America/New_York' IN (d.pickup_time_zone, d.delivery_time_zone))`,
+    );
+    await owner.end();
+  };
   let apiLog = '';
   let apiServer;
   const apiAnswers = async () => {
@@ -609,11 +640,11 @@ async function main() {
     mkdirSync(outDir, { recursive: true });
     // At most five pictures, for design review only.
     const shots = {
-      'en:organisation new error': 'organisation-new-error-en-390',
-      'ar:organisation new': 'organisation-new-ar-390',
-      'ur:organisation': 'organisation-ur-390',
-      'en:organisations': 'organisations-en-390',
-      'ur:organisation unconfirmed': 'organisation-unconfirmed-ur-390',
+      'en:shipment new error': 'shipment-new-error-en-390',
+      'ar:shipment': 'shipment-ar-390',
+      'ur:shipment conflict': 'shipment-conflict-ur-390',
+      'en:shipment ambiguous time': 'shipment-ambiguous-time-en-390',
+      'ar:shipments': 'shipments-ar-390',
     };
     // Fictional numbers: country code 999 is not assigned. Unique per run.
     const stamp = String(Date.now()).slice(-7);
@@ -1052,6 +1083,402 @@ async function main() {
       );
       await inspect(locale, 'organisations');
       people[locale].organisationId = organisationId;
+
+      // ----------------------------------------------------------------------------------
+      // Shipment drafts, in this language
+      // ----------------------------------------------------------------------------------
+      const ship = messagesFor(locale).ship;
+      const shipBase = `/organisations/${organisationId}`;
+      const shipPages = `${origin}/${locale}/organisations/${organisationId}/shipments`;
+      // The API directly, as this person: used to look at what is stored and to play the part
+      // of a colleague who changes a draft meanwhile.
+      const shipApi = async (method, route, body) => {
+        const response = await fetch(apiOrigin + shipBase + route, {
+          method,
+          headers: {
+            authorization: `Bearer ${sessionTokenNow}`,
+            ...(method === 'GET'
+              ? {}
+              : { 'content-type': 'application/json', 'idempotency-key': randomUUID() }),
+          },
+          ...(body ? { body: JSON.stringify(body) } : {}),
+        });
+        return { status: response.status, body: await response.json() };
+      };
+      const storedDraft = async (id) => (await shipApi('GET', `/shipments/${id}`)).body.shipment;
+      // What a stored draft holds, in the shape a change is sent in.
+      const asInput = (draft) => {
+        const place = (value) => ({
+          address: value.address,
+          countryCode: value.countryCode,
+          timeZone: value.timeZone,
+          accessNotes: value.accessNotes,
+          from: { local: value.from.local },
+          until: { local: value.until.local },
+        });
+        return {
+          shipperReference: draft.shipperReference,
+          cargoDescription: draft.cargoDescription,
+          grossWeightKg: draft.grossWeightKg,
+          pieces: draft.pieces,
+          packaging: draft.packaging,
+          equipmentNeeded: draft.equipmentNeeded,
+          pickup: place(draft.pickup),
+          delivery: place(draft.delivery),
+        };
+      };
+      const setValue = async (selector, value) => {
+        await page.evaluate((s) => (document.querySelector(s).value = ''), selector);
+        if (value !== '') await page.type(selector, value);
+        else
+          await page.evaluate(
+            (s) =>
+              document.querySelector(s).dispatchEvent(new window.Event('input', { bubbles: true })),
+            selector,
+          );
+      };
+      const valueOf = (selector) =>
+        page.evaluate((s) => document.querySelector(s)?.value ?? null, selector);
+      const waitForValue = (selector, value) =>
+        page
+          .waitForFunction(
+            (s, v) => document.querySelector(s)?.value === v,
+            { timeout: 5000 },
+            selector,
+            value,
+          )
+          .catch(() => undefined);
+
+      await open(`/${locale}/organisations/${organisationId}`, 390);
+      await submit('#open-shipments');
+      check(
+        'shipment',
+        page.url() === shipPages && (await text('#no-shipments')) === ship.none,
+        `${locale}: the shipment drafts of a new organisation are at ${page.url()}`,
+      );
+      await inspect(locale, 'shipments empty');
+      await submit('#create-shipment');
+      const newForm = `#shipment-new-form-${organisationId}`;
+      check('shipment', page.url() === `${shipPages}/new`, `${locale}: new draft is ${page.url()}`);
+      await inspect(locale, 'shipment new');
+
+      // Nothing at all is not a draft.
+      await submit(`${newForm} button[type=submit]`);
+      check(
+        'shipment',
+        ((await text('#error-summary')) ?? '').includes(ship.errors.empty) &&
+          (await focusedId()) === 'error-summary' &&
+          (await shipApi('GET', '/shipments?status=all')).body.shipments.length === 0,
+        `${locale}: an empty draft form led to ${page.url()}`,
+      );
+      // Numbers out of bounds are refused by field; what was typed stays.
+      const description = {
+        en: 'Bottled water on pallets (fictional)',
+        ar: 'مياه معبأة على منصات (وهمية)',
+        ur: 'پیلٹوں پر بوتل بند پانی (فرضی)',
+      }[locale];
+      await page.type('#cargoDescription', description);
+      await page.type('#grossWeightKg', '0');
+      await page.type('#pieces', '1.5');
+      await submit(`${newForm} button[type=submit]`);
+      await waitForValue('#cargoDescription', description);
+      const numberErrors = await page.evaluate(() => ({
+        weight: document.querySelector('#grossWeightKg-error')?.textContent ?? '',
+        pieces: document.querySelector('#pieces-error')?.textContent ?? '',
+        invalid: document.querySelector('#grossWeightKg').getAttribute('aria-invalid'),
+        links: [...document.querySelectorAll('#error-summary a')].map((a) =>
+          a.getAttribute('href'),
+        ),
+      }));
+      check(
+        'shipment',
+        numberErrors.weight === ship.errors.grossWeightKg &&
+          numberErrors.pieces === ship.errors.pieces &&
+          numberErrors.invalid === 'true' &&
+          numberErrors.links.join(',') === '#grossWeightKg,#pieces' &&
+          (await valueOf('#cargoDescription')) === description &&
+          (await valueOf('#grossWeightKg')) === '0' &&
+          (await shipApi('GET', '/shipments?status=all')).body.shipments.length === 0,
+        `${locale}: numbers out of bounds reported ${JSON.stringify(numberErrors)}`,
+      );
+      await inspect(locale, 'shipment new error');
+      // Half a time is asked for whole, before anything is sent.
+      await setValue('#grossWeightKg', '1250.50');
+      await setValue('#pieces', '12');
+      await page.type('#pickupFromDate', '2026-07-01');
+      await submit(`${newForm} button[type=submit]`);
+      check(
+        'shipment',
+        ((await text('#pickupFromDate-error')) ?? '') === ship.errors.time_incomplete,
+        `${locale}: a date without a time was not asked for whole`,
+      );
+      await waitForValue('#pickupFromDate', '2026-07-01');
+
+      const reference = `SHP-${stamp}-${index}`;
+      await page.type('#shipperReference', reference);
+      await page.type('#pickupAddress', 'Gate 3, Example Depot');
+      await page.select('#pickupCountry', 'XA');
+      await page.select('#pickupZone', 'Etc/GMT-4');
+      await page.type('#pickupFromTime', '09:00');
+      await page.type('#pickupUntilDate', '2026-07-01');
+      await page.type('#pickupUntilTime', '12:30');
+      await page.select('#deliveryCountry', 'XB');
+      await page.select('#deliveryZone', 'Etc/GMT-3');
+      await page.type('#deliveryFromDate', '2026-07-01');
+      await page.type('#deliveryFromTime', '11:45');
+      // The draft survives a change of language and back.
+      await submit(`.languages a[lang="${otherLanguage}"]`);
+      await waitForValue('#shipperReference', reference);
+      await submit(`.languages a[lang="${locale}"]`);
+      await waitForValue('#shipperReference', reference);
+      check(
+        'shipment',
+        (await valueOf('#shipperReference')) === reference &&
+          (await valueOf('#pickupZone')) === 'Etc/GMT-4' &&
+          (await valueOf('#deliveryFromTime')) === '11:45',
+        `${locale}: the shipment draft was lost on a language change`,
+      );
+      await submit(`${newForm} button[type=submit]`);
+      const shipmentId = /\/shipments\/([0-9a-f-]{36})\?done=created$/.exec(page.url())?.[1];
+      const first = shipmentId ? await storedDraft(shipmentId) : undefined;
+      check(
+        'shipment',
+        Boolean(shipmentId) &&
+          (await text('#shipment-confirmation')) === ship.createdDone &&
+          ((await text('#shipment-status')) ?? '').includes(ship.statusDraft) &&
+          ((await text('#shipment-status')) ?? '').includes(ship.draftNotice),
+        `${locale}: saving a draft led to ${page.url()}`,
+      );
+      check(
+        'shipment',
+        first?.status === 'draft' &&
+          first.version === 1 &&
+          first.cargoDescription === description &&
+          first.grossWeightKg === '1250.5' &&
+          first.pieces === 12 &&
+          first.pickup.from.at === '2026-07-01T05:00:00.000Z' &&
+          first.pickup.until.at === '2026-07-01T08:30:00.000Z' &&
+          first.delivery.from.at === '2026-07-01T08:45:00.000Z' &&
+          first.delivery.until.local === null,
+        `${locale}: the stored draft is ${JSON.stringify(first)}`,
+      );
+      // The route is open in the fictional configuration, and says that this is all it means.
+      const routeText = (await text('#shipment-route')) ?? '';
+      check(
+        'shipment',
+        (await page.evaluate(() => document.querySelector('#shipment-route').dataset.route)) ===
+          'open' &&
+          routeText.includes(ship.routeOpen) &&
+          routeText.includes(ship.routeBasis),
+        `${locale}: the route of an open lane reads "${routeText}"`,
+      );
+      await inspect(locale, 'shipment');
+
+      // Change it: a destination with no open route. The draft is saved all the same.
+      const editForm = `#shipment-form-${shipmentId}`;
+      await page.select('#deliveryCountry', 'XD');
+      await page.select('#deliveryZone', 'Etc/GMT-5');
+      await submit(`${editForm} button[type=submit]`);
+      const closedText = (await text('#shipment-route')) ?? '';
+      check(
+        'shipment',
+        page.url() === `${shipPages}/${shipmentId}?done=saved` &&
+          (await text('#shipment-confirmation')) === ship.savedDone &&
+          closedText.includes(ship.routeClosed) &&
+          closedText.includes(ship.reasonLaneClosed) &&
+          closedText.includes(ship.routeDraftSaved) &&
+          (await storedDraft(shipmentId)).version === 2 &&
+          (await storedDraft(shipmentId)).delivery.countryCode === 'XD',
+        `${locale}: a change to a closed route led to ${page.url()}: "${closedText}"`,
+      );
+      await inspect(locale, 'shipment route closed');
+
+      // A colleague saves in between. This person's save is refused, nothing is overwritten,
+      // and what they typed is still in the form.
+      const colleague = async (version, cargoDescription) =>
+        shipApi('PATCH', `/shipments/${shipmentId}`, {
+          ...asInput(await storedDraft(shipmentId)),
+          cargoDescription,
+          version,
+        });
+      const meanwhile = await colleague(2, 'Changed elsewhere');
+      await page.type('#packaging', 'Wooden crates');
+      await submit(`${editForm} button[type=submit]`);
+      await waitForValue('#packaging', 'Wooden crates');
+      const afterConflict = await storedDraft(shipmentId);
+      check(
+        'shipment conflict',
+        meanwhile.status === 200 &&
+          page.url() === `${shipPages}/${shipmentId}?error=shipment_changed&base=2` &&
+          ((await text('#error-summary')) ?? '').includes(ship.errors.shipment_changed) &&
+          ((await text('#shipment-conflict')) ?? '').includes(ship.conflictTitle),
+        `${locale}: a stale save led to ${page.url()}`,
+      );
+      check(
+        'shipment conflict',
+        afterConflict.version === 3 &&
+          afterConflict.packaging === null &&
+          afterConflict.cargoDescription === 'Changed elsewhere' &&
+          ((await text('#shipment-facts')) ?? '').includes('Changed elsewhere') &&
+          (await valueOf('#packaging')) === 'Wooden crates' &&
+          (await valueOf('#cargoDescription')) === description &&
+          (await valueOf(`${editForm} input[name=version]`)) === '3',
+        `${locale}: after a stale save the draft is ${JSON.stringify(afterConflict)}, the form holds "${await valueOf('#packaging')}"`,
+      );
+      await inspect(locale, 'shipment conflict');
+      // Dropping one's own changes shows the saved draft.
+      await submit('#drop-changes');
+      await waitForValue('#cargoDescription', 'Changed elsewhere');
+      check(
+        'shipment conflict',
+        (await valueOf('#cargoDescription')) === 'Changed elsewhere' &&
+          (await valueOf('#packaging')) === '' &&
+          (await text('#shipment-conflict')) === null,
+        `${locale}: dropping changes left "${await valueOf('#cargoDescription')}" in the form`,
+      );
+      // Again, and this time the person saves their version over the colleague's.
+      await colleague(3, 'Changed again');
+      await page.type('#packaging', 'Wooden crates');
+      await submit(`${editForm} button[type=submit]`);
+      await waitForValue('#packaging', 'Wooden crates');
+      await submit(`${editForm} button[type=submit]`);
+      const savedOver = await storedDraft(shipmentId);
+      check(
+        'shipment conflict',
+        page.url() === `${shipPages}/${shipmentId}?done=saved` &&
+          savedOver.version === 5 &&
+          savedOver.packaging === 'Wooden crates' &&
+          savedOver.cargoDescription === 'Changed elsewhere',
+        `${locale}: saving over a colleague's change led to ${page.url()}: ${JSON.stringify(savedOver)}`,
+      );
+
+      // A time that occurs twice (the clocks go back) must be chosen; neither is assumed.
+      await page.select('#pickupZone', 'America/New_York');
+      await setValue('#pickupFromDate', '2026-11-01');
+      await setValue('#pickupFromTime', '01:30');
+      await setValue('#pickupUntilDate', '2026-11-01');
+      await setValue('#pickupUntilTime', '05:00');
+      await setValue('#deliveryFromDate', '2026-11-02');
+      await submit(`${editForm} button[type=submit]`);
+      await waitForValue('#pickupFromTime', '01:30');
+      const offsetOptions = await page.evaluate(() =>
+        [...(document.querySelector('#pickupFromOffset')?.options ?? [])].map((o) => o.value),
+      );
+      check(
+        'shipment time',
+        page
+          .url()
+          .startsWith(
+            `${shipPages}/${shipmentId}?error=pickup.from%3Atime_ambiguous%3A-240%3A-300`,
+          ) &&
+          ((await text('#pickupFromDate-error')) ?? '') === ship.errors.time_ambiguous &&
+          offsetOptions.join(',') === ',-240,-300' &&
+          (await valueOf('#pickupFromOffset')) === '' &&
+          (await storedDraft(shipmentId)).version === 5,
+        `${locale}: an ambiguous time led to ${page.url()} with choices [${offsetOptions}]`,
+      );
+      await inspect(locale, 'shipment ambiguous time');
+      await page.select('#pickupFromOffset', '-300');
+      await submit(`${editForm} button[type=submit]`);
+      const chosen = await storedDraft(shipmentId);
+      check(
+        'shipment time',
+        page.url() === `${shipPages}/${shipmentId}?done=saved` &&
+          chosen.pickup.from.at === '2026-11-01T06:30:00.000Z' &&
+          chosen.pickup.from.offsetMinutes === -300 &&
+          (await valueOf('#pickupFromOffset')) === '-300',
+        `${locale}: the chosen later time was stored as ${JSON.stringify(chosen.pickup.from)}`,
+      );
+      // A time the clocks skip does not exist and is refused.
+      await setValue('#pickupFromDate', '2026-03-08');
+      await setValue('#pickupFromTime', '02:30');
+      await setValue('#pickupUntilDate', '2026-03-08');
+      await setValue('#pickupUntilTime', '05:00');
+      await setValue('#deliveryFromDate', '2026-03-09');
+      await submit(`${editForm} button[type=submit]`);
+      check(
+        'shipment time',
+        ((await text('#pickupFromDate-error')) ?? '') === ship.errors.time_does_not_exist &&
+          (await storedDraft(shipmentId)).version === 6,
+        `${locale}: a time that does not exist led to ${page.url()}`,
+      );
+      // Leave the test zone, so that it can be removed when the checks end.
+      await shipApi('PATCH', `/shipments/${shipmentId}`, {
+        ...asInput(chosen),
+        pickup: { ...asInput(chosen).pickup, timeZone: 'Etc/GMT-4' },
+        version: 6,
+      });
+
+      // Paging: newest created first, two to a page here; a change does not move a draft.
+      const extra = [];
+      for (const number of [1, 2, 3]) {
+        const made = await shipApi('POST', '/shipments', {
+          shipperReference: `EXTRA-${stamp}-${index}-${number}`,
+        });
+        extra.push(made.body.shipment.id);
+      }
+      const idsOnPage = () =>
+        page.evaluate(() =>
+          [...document.querySelectorAll('#shipment-list [data-shipment]')].map(
+            (item) => item.dataset.shipment,
+          ),
+        );
+      await open(`/${locale}/organisations/${organisationId}/shipments`, 390);
+      const pageOne = await idsOnPage();
+      check(
+        'shipment list',
+        pageOne.join(',') === `${extra[2]},${extra[1]}` &&
+          ((await text('#shipment-list h2')) ?? '') === `EXTRA-${stamp}-${index}-3`,
+        `${locale}: the first page holds ${pageOne}`,
+      );
+      await inspect(locale, 'shipments');
+      // Between the pages the oldest draft is changed and a new one is added.
+      await shipApi('PATCH', `/shipments/${shipmentId}`, {
+        ...asInput(await storedDraft(shipmentId)),
+        packaging: 'Changed between pages',
+        version: 7,
+      });
+      const late = (await shipApi('POST', '/shipments', { shipperReference: `LATE-${stamp}` })).body
+        .shipment.id;
+      await submit('#older-shipments');
+      const pageTwo = await idsOnPage();
+      check(
+        'shipment list',
+        pageTwo.join(',') === `${extra[0]},${shipmentId}` &&
+          (await page.evaluate(() => document.querySelector('#older-shipments'))) === null,
+        `${locale}: the second page holds ${pageTwo}`,
+      );
+      await submit('#newest-shipments');
+      check(
+        'shipment list',
+        (await idsOnPage()).join(',') === `${late},${extra[2]}`,
+        `${locale}: a new walk does not start with the newest draft`,
+      );
+
+      // Discard: the record and its history stay, the draft leaves the open list.
+      await open(`/${locale}/organisations/${organisationId}/shipments/${late}`, 390);
+      await submit('#discard-shipment');
+      const discarded = await storedDraft(late);
+      check(
+        'shipment discard',
+        page.url() === `${shipPages}/${late}?done=discarded` &&
+          (await text('#shipment-confirmation')) === ship.discardedDone &&
+          ((await text('#shipment-status')) ?? '').includes(ship.discardedNotice) &&
+          (await page.evaluate(() => document.querySelector('form'))) === null &&
+          discarded.status === 'discarded' &&
+          discarded.version === 2 &&
+          (await shipApi('GET', `/shipments/${late}/history`)).body.entries.length === 2,
+        `${locale}: discarding led to ${page.url()}: ${JSON.stringify(discarded)}`,
+      );
+      await inspect(locale, 'shipment discarded');
+      await open(`/${locale}/organisations/${organisationId}/shipments?status=discarded`, 390);
+      check(
+        'shipment discard',
+        (await idsOnPage()).join(',') === late &&
+          (await shipApi('GET', '/shipments')).body.shipments.every((entry) => entry.id !== late),
+        `${locale}: the discarded draft is not listed as discarded only`,
+      );
+      people[locale].shipmentId = shipmentId;
       await open(`/${locale}/account`, 390);
       // Sign out before the next language, so each run starts as a visitor. The last stays signed in.
       if (index < locales.length - 1) {
@@ -1289,6 +1716,150 @@ async function main() {
         (await text('#error-summary')) === null &&
         (await page.evaluate(() => document.querySelector('input[name=version]').value)) === '2',
       `after the connection returned the page does not show the saved state: ${page.url()}`,
+    );
+    relay.lost.length = 0;
+
+    // ------------------------------------------------------------------------------------
+    // Shipment drafts: another organisation's drafts, and answers lost on the way back
+    // ------------------------------------------------------------------------------------
+    const urShip = messagesFor('ur').ship;
+    const urOrgId = people.ur.organisationId;
+    const urShipPages = `${origin}/ur/organisations/${urOrgId}/shipments`;
+    const theirDrafts = await open(`/ur/organisations/${people.en.organisationId}/shipments`, 390);
+    const theirDraft = await open(
+      `/ur/organisations/${urOrgId}/shipments/${people.en.shipmentId}`,
+      390,
+    );
+    check(
+      'shipment',
+      theirDrafts.status() === 404 &&
+        theirDraft.status() === 404 &&
+        (await urApi(`/organisations/${people.en.organisationId}/shipments`)).status === 404 &&
+        (await urApi(`/organisations/${urOrgId}/shipments/${people.en.shipmentId}`)).status === 404,
+      `another organisation's drafts answered ${theirDrafts.status()} and ${theirDraft.status()}`,
+    );
+    // Every draft of the organisation, walking the pages to the end.
+    const urDrafts = async () => {
+      const all = [];
+      let after = '';
+      do {
+        const body = (
+          await urApi(`/organisations/${urOrgId}/shipments?status=all${after && `&after=${after}`}`)
+        ).body;
+        all.push(...body.shipments);
+        after = body.nextAfter ?? '';
+      } while (after);
+      return all;
+    };
+    const draftsBefore = (await urDrafts()).length;
+    const historyOf = async (id) =>
+      (await urApi(`/organisations/${urOrgId}/shipments/${id}/history`)).body.entries;
+
+    // Saving a new draft: the server saves it, the answer is lost.
+    await open(`/ur/organisations/${urOrgId}/shipments/new`, 390);
+    await page.type('#cargoDescription', 'مسودہ جس کا جواب گم ہوا (فرضی)');
+    relay.mode = 'lose';
+    await submit(`#shipment-new-form-${urOrgId} button[type=submit]`);
+    const shipRetryKey = new URL(page.url()).searchParams.get('retry');
+    check(
+      'shipment lost answer',
+      relay.lost[0] === `POST /organisations/${urOrgId}/shipments -> 201` &&
+        (await urDrafts()).length === draftsBefore + 1 &&
+        page.url().startsWith(`${urShipPages}/new?error=create_unconfirmed`) &&
+        ((await text('#error-summary')) ?? '').includes(urShip.errors.create_unconfirmed) &&
+        (await page.evaluate(() => document.getElementById('shipment-confirmation'))) === null,
+      `a lost answer to a new draft led to ${page.url()}: ${relay.lost}`,
+    );
+    relay.mode = 'pass';
+    await submit('#retry-shipments');
+    await page
+      .waitForFunction(() => document.querySelector('#cargoDescription')?.value !== '', {
+        timeout: 5000,
+      })
+      .catch(() => undefined);
+    check(
+      'shipment lost answer',
+      (await page.evaluate(() => document.querySelector('input[name=retryKey]')?.value)) ===
+        shipRetryKey,
+      'after a lost answer the draft form did not come back with the same retry key',
+    );
+    await submit(`#shipment-new-form-${urOrgId} button[type=submit]`);
+    const lostDraft = /\/shipments\/([0-9a-f-]{36})\?done=created$/.exec(page.url())?.[1];
+    check(
+      'shipment lost answer',
+      Boolean(lostDraft) &&
+        (await urDrafts()).length === draftsBefore + 1 &&
+        (await historyOf(lostDraft)).length === 1,
+      `sending the same draft again made a second one, or led to ${page.url()}`,
+    );
+
+    // Changing it: the server saves the change, the answer is lost. Asking again with the same
+    // key is recognised as the same change and saves nothing twice.
+    await page.type('#packaging', 'گتے کے ڈبے');
+    relay.mode = 'lose';
+    await submit(`#shipment-form-${lostDraft} button[type=submit]`);
+    const changeKey = new URL(page.url()).searchParams.get('retry');
+    check(
+      'shipment lost answer',
+      relay.lost[1] === `PATCH /organisations/${urOrgId}/shipments/${lostDraft} -> 200` &&
+        page.url().startsWith(`${urShipPages}/${lostDraft}?error=save_unconfirmed`) &&
+        ((await text('#error-summary')) ?? '').includes(urShip.errors.save_unconfirmed) &&
+        (await historyOf(lostDraft)).length === 2,
+      `a lost answer to a change led to ${page.url()}: ${relay.lost}`,
+    );
+    relay.mode = 'pass';
+    await submit('#retry-shipments');
+    check(
+      'shipment lost answer',
+      (await page.evaluate(() => document.querySelector('input[name=retryKey]')?.value)) ===
+        changeKey &&
+        (await page.evaluate(() => document.querySelector('#packaging')?.value)) === 'گتے کے ڈبے' &&
+        (await page.evaluate(() => document.querySelector('input[name=version]')?.value)) === '2',
+      'after a lost answer the change form did not come back with its key and the saved state',
+    );
+    await submit(`#shipment-form-${lostDraft} button[type=submit]`);
+    check(
+      'shipment lost answer',
+      page.url() === `${urShipPages}/${lostDraft}?done=already` &&
+        (await text('#shipment-confirmation')) === urShip.alreadyDone &&
+        (await historyOf(lostDraft)).length === 2 &&
+        (await urApi(`/organisations/${urOrgId}/shipments/${lostDraft}`)).body.shipment.version ===
+          2,
+      `asking for the same change again led to ${page.url()}`,
+    );
+
+    // Discarding it: the server discards, the answer is lost. Asking again discards nothing twice.
+    relay.mode = 'lose';
+    await submit('#discard-shipment');
+    check(
+      'shipment lost answer',
+      relay.lost[2] === `POST /organisations/${urOrgId}/shipments/${lostDraft}/discard -> 200` &&
+        page.url().startsWith(`${urShipPages}/${lostDraft}?error=discard_unconfirmed`) &&
+        ((await text('#error-summary')) ?? '').includes(urShip.errors.discard_unconfirmed),
+      `a lost answer to a discard led to ${page.url()}: ${relay.lost}`,
+    );
+    relay.mode = 'pass';
+    await submit('#retry-shipments');
+    const again = await fetch(
+      `${apiOrigin}/organisations/${urOrgId}/shipments/${lostDraft}/discard`,
+      {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${urToken}`,
+          'content-type': 'application/json',
+          'idempotency-key': randomUUID(),
+        },
+        body: JSON.stringify({ version: 2 }),
+      },
+    );
+    check(
+      'shipment lost answer',
+      ((await text('#shipment-status')) ?? '').includes(urShip.discardedNotice) &&
+        (await page.evaluate(() => document.querySelector('form'))) === null &&
+        again.status === 200 &&
+        (await again.json()).outcome === 'already_discarded' &&
+        (await historyOf(lostDraft)).length === 3,
+      `after a lost discard the page is ${page.url()}, a second discard answered ${again.status}`,
     );
     relay.lost.length = 0;
     await open('/ur/account', 390);
@@ -1795,6 +2366,7 @@ async function main() {
     server.kill();
     apiServer?.kill();
     await restoreSettings().catch((error) => console.error('settings not restored:', error));
+    await removeTestZone().catch((error) => console.error('test zone not removed:', error));
     relayServer.close();
     relayServer.closeAllConnections();
   }

@@ -7,17 +7,21 @@ import { useEffect } from 'react';
 // anything else not marked with data-draft are never saved. `clear` removes a finished draft.
 // `scope` ties a draft to one state of a record (its version): a draft made against an older
 // state is ignored. `overwrite` puts the draft over values the page already shows, for forms
-// that edit a saved record.
+// that edit a saved record. `fallbackScope` names the state a draft was typed against when the
+// record has since been changed by someone else: that draft is carried over to the new state,
+// so that nothing typed is lost.
 export function DraftKeeper({
   formId,
   clear = false,
   scope = '',
   overwrite = false,
+  fallbackScope,
 }: {
   formId: string;
   clear?: boolean;
   scope?: string;
   overwrite?: boolean;
+  fallbackScope?: string;
 }) {
   useEffect(() => {
     const storageKey = `trucker-draft:${formId}${scope ? `:${scope}` : ''}`;
@@ -26,6 +30,13 @@ export function DraftKeeper({
       storage = window.sessionStorage;
       // A finished draft is removed; what is typed from now on is kept again.
       if (clear) storage.removeItem(storageKey);
+      if (fallbackScope && fallbackScope !== scope) {
+        const earlierKey = `trucker-draft:${formId}:${fallbackScope}`;
+        const earlier = storage.getItem(earlierKey);
+        if (earlier !== null && !clear && storage.getItem(storageKey) === null)
+          storage.setItem(storageKey, earlier);
+        storage.removeItem(earlierKey);
+      }
     } catch {
       return; // storage is unavailable: the form simply does not keep a draft
     }
@@ -69,6 +80,6 @@ export function DraftKeeper({
       form.removeEventListener('input', save);
       form.removeEventListener('change', save);
     };
-  }, [formId, clear, scope, overwrite]);
+  }, [formId, clear, scope, overwrite, fallbackScope]);
   return null;
 }
