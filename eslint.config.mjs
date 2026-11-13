@@ -2,16 +2,36 @@ import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['**/dist/**', '**/node_modules/**', 'docs/**'] },
+  { ignores: ['**/dist/**', '**/node_modules/**', '**/.next/**', '**/next-env.d.ts', 'docs/**'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
     // Plain Node.js helper scripts.
-    files: ['tools/**/*.mjs'],
-    languageOptions: { globals: { process: 'readonly', console: 'readonly' } },
+    files: [
+      'tools/**/*.mjs',
+      'apps/web/scripts/**/*.mjs',
+      'apps/web/tests/**/*.mjs',
+      'apps/web/*.mjs',
+    ],
+    languageOptions: {
+      globals: {
+        process: 'readonly',
+        console: 'readonly',
+        setTimeout: 'readonly',
+        URL: 'readonly',
+        fetch: 'readonly',
+      },
+    },
   },
   {
-    files: ['**/*.ts'],
+    // Browser checks: functions here are sent to the page and run there.
+    files: ['apps/web/tests/**/*.mjs'],
+    languageOptions: {
+      globals: { document: 'readonly', window: 'readonly', getComputedStyle: 'readonly' },
+    },
+  },
+  {
+    files: ['**/*.ts', '**/*.tsx'],
     rules: {
       '@typescript-eslint/consistent-type-imports': 'error',
       '@typescript-eslint/no-explicit-any': 'error',

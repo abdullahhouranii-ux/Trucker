@@ -1,7 +1,7 @@
 {
   "name": "trucker",
   "private": true,
-  "description": "Trucker freight platform workspace. Foundation slice only: no business modules.",
+  "description": "Trucker freight platform workspace. Foundation only: API and web shell, no business modules.",
   "packageManager": "npm@10.9.9",
   "engines": {
     "node": ">=22.12.0 <23",
@@ -31,8 +31,10 @@
     "dev:db:status": "node tools/dev/db.mjs status",
     "dev:migrate": "node tools/dev/with-env.mjs npm run db:migrate",
     "dev:verify": "node tools/dev/with-env.mjs npm run verify",
-    "dev:api": "npm run build && node tools/dev/with-env.mjs npm run start:api",
-    "verify": "npm run format:check && npm run lint && npm run typecheck && npm run db:check && npm run test"
+    "dev:api": "npm run build -w @trucker/api && node tools/dev/with-env.mjs npm run start:api",
+    "verify": "npm run format:check && npm run lint && npm run typecheck && npm run db:check && npm run test",
+    "start:web": "npm run start -w @trucker/web",
+    "test:browser": "npm run build -w @trucker/web && npm run test:browser -w @trucker/web"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
