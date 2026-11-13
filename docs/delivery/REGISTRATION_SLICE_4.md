@@ -119,7 +119,7 @@ Run on 13 November 2026, Linux, Node.js 22, PostgreSQL 16, headless Chrome.
 | Browser checks (`npm run test:browser`), all | 356, of which 253 are new | Pass |
 
 One unexplained result is on record: in a single local run of the whole suite, one API test
-failed (86 of 87). The output of that run was not kept, so the test is not identified. 26 further
+failed (86 of 87). The output of that run was not kept, so the test is not identified. 17 further
 runs, 8 of them under heavy processor load, all passed. Treat the suite as possibly having one
 timing-sensitive test until it is seen again and fixed.
 
