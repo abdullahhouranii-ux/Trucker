@@ -115,9 +115,9 @@ Also outside its scope: large data backfills that should commit in batches, and 
 
 ## Not verified
 
-- `tools/dev/docker-compose.yml` was not executed: no Docker daemon was available.
+- `tools/dev/docker-compose.yml` was not executed in slice 1. It was exercised later in CI: see docs/delivery/FOUNDATION_SLICE_2.md.
 - GitHub CI passed on pull request 1 for slice 1 as first pushed (commits `0899c08` and `a627ae3`). Its result for the review fixes is reported on their own pull request, not in this file.
-- Only Linux was used. Windows setup instructions exist but were not executed; macOS is untested. The CRLF behaviour was simulated on Linux, not observed on Windows.
+- Only Linux was used in slice 1. Windows was exercised later on a CI runner: see docs/delivery/FOUNDATION_SLICE_2.md. macOS is untested.
 - No load, security or dependency-vulnerability review was done.
 
 ## Choices in this slice that need confirmation

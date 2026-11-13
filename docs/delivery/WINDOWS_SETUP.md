@@ -1,7 +1,10 @@
 # Windows setup
 
-**Not executed on Windows.** These steps were written from the Linux setup and have not been
-run on a Windows machine. Record what happens on the first run and correct this file.
+**Verified on a GitHub Windows runner, not on a desktop PC.** The CI job `windows` follows
+option B below on every pull request: checkout, install, checks, tests, migrate, start the API
+and call it. That runner provides PostgreSQL 17, not 16. Option A (Docker Desktop), the
+PostgreSQL 16 installer and a real Windows desktop are **not verified**. Record what happens
+on the first desktop run and correct this file.
 
 ## Prerequisites
 
@@ -47,6 +50,11 @@ $env:NODE_ENV = "development"
 npm run start:api
 ```
 
+The helper commands work the same on Windows: `npm run dev:doctor` checks the prerequisites,
+`npm run dev:env` creates `.env`, and `npm run dev:migrate`, `npm run dev:verify` and
+`npm run dev:api` use the values in `.env` instead of `$env:` variables. `npm run dev:db:up`
+needs Docker and was not run on Windows.
+
 In a second PowerShell window:
 
 ```powershell
@@ -55,14 +63,14 @@ Invoke-RestMethod http://localhost:3000/health/ready
 ```
 
 Environment variables set with `$env:` last for that PowerShell window only. Copy
-`.env.example` to `.env` (`Copy-Item .env.example .env`) only as a reference: the API does not
-read `.env` files itself.
+`.env.example` to `.env` with `npm run dev:env` if you prefer the `dev:*` commands: the API does
+not read `.env` itself, but those commands do.
 
 ## Known points to watch on Windows
 
 | Point | Detail |
 |---|---|
-| Line endings | SQL files check out with LF. Checksums are also computed on normalised text, so a CRLF copy gives the same checksum (tested on Linux by simulating a CRLF checkout) |
-| Killed-runner test | One test stops a child process abruptly. It is written with a portable call, but its behaviour on Windows is unverified |
+| Line endings | SQL files check out with LF (confirmed on the Windows runner). Checksums are also computed on normalised text, so a CRLF copy gives the same checksum |
+| Killed-runner test | One test stops a child process abruptly. It passes on the Windows runner |
 | Port 5432 in use | A PostgreSQL service already installed on Windows conflicts with the Docker database. Use one option, not both |
 | Antivirus or indexing | Can slow `npm ci`; no workaround is needed for correctness |

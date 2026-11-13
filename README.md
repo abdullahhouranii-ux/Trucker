@@ -7,9 +7,13 @@ Remote: https://github.com/abdullahhouranii-ux/Trucker
 ## Current status
 
 Foundation only (13 November 2026). Implemented and tested: an npm workspace with `apps/api`
-(validated configuration, `/health/live`, `/health/ready`) and a forward-only SQL migration
-runner. Evidence and limits: docs/delivery/FOUNDATION_SLICE_1.md. Windows setup:
-docs/delivery/WINDOWS_SETUP.md (not yet executed on Windows).
+(validated configuration, `/health/live`, `/health/ready`, one standard error body, request
+identifiers), a forward-only SQL migration runner, and local helper commands. Evidence and
+limits: docs/delivery/FOUNDATION_SLICE_1.md and FOUNDATION_SLICE_2.md.
+
+Local setup: `npm ci`, `npm run dev:env`, `npm run dev:db:up` (Docker) or your own
+PostgreSQL 16, `npm run dev:doctor`, `npm run dev:migrate`, `npm run dev:verify`,
+`npm run dev:api`. Windows: docs/delivery/WINDOWS_SETUP.md.
 
 No business feature exists: no sign-in, organisations, shipments, bookings, portals or mobile
 application. Those are specified provisionally in docs/specs and gated on recorded decisions.

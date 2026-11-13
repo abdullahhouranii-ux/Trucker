@@ -23,18 +23,19 @@ Commercial model (D-001), payment approach (D-002) and launch geography (D-003) 
 
 ## Current milestone
 
-M0: foundation. Foundation slice 1 is merged into the staging branch (not main): npm
-workspace, pinned tooling, validated configuration, API health and readiness, SQL migration
-runner with checks, CI workflow. Evidence: docs/delivery/FOUNDATION_SLICE_1.md. Review fixes
-(line endings, bounded readiness and lock waits, runner limits) are on their own pull request
-against staging. Docker compose file and Windows setup are not yet executed.
-Only apps/api exists. No business module, portal or mobile code exists.
+M0: foundation. Foundation slice 1 and its review fixes are merged into staging (not main).
+Foundation slice 2 is on a pull request against staging: standard API error body, request
+identifiers, local helper commands, and CI jobs that exercise the Docker compose database and
+the native Windows setup. Evidence: docs/delivery/FOUNDATION_SLICE_1.md and
+FOUNDATION_SLICE_2.md. Not verified: Docker Desktop on Windows, a Windows desktop machine,
+macOS. Only apps/api exists. No business module, portal or mobile code exists.
 
 ## Next executable slice
 
-Remaining foundation: error envelope and request identifier, then the decision-independent
-platform primitives F-07 to F-11 (docs/specs/STAGE_3_ARCHITECTURE.md, section 12), each on
-Abdullah's instruction. Business modules stay gated on their recorded decisions.
+Decision-independent platform primitives F-07 to F-11 (docs/specs/STAGE_3_ARCHITECTURE.md,
+section 12), each on Abdullah's instruction. The first functional journey (sign-in,
+organisations, shipment create and list) waits for two decisions: launch country and sign-in
+method. Business modules stay gated on their recorded decisions.
 Do not return mock successes or confuse the reference HTML with the hosted product.
 
 ## Open decisions
