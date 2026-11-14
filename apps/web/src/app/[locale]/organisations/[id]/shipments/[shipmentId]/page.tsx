@@ -125,7 +125,8 @@ export default async function ShipmentPage({ params, searchParams }: Props) {
   // Someone else changed the draft while this person was typing. What they typed was kept
   // against the version they started from, and is carried over to the current one.
   const startedFrom = Number(one('base'));
-  const conflict = open && found.codes.has('shipment_changed');
+  const conflict =
+    open && (found.codes.has('shipment_changed') || found.codes.has('overwrite_not_chosen'));
   const fallbackScope =
     conflict && Number.isInteger(startedFrom) && startedFrom >= 1 && startedFrom < shipment.version
       ? `v${startedFrom}`
@@ -327,9 +328,24 @@ export default async function ShipmentPage({ params, searchParams }: Props) {
               current={shipment}
               problems={found}
             />
-            <button className="button button-primary" type="submit">
-              {t.submitSave}
-            </button>
+            {/* Set in this browser when what the form holds was typed against an earlier
+                version. The action then saves only on the explicit overwrite choice. */}
+            <input type="hidden" name="carriedFrom" data-draft defaultValue={fallbackScope ?? ''} />
+            {conflict ? (
+              <button
+                className="button button-danger"
+                type="submit"
+                name="intent"
+                value="overwrite"
+                id="overwrite-shipment"
+              >
+                {t.overwrite}
+              </button>
+            ) : (
+              <button className="button button-primary" type="submit" id="save-shipment">
+                {t.submitSave}
+              </button>
+            )}
           </form>
         </section>
       ) : null}
@@ -357,7 +373,7 @@ export default async function ShipmentPage({ params, searchParams }: Props) {
           scope={`v${shipment.version}`}
           overwrite
           clear={dropDraft}
-          {...(fallbackScope ? { fallbackScope } : {})}
+          {...(fallbackScope ? { fallbackScope, carriedField: 'carriedFrom' } : {})}
         />
       ) : null}
     </div>

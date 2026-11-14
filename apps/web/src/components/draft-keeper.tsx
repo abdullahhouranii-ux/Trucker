@@ -9,19 +9,22 @@ import { useEffect } from 'react';
 // state is ignored. `overwrite` puts the draft over values the page already shows, for forms
 // that edit a saved record. `fallbackScope` names the state a draft was typed against when the
 // record has since been changed by someone else: that draft is carried over to the new state,
-// so that nothing typed is lost.
+// so that nothing typed is lost, and `carriedField` names a hidden input that then records
+// which state it was typed against, for as long as that draft lives.
 export function DraftKeeper({
   formId,
   clear = false,
   scope = '',
   overwrite = false,
   fallbackScope,
+  carriedField,
 }: {
   formId: string;
   clear?: boolean;
   scope?: string;
   overwrite?: boolean;
   fallbackScope?: string;
+  carriedField?: string;
 }) {
   useEffect(() => {
     const storageKey = `trucker-draft:${formId}${scope ? `:${scope}` : ''}`;
@@ -33,8 +36,20 @@ export function DraftKeeper({
       if (fallbackScope && fallbackScope !== scope) {
         const earlierKey = `trucker-draft:${formId}:${fallbackScope}`;
         const earlier = storage.getItem(earlierKey);
-        if (earlier !== null && !clear && storage.getItem(storageKey) === null)
-          storage.setItem(storageKey, earlier);
+        if (earlier !== null && !clear && storage.getItem(storageKey) === null) {
+          let carried = earlier;
+          if (carriedField) {
+            try {
+              carried = JSON.stringify({
+                ...(JSON.parse(earlier) as Record<string, string | boolean>),
+                [carriedField]: fallbackScope,
+              });
+            } catch {
+              // an unreadable draft is carried as it is and ignored below
+            }
+          }
+          storage.setItem(storageKey, carried);
+        }
         storage.removeItem(earlierKey);
       }
     } catch {
@@ -80,6 +95,6 @@ export function DraftKeeper({
       form.removeEventListener('input', save);
       form.removeEventListener('change', save);
     };
-  }, [formId, clear, scope, overwrite, fallbackScope]);
+  }, [formId, clear, scope, overwrite, fallbackScope, carriedField]);
   return null;
 }

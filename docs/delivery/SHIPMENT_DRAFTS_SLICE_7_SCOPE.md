@@ -80,7 +80,7 @@ Order in the database: authenticate, authorise, lock, read the clock, then look 
 
 Keys are kept for the protected retention period (24 hours by default).
 
-**Conflict.** When a colleague changed the draft meanwhile, nothing of the person's is saved and nothing they typed is lost: their input stays in the form, the saved draft is shown, and they choose between saving their version over it and dropping their changes.
+**Conflict.** When a colleague changed the draft meanwhile, nothing of the person's is saved and nothing they typed is lost: their input stays in the form, the saved draft is shown, and they choose between saving their version over it and dropping their changes. Saving their version replaces every field of the saved draft. It is done only through an action labelled as overwriting, never by the ordinary save, and the warning says what it replaces. The version check still applies: if the draft is changed again first, nothing is saved and the person is asked again (decision of 14 November 2026).
 
 ## 8. Acceptance criteria
 

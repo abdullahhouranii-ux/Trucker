@@ -19,3 +19,8 @@ original Plan B reference; vendor and release decisions remain open.
 
 For every slice record requirement, acceptance criteria, changed files, relevant
 test results and remaining limitations. Never claim production readiness from mocks.
+
+## Future enhancements recorded by decision
+
+- Shipment drafts: a "recently changed" view. The list stays in creation order so that pages are
+  stable; finding a recently changed draft needs its own view (Abdullah, 14 November 2026).

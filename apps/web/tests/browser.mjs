@@ -640,11 +640,8 @@ async function main() {
     mkdirSync(outDir, { recursive: true });
     // At most five pictures, for design review only.
     const shots = {
-      'en:shipment new error': 'shipment-new-error-en-390',
-      'ar:shipment': 'shipment-ar-390',
-      'ur:shipment conflict': 'shipment-conflict-ur-390',
-      'en:shipment ambiguous time': 'shipment-ambiguous-time-en-390',
-      'ar:shipments': 'shipments-ar-390',
+      'ur:shipment overwrite': 'shipment-overwrite-ur-390',
+      'ar:shipment overwrite': 'shipment-overwrite-ar-390',
     };
     // Fictional numbers: country code 999 is not assigned. Unique per run.
     const stamp = String(Date.now()).slice(-7);
@@ -1336,20 +1333,70 @@ async function main() {
           (await text('#shipment-conflict')) === null,
         `${locale}: dropping changes left "${await valueOf('#cargoDescription')}" in the form`,
       );
-      // Again, and this time the person saves their version over the colleague's.
+      // Again, and this time the person wants their version kept. In a conflict the ordinary
+      // save is gone: only the action that says it overwrites is offered.
       await colleague(3, 'Changed again');
       await page.type('#packaging', 'Wooden crates');
       await submit(`${editForm} button[type=submit]`);
       await waitForValue('#packaging', 'Wooden crates');
-      await submit(`${editForm} button[type=submit]`);
+      const offered = await page.evaluate(
+        (form) => ({
+          buttons: [...document.querySelectorAll(`${form} button[type=submit]`)].map((b) => b.id),
+          label: document.querySelector('#overwrite-shipment')?.textContent ?? '',
+          warning: document.querySelector('#shipment-conflict')?.textContent ?? '',
+        }),
+        editForm,
+      );
+      check(
+        'shipment conflict',
+        offered.buttons.join(',') === 'overwrite-shipment' &&
+          offered.label === ship.overwrite &&
+          offered.warning.includes(ship.conflictKeep),
+        `${locale}: a conflict offers ${JSON.stringify(offered.buttons)} labelled "${offered.label}"`,
+      );
+      // A colleague saves once more before the overwrite is pressed: the version check still
+      // holds, nothing is saved, and the person is asked again with their input kept.
+      await colleague(4, 'Changed a third time');
+      await submit('#overwrite-shipment');
+      await waitForValue('#packaging', 'Wooden crates');
+      const notOverwritten = await storedDraft(shipmentId);
+      check(
+        'shipment conflict',
+        page.url() === `${shipPages}/${shipmentId}?error=shipment_changed&base=4` &&
+          notOverwritten.version === 5 &&
+          notOverwritten.packaging === null &&
+          notOverwritten.cargoDescription === 'Changed a third time' &&
+          (await valueOf('#packaging')) === 'Wooden crates' &&
+          (await valueOf(`${editForm} input[name=version]`)) === '5',
+        `${locale}: an overwrite after another save led to ${page.url()}: ${JSON.stringify(notOverwritten)}`,
+      );
+      // Coming back to the page later, the carried-over input is still there. The ordinary
+      // save does not overwrite: it is refused and the explicit choice is asked for.
+      await open(`/${locale}/organisations/${organisationId}/shipments/${shipmentId}`, 390);
+      await waitForValue('#packaging', 'Wooden crates');
+      await submit('#save-shipment');
+      await waitForValue('#packaging', 'Wooden crates');
+      check(
+        'shipment conflict',
+        page.url() === `${shipPages}/${shipmentId}?error=overwrite_not_chosen&base=4` &&
+          ((await text('#error-summary')) ?? '').includes(ship.errors.overwrite_not_chosen) &&
+          (await page.evaluate(() => document.querySelector('#save-shipment'))) === null &&
+          (await storedDraft(shipmentId)).version === 5 &&
+          (await storedDraft(shipmentId)).packaging === null,
+        `${locale}: an ordinary save of carried-over input led to ${page.url()}`,
+      );
+      await inspect(locale, 'shipment overwrite');
+      await submit('#overwrite-shipment');
       const savedOver = await storedDraft(shipmentId);
       check(
         'shipment conflict',
         page.url() === `${shipPages}/${shipmentId}?done=saved` &&
-          savedOver.version === 5 &&
+          savedOver.version === 6 &&
           savedOver.packaging === 'Wooden crates' &&
-          savedOver.cargoDescription === 'Changed elsewhere',
-        `${locale}: saving over a colleague's change led to ${page.url()}: ${JSON.stringify(savedOver)}`,
+          savedOver.cargoDescription === 'Changed elsewhere' &&
+          (await valueOf(`${editForm} input[name=carriedFrom]`)) === '' &&
+          (await page.evaluate(() => document.querySelector('#overwrite-shipment'))) === null,
+        `${locale}: the explicit overwrite led to ${page.url()}: ${JSON.stringify(savedOver)}`,
       );
 
       // A time that occurs twice (the clocks go back) must be chosen; neither is assumed.
@@ -1374,7 +1421,7 @@ async function main() {
           ((await text('#pickupFromDate-error')) ?? '') === ship.errors.time_ambiguous &&
           offsetOptions.join(',') === ',-240,-300' &&
           (await valueOf('#pickupFromOffset')) === '' &&
-          (await storedDraft(shipmentId)).version === 5,
+          (await storedDraft(shipmentId)).version === 6,
         `${locale}: an ambiguous time led to ${page.url()} with choices [${offsetOptions}]`,
       );
       await inspect(locale, 'shipment ambiguous time');
@@ -1399,14 +1446,14 @@ async function main() {
       check(
         'shipment time',
         ((await text('#pickupFromDate-error')) ?? '') === ship.errors.time_does_not_exist &&
-          (await storedDraft(shipmentId)).version === 6,
+          (await storedDraft(shipmentId)).version === 7,
         `${locale}: a time that does not exist led to ${page.url()}`,
       );
       // Leave the test zone, so that it can be removed when the checks end.
       await shipApi('PATCH', `/shipments/${shipmentId}`, {
         ...asInput(chosen),
         pickup: { ...asInput(chosen).pickup, timeZone: 'Etc/GMT-4' },
-        version: 6,
+        version: 7,
       });
 
       // Paging: newest created first, two to a page here; a change does not move a draft.
@@ -1436,7 +1483,7 @@ async function main() {
       await shipApi('PATCH', `/shipments/${shipmentId}`, {
         ...asInput(await storedDraft(shipmentId)),
         packaging: 'Changed between pages',
-        version: 7,
+        version: 8,
       });
       const late = (await shipApi('POST', '/shipments', { shipperReference: `LATE-${stamp}` })).body
         .shipment.id;

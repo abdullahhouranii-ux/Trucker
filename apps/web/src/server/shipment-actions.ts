@@ -190,6 +190,13 @@ export async function updateShipmentAction(form: FormData): Promise<void> {
   const { body, problems } = content(form);
   if (problems.length > 0) back(problems.join(','));
   if (!Number.isInteger(version) || version < 1) redirect(`${base}/${id}?error=shipment_changed`);
+  // What the form holds was typed against an earlier version of the draft. Saving it replaces
+  // the saved draft, so it is done only on the explicitly labelled overwrite action, never by
+  // the ordinary save. The version check below still applies: if the draft changed again,
+  // nothing is saved and the person is asked again.
+  const carriedFrom = /^v([0-9]{1,9})$/.exec(text(form, 'carriedFrom'))?.[1];
+  if (carriedFrom !== undefined && text(form, 'intent') !== 'overwrite')
+    redirect(`${base}/${id}${query({ error: 'overwrite_not_chosen', base: carriedFrom })}`);
 
   const reply = await api<{ shipment: Shipment; outcome: 'updated' | 'already_applied' }>(
     'PATCH',

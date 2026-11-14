@@ -75,7 +75,7 @@ Five pictures were taken for review (`apps/web/tests/output/`, not committed): n
 ## 6. Known limits
 
 1. **Keeping typed input needs scripts.** With scripts disabled, input is lost on a refusal, a language change or a conflict. Same limit as earlier slices (AX-04).
-2. **Saving over a colleague's change saves every field of the form,** including fields the person did not touch, which then return to the values they started from. The page says so. Field-by-field merging is not built.
+2. **Saving over a colleague's change replaces every field of the saved draft,** including fields the person did not touch. Accepted by Abdullah on 14 November 2026 for private drafts only, on two conditions that are now met: the conflict warning says so, and it happens only through the action labelled "Save my version over the saved draft". The ordinary save never overwrites: input carried over from an earlier version is refused by it. The version check stays, so another save in between causes a new conflict and saves nothing. Field-by-field merging is not built.
 3. **If a colleague discards the draft while someone is typing,** the change is refused and the typed input cannot be saved anywhere.
 4. **The time-zone list is grouped by country but not filtered by the chosen country.** A zone of another country is refused by the server with a clear message.
 5. **Dates and times are typed as text** (year-month-day, 24-hour clock). No date picker; device testing should decide.
@@ -94,5 +94,5 @@ Five pictures were taken for review (`apps/web/tests/output/`, not committed): n
 ## 8. Needs Abdullah
 
 1. Review and merge decision for the pull request. Nothing is merged or deployed.
-2. Whether limit 2 (save-over replaces every field) is acceptable for drafts, or field-by-field merging should be scoped.
-3. Whether a recently changed draft should be findable another way (for example a separate "recently changed" view), since the list deliberately does not reorder.
+2. Decided 14 November 2026: see limit 2.
+3. Decided 14 November 2026: creation order stays; a "recently changed" view is a future enhancement (`BACKLOG.md`).
