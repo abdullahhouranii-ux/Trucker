@@ -743,3 +743,88 @@ textarea {
 .facts dd {
   overflow-wrap: anywhere;
 }
+
+/* Shipment drafts */
+.fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+  min-width: 0;
+  padding: var(--s-4);
+  border: 2px solid var(--c-hairline);
+  border-radius: var(--r-md);
+}
+.fieldset legend {
+  padding-inline: var(--s-2);
+  font-size: var(--t-lg);
+  font-weight: 700;
+}
+.window-end {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+.field-pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(9rem, 100%), 1fr));
+  gap: var(--s-3);
+  align-items: end;
+}
+.input-unit {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+.input-unit input {
+  flex: 1;
+  min-width: 0;
+}
+.clamp {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow-wrap: anywhere;
+}
+.notice-warning {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s-2);
+  border-style: dashed;
+}
+.notice-warning .button {
+  padding: var(--s-2) var(--s-5);
+  color: var(--c-blue);
+}
+.route {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  padding: var(--s-4);
+}
+.route-status {
+  font-size: var(--t-lg);
+  font-weight: 700;
+}
+.route[data-route='closed'] {
+  border-style: dashed;
+}
+.button-danger {
+  border-color: var(--c-red);
+  color: var(--c-red);
+}
+.facts + h3 {
+  margin-block-start: var(--s-4);
+}
+.section h3 {
+  font-size: var(--t-md);
+}
+/* The filter in use: filled and underlined, not colour alone */
+.button[aria-current='page'] {
+  background: var(--c-blue);
+  color: var(--c-surface);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}

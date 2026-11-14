@@ -30,7 +30,12 @@ read the database's own clock (docs/delivery/IDENTITY_HARDENING_SLICE_6.md). Lim
 with `npm run db:settings`, not in the API's environment. Local sign-in needs the database
 marked local-development (`npm run db:mark` or `npm run db:fixtures`).
 
-No other business feature exists: no verification, shipments, bookings, portals or mobile
+Private shipment drafts can be saved, listed, changed and discarded by an organisation's
+administrator (docs/delivery/SHIPMENT_DRAFTS_SLICE_7.md). A draft is not published, is seen by
+nobody outside the organisation and gives no right to transport. The route answer describes
+configuration only, not legal clearance; after the migrations every route is closed.
+
+No other business feature exists: no verification, publication, quotations, bookings, payment, portals or mobile
 application. Those are specified provisionally in docs/specs and gated on recorded decisions.
 
 ## Web application

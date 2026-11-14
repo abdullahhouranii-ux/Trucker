@@ -1,6 +1,6 @@
 # Trucker: final audit backlog (wording, translation, accessibility)
 
-Version 0.2, 13 November 2026. Owner: Abdullah.
+Version 0.3, 14 November 2026. Owner: Abdullah.
 
 Repository copy: `docs/delivery/FINAL_AUDIT_BACKLOG.md`.
 
@@ -26,6 +26,8 @@ An item leaves this list only when it is fixed and checked, or when Abdullah dec
 | AX-04 | A draft survives a language change only with scripts enabled | Slices 4, 5 | Without scripts the page works but typed values are lost on a language change | Whether that matters for the people who will use it | Decide after device testing |
 | AX-05 | A long name in a single-line box is not fully visible on a narrow phone while it is being edited | Slice 5, organisation form at 320 px and with text doubled | The box scrolls, as text boxes do; the full name is shown above the form. The automated overflow check exempts single-line text boxes for this reason | Whether people find it hard to review a long legal name before saving | Consider a multi-line box for the legal name after device testing |
 | AX-06 | The country list is a plain drop-down | Slice 5 | Works with keyboard and passes automated rules with two fixture entries | How it behaves with a real list of countries, in three languages, with a screen reader | Recheck when real countries are approved |
+| AX-07 | Dates and times are typed as text, and the time-zone list is not filtered by the chosen country | Slice 7, shipment form | Works with keyboard; automated rules pass; a wrong zone is refused with a message | Whether people on phones manage year-month-day and 24-hour entry, in three languages | Device testing; then decide on native date and time controls |
+| AX-08 | The choice between two clock times on the day the clocks go back is a drop-down showing offsets from UTC | Slice 7, shipment form | Neither is preselected; the choice is stored and shown again | Whether "UTC-04:00" and "UTC-05:00" mean anything to the people choosing | Consider "the first 01:30" and "the second 01:30" after user testing |
 
 No accessibility conformance is claimed for any page.
 
@@ -43,6 +45,10 @@ No accessibility conformance is claimed for any page.
 | WD-08 | After a lost answer on create, changing the details and trying again reports "An earlier attempt may already have created this organisation. Check your organisations before trying again." | Slice 5, create form | Correct, but the next step could be clearer |
 | WD-09 | The draft notice states what a draft does not give ("no ownership of the company's name or registration number and no right to trade") | Slice 5, create form and organisation page | Wording follows decision O-1. It is a statement with legal weight and needs review with the terms |
 | WD-10 | "Verification is not available yet" | Slice 5, organisation page | True for this slice; must change when verification is built |
+| WD-11 | The details list reuses form labels, so saved values are headed "Your reference (optional)", "Packaging (optional)" and so on | Slice 7, draft page | Same as WD-06 |
+| WD-12 | "Earliest: date", "Latest: time" are built from two words with a colon | Slice 7, shipment form | Understandable, not natural, least so in Arabic and Urdu |
+| WD-13 | The draft notice says a draft "gives no right to transport", and the route note says "not legal clearance" | Slice 7, draft page | Wording follows SD-1 and SD-3. Statements with legal weight; review with the terms |
+| WD-14 | After a lost answer, changing the details and trying again reports "An earlier attempt may already have been saved. Check the draft before saving again." | Slice 7 | Correct, but the next step could be clearer (as WD-08) |
 
 ## 4. Translation corrections (Arabic and Urdu)
 
@@ -58,6 +64,7 @@ All Arabic and Urdu text in the repository is a draft written without a native r
 | TR-06 | Terminology is not yet fixed across languages (for example "session", "sign out", "one-time code", "organisation", "draft", "verified") | All | Agree a short glossary before the review, so corrections are consistent |
 | TR-07 | Organisation messages: the draft notice, the "not confirmed" messages for create and save, the changed-elsewhere message, field labels and errors | Slice 5, `org` | High: the draft notice and the uncertain-outcome messages carry meaning that must not shift |
 | TR-08 | Names of the fictional countries | Slice 5, `db/fixtures/local-development/countries.json` | Low: development data only |
+| TR-09 | All shipment messages (112 strings): the private-draft notice, route wording, conflict and "not confirmed" messages, time errors, field labels | Slice 7, `ship` | High: "not published", "not legal clearance", "not confirmed" and the clock-change messages carry meaning that must not shift |
 
 ## 5. How this list is used
 

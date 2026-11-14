@@ -91,11 +91,17 @@ interface FixtureFile {
   countries: {
     code: string;
     registrationState: 'enabled' | 'closed';
+    operatingState: 'enabled' | 'closed';
+    timeZones: string[];
     name: { en: string; ar: string; ur: string };
   }[];
+  lanes: { origin: string; destination: string; state: 'enabled' | 'closed'; transit: string[] }[];
 }
 
-/** Loads the fictional countries. The database itself refuses them unless it is marked for it. */
+/**
+ * Loads the fictional countries with their time zones and the fictional lanes between them.
+ * The database itself refuses them unless it is marked for it.
+ */
 export async function loadCountryFixtures(
   owner: Pick<pg.Pool, 'query'>,
   file: string = defaultFixturesFile(),
@@ -103,13 +109,43 @@ export async function loadCountryFixtures(
   const data = JSON.parse(await readFile(file, 'utf8')) as FixtureFile;
   for (const country of data.countries) {
     await owner.query(
-      `INSERT INTO trucker.country (code, name_en, name_ar, name_ur, registration_state, fixture)
-       VALUES ($1, $2, $3, $4, $5, true)
+      `INSERT INTO trucker.country (code, name_en, name_ar, name_ur, registration_state, operating_state, fixture)
+       VALUES ($1, $2, $3, $4, $5, $6, true)
        ON CONFLICT (code) DO UPDATE
          SET name_en = EXCLUDED.name_en, name_ar = EXCLUDED.name_ar, name_ur = EXCLUDED.name_ur,
-             registration_state = EXCLUDED.registration_state`,
-      [country.code, country.name.en, country.name.ar, country.name.ur, country.registrationState],
+             registration_state = EXCLUDED.registration_state,
+             operating_state = EXCLUDED.operating_state`,
+      [
+        country.code,
+        country.name.en,
+        country.name.ar,
+        country.name.ur,
+        country.registrationState,
+        country.operatingState,
+      ],
     );
+    for (const zone of country.timeZones) {
+      await owner.query(
+        `INSERT INTO trucker.country_time_zone (country_code, zone_name) VALUES ($1, $2)
+         ON CONFLICT DO NOTHING`,
+        [country.code, zone],
+      );
+    }
+  }
+  for (const lane of data.lanes) {
+    const saved = await owner.query<{ id: string }>(
+      `INSERT INTO trucker.lane (origin_country, destination_country, state) VALUES ($1, $2, $3)
+       ON CONFLICT ON CONSTRAINT lane_once DO UPDATE SET state = EXCLUDED.state RETURNING id`,
+      [lane.origin, lane.destination, lane.state],
+    );
+    const laneId = saved.rows[0]!.id;
+    await owner.query('DELETE FROM trucker.lane_transit WHERE lane_id = $1', [laneId]);
+    for (const [index, code] of lane.transit.entries()) {
+      await owner.query(
+        'INSERT INTO trucker.lane_transit (lane_id, position, country_code) VALUES ($1, $2, $3)',
+        [laneId, index + 1, code],
+      );
+    }
   }
   return data.countries.map((country) => country.code);
 }

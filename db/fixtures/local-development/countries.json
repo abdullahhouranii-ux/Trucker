@@ -8,7 +8,9 @@
         "en": "Fixture country A (not real)",
         "ar": "بلد تجريبي أ (غير حقيقي)",
         "ur": "آزمائشی ملک الف (حقیقی نہیں)"
-      }
+      },
+      "operatingState": "enabled",
+      "timeZones": ["Etc/GMT-4"]
     },
     {
       "code": "XB",
@@ -17,7 +19,9 @@
         "en": "Fixture country B (not real)",
         "ar": "بلد تجريبي ب (غير حقيقي)",
         "ur": "آزمائشی ملک ب (حقیقی نہیں)"
-      }
+      },
+      "operatingState": "enabled",
+      "timeZones": ["Etc/GMT-3"]
     },
     {
       "code": "XC",
@@ -26,7 +30,53 @@
         "en": "Fixture country C, closed (not real)",
         "ar": "بلد تجريبي ج، مغلق (غير حقيقي)",
         "ur": "آزمائشی ملک ج، بند (حقیقی نہیں)"
-      }
+      },
+      "operatingState": "closed",
+      "timeZones": ["Etc/GMT-3"]
+    },
+    {
+      "code": "XD",
+      "registrationState": "closed",
+      "name": {
+        "en": "Fixture country D, transit (not real)",
+        "ar": "بلد تجريبي د، عبور (غير حقيقي)",
+        "ur": "آزمائشی ملک د، راہداری (حقیقی نہیں)"
+      },
+      "operatingState": "enabled",
+      "timeZones": ["Etc/GMT-4", "Etc/GMT-5"]
+    }
+  ],
+  "_lanes_notice": "FICTIONAL lanes between the fictional countries. A lane is one direction; a domestic lane names the same country twice; transit lists the countries crossed, in order.",
+  "lanes": [
+    {
+      "origin": "XA",
+      "destination": "XA",
+      "state": "enabled",
+      "transit": []
+    },
+    {
+      "origin": "XA",
+      "destination": "XB",
+      "state": "enabled",
+      "transit": []
+    },
+    {
+      "origin": "XB",
+      "destination": "XD",
+      "state": "enabled",
+      "transit": ["XA"]
+    },
+    {
+      "origin": "XB",
+      "destination": "XA",
+      "state": "enabled",
+      "transit": ["XC"]
+    },
+    {
+      "origin": "XA",
+      "destination": "XD",
+      "state": "closed",
+      "transit": []
     }
   ]
 }

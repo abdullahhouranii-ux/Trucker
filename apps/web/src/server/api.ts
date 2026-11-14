@@ -104,3 +104,66 @@ export interface Country {
   name: { en: string; ar: string; ur: string };
   fixture: boolean;
 }
+
+/** One end of a pick-up or delivery window. */
+export interface WindowEnd {
+  /** The time on the clock at the place, as typed: `YYYY-MM-DDTHH:MM`. */
+  local: string | null;
+  offsetMinutes: number | null;
+  /** The instant, known only when the place has a time zone. */
+  at: string | null;
+  /** Both offsets, when this time occurs twice at the place. */
+  offsetChoices: number[] | null;
+}
+export interface ShipmentPlace {
+  address: string | null;
+  countryCode: string | null;
+  timeZone: string | null;
+  accessNotes: string | null;
+  from: WindowEnd;
+  until: WindowEnd;
+}
+export interface RouteCheck {
+  status: 'unknown' | 'open' | 'closed';
+  /** Configured availability only. Not legal clearance. */
+  basis: 'configuration';
+  transit: string[];
+  reasons: {
+    part: 'origin' | 'destination' | 'lane' | 'transit';
+    code: string;
+    country?: string;
+  }[];
+}
+export interface Shipment {
+  id: string;
+  status: 'draft' | 'discarded';
+  version: number;
+  shipperReference: string | null;
+  cargoDescription: string | null;
+  /** Kilograms, as a decimal string. */
+  grossWeightKg: string | null;
+  pieces: number | null;
+  packaging: string | null;
+  equipmentNeeded: string | null;
+  pickup: ShipmentPlace;
+  delivery: ShipmentPlace;
+  route: RouteCheck;
+  createdAt: string;
+  updatedAt: string;
+  discardedAt: string | null;
+}
+export interface ShipmentSummary {
+  id: string;
+  status: 'draft' | 'discarded';
+  version: number;
+  shipperReference: string | null;
+  cargoDescription: string | null;
+  pickupCountry: string | null;
+  deliveryCountry: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+/** A country a place can be in, with the time zones configured for it. */
+export interface PlaceOption extends Country {
+  timeZones: string[];
+}
