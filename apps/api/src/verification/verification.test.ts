@@ -786,6 +786,133 @@ test('one independent reviewer verifies; the capability is granted on demonstrat
   assert.equal((await overview(person, org)).organisation.status, 'verified');
 });
 
+test('a decision sent again without a key is the same request only if actor, version, decision and reason all match', async () => {
+  const { person, org } = await newShipper();
+  const reviewer = await newStaff(['reviewer']);
+  const application = await submitted(person, org);
+  const decidedOn = (await view(reviewer, application.id)).application.rowVersion;
+  const first = await decide(reviewer, application.id, 'changes_requested', {
+    version: decidedOn,
+    reason: 'evidence_unclear',
+    note: 'The licence number is cut off.',
+  });
+  assert.equal(first.status, 200, first.text);
+  assert.equal(first.body.outcome, 'decided');
+  const state = async () => ({
+    application: (
+      await owner.query(
+        `SELECT status, decided_by, decided_at, decision_reason, decision_note, row_version
+         FROM trucker.verification_application WHERE id = $1`,
+        [application.id],
+      )
+    ).rows[0] as Record<string, unknown>,
+    organisation: (await overview(person, org)).organisation,
+    capabilities: await count('organisation_capability', 'organisation_id = $1', [org]),
+    history: (await history(person, org)).length,
+    decisions: await count(
+      'staff_audit_entry',
+      `action = 'staff.verification_decide' AND detail ->> 'application' = $1`,
+      [application.id],
+    ),
+  });
+  const before = await state();
+
+  // The same request again: the first outcome, and nothing changed or recorded.
+  const again = await decide(reviewer, application.id, 'changes_requested', {
+    version: decidedOn,
+    reason: 'evidence_unclear',
+    note: 'The licence number is cut off.',
+  });
+  assert.equal(again.status, 200, again.text);
+  assert.equal(again.body.outcome, 'already_decided');
+  // The note is not compared; the note recorded the first time stands.
+  const otherNote = await decide(reviewer, application.id, 'changes_requested', {
+    version: decidedOn,
+    reason: 'evidence_unclear',
+    note: 'A different note.',
+  });
+  assert.equal(otherNote.body.outcome, 'already_decided');
+  const noNote = await decide(reviewer, application.id, 'changes_requested', {
+    version: decidedOn,
+    reason: 'evidence_unclear',
+    note: null,
+  });
+  assert.equal(noNote.body.outcome, 'already_decided');
+  assert.deepEqual(await state(), before);
+
+  // Anything changed is a different request, refused, and still nothing changes.
+  const changed: [string, Staff, string, Record<string, unknown>][] = [
+    [
+      'another reason',
+      reviewer,
+      'changes_requested',
+      { version: decidedOn, reason: 'details_incomplete' },
+    ],
+    ['another decision', reviewer, 'rejected', { version: decidedOn, reason: 'not_eligible' }],
+    [
+      'another version',
+      reviewer,
+      'changes_requested',
+      { version: decidedOn + 1, reason: 'evidence_unclear' },
+    ],
+    [
+      'an older version',
+      reviewer,
+      'changes_requested',
+      { version: decidedOn - 1 || 99, reason: 'evidence_unclear' },
+    ],
+    [
+      'another reviewer',
+      await newStaff(['reviewer']),
+      'changes_requested',
+      { version: decidedOn, reason: 'evidence_unclear' },
+    ],
+  ];
+  for (const [label, who, decision, input] of changed) {
+    const reply = await decide(who, application.id, decision, input);
+    assert.equal(reply.status, 409, `${label}: ${reply.text}`);
+    assert.equal(reply.body.code, 'application_not_open', label);
+  }
+  assert.deepEqual(await state(), before);
+});
+
+test('the request that raised a competing claim, sent again, reports the claim and changes nothing', async () => {
+  const number = `RETRY-${randomBytes(3).toString('hex')}`;
+  const holder = await newShipper({ registrationNumber: number });
+  const routine = await newStaff(['reviewer']);
+  await verified(routine, holder.person, holder.org);
+  const claimant = await newShipper({ registrationNumber: number });
+  const application = await submitted(claimant.person, claimant.org);
+  const raisedOn = (await view(routine, application.id)).application.rowVersion;
+  const raised = await decide(routine, application.id, 'verified', { version: raisedOn });
+  assert.equal(raised.body.outcome, 'claim_review', raised.text);
+  const snapshot = async () => ({
+    row: (
+      await owner.query(
+        `SELECT status, claim_raised_by, claim_raised_at, row_version
+         FROM trucker.verification_application WHERE id = $1`,
+        [application.id],
+      )
+    ).rows[0] as Record<string, unknown>,
+    history: await count('audit_entry', 'organisation_id = $1', [claimant.org]),
+    decisions: await count(
+      'staff_audit_entry',
+      `action = 'staff.verification_decide' AND detail ->> 'application' = $1`,
+      [application.id],
+    ),
+  });
+  const before = await snapshot();
+  const again = await decide(routine, application.id, 'verified', { version: raisedOn });
+  assert.equal(again.status, 200, again.text);
+  assert.equal(again.body.outcome, 'claim_review');
+  assert.deepEqual(await snapshot(), before);
+  // Against the version as it is now, the same person is no longer sending the same request,
+  // and may not decide the claim: refused, nothing changed.
+  const changed = await decide(routine, application.id, 'verified', { version: raisedOn + 1 });
+  assert.equal(changed.status, 403, changed.text);
+  assert.deepEqual({ ...(await snapshot()), decisions: before.decisions }, before);
+});
+
 test('two reviewers deciding one application at the same moment produce one decision', async () => {
   const { person, org } = await newShipper();
   const first = await newStaff(['reviewer']);
@@ -1374,8 +1501,8 @@ test('the publication check says yes only for verified with the capability, and 
           VALUES ('00000000-0000-4000-8000-000000000003', '00000000-0000-4000-8000-000000000001', 'admin', now());
         INSERT INTO trucker.staff_account (id, email, display_name, status, enrolled_at, password_hash, totp_secret, created_at, updated_at)
           VALUES ('00000000-0000-4000-8000-000000000004', 's@example.test', 'S', 'active', now(), 'x', '\\x00', now(), now());
-        INSERT INTO trucker.verification_application (id, organisation_id, version_no, kind, status, legal_name, country_code, registration_number, capability, previous_status, submitted_by, submitted_at, declaration_kind, declaration_version, declaration_language, decided_by, decided_at, decision_reason, no_conflict_declared)
-          VALUES ('00000000-0000-4000-8000-000000000005', '00000000-0000-4000-8000-000000000003', 1, 'initial', 'verified', 'Scratch', 'OM', 'S-1', 'ship', 'draft', '00000000-0000-4000-8000-000000000001', now(), 'demonstration', 'd', 'en', '00000000-0000-4000-8000-000000000004', now(), 'evidence_accepted', true);
+        INSERT INTO trucker.verification_application (id, organisation_id, version_no, kind, status, legal_name, country_code, registration_number, capability, previous_status, submitted_by, submitted_at, declaration_kind, declaration_version, declaration_language, decided_by, decided_at, decision_reason, no_conflict_declared, decided_on_version)
+          VALUES ('00000000-0000-4000-8000-000000000005', '00000000-0000-4000-8000-000000000003', 1, 'initial', 'verified', 'Scratch', 'OM', 'S-1', 'ship', 'draft', '00000000-0000-4000-8000-000000000001', now(), 'demonstration', 'd', 'en', '00000000-0000-4000-8000-000000000004', now(), 'evidence_accepted', true, 1);
         INSERT INTO trucker.organisation_capability (organisation_id, capability, status, basis, granted_application, granted_at)
           VALUES ('00000000-0000-4000-8000-000000000003', 'ship', 'granted', 'demonstration', '00000000-0000-4000-8000-000000000005', now());
       `);

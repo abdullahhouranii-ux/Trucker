@@ -283,13 +283,14 @@ export async function decideVerificationAction(form: FormData): Promise<void> {
   const [decision = '', reason = ''] = text(form, 'decision').split(':');
   if (!decision || !reason) redirect(`/verification/${id}?error=decision_missing`);
   const note = text(form, 'note').trim();
+  const version = text(form, 'version');
   const reply = await api<{ outcome: 'decided' | 'already_decided' | 'claim_review' }>(
     'POST',
     `/staff/verification/${id}/decision`,
     {
       token,
       body: {
-        version: Number(text(form, 'version')),
+        version: Number(version),
         decision,
         reason,
         note: note === '' ? null : note,
@@ -299,7 +300,12 @@ export async function decideVerificationAction(form: FormData): Promise<void> {
   );
   if (reply.ok) redirect(`/verification/${id}?done=${reply.data.outcome}`);
   if (reply.status === 401) await sessionEnded();
-  redirect(`/verification/${id}?error=${reviewRefusal(reply)}`);
+  const code = reviewRefusal(reply);
+  // With no answer the outcome is unknown. What was sent goes back with the page, so that the
+  // same request can be sent again: the API recognises it and records nothing twice. The note
+  // is not carried in the address; the API does not compare it.
+  const sent = /^[0-9]{1,9}$/.test(version) ? `&sent=${version}.${decision}:${reason}` : '';
+  redirect(`/verification/${id}?error=${code}${code === 'unconfirmed' ? sent : ''}`);
 }
 
 export async function revokeVerificationAction(form: FormData): Promise<void> {

@@ -87,12 +87,14 @@ Stated limit: a connection nobody declared cannot be detected.
 | VER-12 | A verification can be withdrawn only by a staff administrator who did not give it. Status and capability change together; history is intact |
 | VER-13 | Evidence entries are labelled as declared, not verified, and demonstration-only on every screen that shows them, in three languages |
 | VER-14 | After the migrations no requirement exists and nothing can be verified. Fixtures load only into marked databases |
-| VER-15 | Submission, withdrawal and decisions carry retry keys and version checks. A lost answer is reported as not confirmed and a retry applies nothing twice |
+| VER-15 | Submission and withdrawal carry retry keys and version checks. Decisions carry a version check and no retry key (adjusted 14 November 2026, see below). A lost answer is reported as not confirmed and a retry applies nothing twice |
 | VER-16 | Decisions use the database's clock after any lock wait. An ended staff or participant session changes nothing |
 | VER-17 | Another organisation's applications answer exactly like ones that do not exist |
 | VER-18 | Every submission, withdrawal, staff view and decision leaves one audit entry |
 | VER-19 | Applicant screens work in English, Arabic and Urdu at phone widths and with text doubled. Console screens pass the same automated checks in English |
 | VER-20 | No publication, quotation, booking or payment route, word or screen is added |
+
+**Adjustment to VER-15 (Abdullah, 14 November 2026).** A staff decision is sent again without a retry key. It is accepted as the same request, and answered with the first outcome, only when the staff member, the application version it was made against, the decision and the reason all match. Any request that differs in one of them is refused, and nothing is changed or recorded. The note is not compared; the note recorded first stands. The same holds for the request that raised a competing claim, which is answered "claim review" again. Tested in `apps/api/src/verification/verification.test.ts` and, for a lost answer in the console, in `apps/console/tests/browser.mjs`.
 
 ## 7. Routine choices already made (not decisions for you)
 

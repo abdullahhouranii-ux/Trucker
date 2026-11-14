@@ -39,7 +39,8 @@ Everything here is demonstration only. The evidence requirements are fictional, 
 - A withdrawn verification is its own organisation status, `verification_withdrawn`.
 - The applicant learns the outcome on the page. No message is sent.
 - Withdrawing a verification also requires independence and the no-connection declaration.
-- A decision is protected by the application's version and is idempotent for the same reviewer and decision. It carries no separate retry key (VER-15 names one): the version check gives the same guarantee, and a repeated identical decision answers "already decided".
+- A decision carries no retry key. As decided by Abdullah on 14 November 2026 (VER-15 adjusted in the scope): a decision sent again is the same request only when the staff member, the application version it was made against, the decision and the reason all match; then the first outcome is reported and nothing is changed or recorded. Anything else is refused. The note is not compared. The request that raised a competing claim is treated the same way. The version each decision and each claim was made against is stored for this.
+- After a lost answer the console offers "Send the same decision again", carrying the version, decision and reason (not the note) and asking for the no-connection declaration again, since the first request may not have arrived.
 - An administrator who is not a reviewer cannot open applications. The withdrawal form takes the organisation identifier, which the application page fills in and the audit entry of the view records.
 
 ## 4. Checks run (local, this commit)
@@ -47,19 +48,20 @@ Everything here is demonstration only. The evidence requirements are fictional, 
 | Check | Result |
 |---|---|
 | `npm run verify` | Passed |
-| API tests | 227 passed, 0 failed, 1 marked todo (SEC-01, see `SECURITY_BACKLOG.md`); 17 new for verification |
+| API tests | 229 passed, 0 failed, 1 marked todo (SEC-01, see `SECURITY_BACKLOG.md`); 19 new for verification, two of them for repeated decisions |
 | Web unit tests, tool tests | 24 and 9 passed |
 | Web browser checks | 1,213 checks, 0 failed; 16 verification checks plus layout, structure and accessibility rules on six verification states in three languages |
-| Console browser checks | 179 checks, 0 failed; 14 verification checks; queue, application and withdrawal pages inspected, keyboard included |
-| Defect injection | Six defects put into the migration one at a time (independence skipped on decide and on revoke, claim raiser deciding, competing claim verified as routine, giver revoking, publication allowed in production). Each made at least one test fail. Restored byte for byte |
+| Console browser checks | 184 checks, 0 failed; 14 verification checks and 3 for a lost decision answer (the decision commits, the answer is lost, the page says not confirmed, and sending it again confirms the first result with no new decision, capability change or audit entry, read directly from the database); queue, application, lost-decision and withdrawal pages inspected, keyboard included |
+| Defect injection | Six defects put into the migration one at a time (independence skipped on decide and on revoke, claim raiser deciding, competing claim verified as routine, giver revoking, publication allowed in production). Each made at least one test fail. Then three more against the repeat rule (version not compared, reason not compared, no repeat path for a raised claim): each caught. Restored byte for byte |
 
 Acceptance criteria: VER-1 to VER-18 and VER-20 are held by `apps/api/src/verification/verification.test.ts`; VER-13 and VER-19 by the browser checks.
 
 ## 5. Not verified, and limits
 
-- The console's handling of a lost answer to a decision is written (it reports "not confirmed") but has no browser check. The applicant's lost submission is checked.
+- A lost answer to a withdrawal (revocation) has no browser check. A repeated withdrawal by the same administrator with the same reason answers "already withdrawn"; the four-way match above applies to decisions only.
+
 - Screen readers were not used. The automated rules cover only part of WCAG.
 - Arabic and Urdu text is a draft without a native reader (final-audit backlog TR-10).
 - The first administrator created by the operator command is "not declared" and cannot decide or withdraw until another administrator records the declaration. With a single administrator nobody can. This follows the independence rule and was kept as instructed; the console check shows the refusal and the way through with two staff.
-- SEC-01 (two administrators removing each other at the same moment) is open and must be closed before production or real staff use.
+- SEC-01 (two administrators removing each other at the same moment) is open, deferred, and must be closed before production or real staff use. Observed today: one removal succeeds and the other is aborted by the database's deadlock detector with a 500, leaving one administrator by accident rather than by rule. Both removals succeeding was not observed.
 - Production gates from earlier slices are unchanged and still open.

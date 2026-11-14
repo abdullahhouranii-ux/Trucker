@@ -107,20 +107,27 @@ CREATE TABLE trucker.verification_application (
   -- Competing claim (VD-3): who raised it, by trying to verify.
   claim_raised_by uuid REFERENCES trucker.staff_account (id),
   claim_raised_at timestamptz,
+  -- The application's row_version the claim was raised against, so that the same request sent
+  -- again after a lost answer is recognised (VER-15 as adjusted on 14 November 2026).
+  claim_raised_on_version integer,
   decided_by uuid REFERENCES trucker.staff_account (id),
   decided_at timestamptz,
   decision_reason text CHECK (decision_reason ~ '^[a-z_]{2,40}$'),
   decision_note text CHECK (decision_note IS NULL OR length(decision_note) BETWEEN 1 AND 1000),
+  -- The application's row_version the decision was made against (see claim_raised_on_version).
+  decided_on_version integer,
   -- The reviewer's declaration, at this decision, of having no connection (S-4).
   no_conflict_declared boolean,
   CONSTRAINT verification_application_once UNIQUE (organisation_id, version_no),
   CONSTRAINT verification_application_decided CHECK (
     (status IN ('verified', 'changes_requested', 'rejected'))
       = (decided_by IS NOT NULL AND decided_at IS NOT NULL AND decision_reason IS NOT NULL
-         AND no_conflict_declared IS TRUE)),
+         AND no_conflict_declared IS TRUE AND decided_on_version IS NOT NULL)),
   CONSTRAINT verification_application_withdrawn CHECK ((status = 'withdrawn') = (withdrawn_at IS NOT NULL)),
   CONSTRAINT verification_application_claim CHECK (
-    status <> 'claim_review' OR (claim_raised_by IS NOT NULL AND claim_raised_at IS NOT NULL))
+    (claim_raised_by IS NULL) = (claim_raised_at IS NULL)
+    AND (claim_raised_by IS NULL) = (claim_raised_on_version IS NULL)
+    AND (status <> 'claim_review' OR claim_raised_by IS NOT NULL))
 );
 -- One open version at a time.
 CREATE UNIQUE INDEX verification_application_one_open ON trucker.verification_application (organisation_id)
@@ -797,20 +804,37 @@ BEGIN
     RETURN;
   END IF;
   IF p_decision IS NULL OR NOT (reasons ? p_decision)
-     OR p_reason IS NULL OR NOT (reasons -> p_decision ? p_reason)
-     OR (note IS NOT NULL AND length(note) > 1000)
-     -- "Other" says nothing by itself: it needs the note.
-     OR (p_reason = 'other' AND note IS NULL) THEN
+     OR p_reason IS NULL OR NOT (reasons -> p_decision ? p_reason) THEN
     status := 'invalid';
     RETURN;
   END IF;
+  -- A request sent again because its answer was lost carries no retry key. It is recognised as
+  -- the same request only when the same person sends the same decision with the same reason,
+  -- made against the same version of the application; then the first outcome is reported and
+  -- nothing is changed or recorded again. Any other request on a closed application is
+  -- refused. The note is not compared: the note recorded the first time stands.
   IF app.status NOT IN ('submitted', 'claim_review') THEN
-    -- The same decision by the same person again: the answer to the first was lost.
-    IF app.decided_by = entered.staff_id AND app.status = p_decision AND app.decision_reason = p_reason THEN
+    IF app.decided_by = entered.staff_id AND app.status = p_decision
+       AND app.decision_reason = p_reason AND app.decided_on_version = p_expected_version THEN
       status := 'repeated';
     ELSE
       status := 'not_open';
     END IF;
+    RETURN;
+  END IF;
+  IF app.status = 'claim_review' AND app.claim_raised_by = entered.staff_id
+     AND p_decision = 'verified' AND p_reason = 'evidence_accepted'
+     AND app.claim_raised_on_version = p_expected_version THEN
+    -- The request that raised the claim, sent again: it raised the claim, and still has.
+    status := 'claim_review';
+    detail := jsonb_build_object('repeated', true);
+    RETURN;
+  END IF;
+  -- The note is checked only for a new decision: a repeat is matched without it.
+  IF (note IS NOT NULL AND length(note) > 1000)
+     -- "Other" says nothing by itself: it needs the note.
+     OR (p_reason = 'other' AND note IS NULL) THEN
+    status := 'invalid';
     RETURN;
   END IF;
   IF p_expected_version IS DISTINCT FROM app.row_version THEN
@@ -860,7 +884,7 @@ BEGIN
                = trucker.registration_key(app.country_code, app.registration_number)) THEN
       UPDATE trucker.verification_application a
       SET status = 'claim_review', claim_raised_by = entered.staff_id, claim_raised_at = entered.at,
-          row_version = a.row_version + 1
+          claim_raised_on_version = a.row_version, row_version = a.row_version + 1
       WHERE a.id = app.id RETURNING * INTO app;
       INSERT INTO trucker.audit_entry
         (occurred_at, actor_staff_id, organisation_id, action, record_type, record_id,
@@ -878,7 +902,7 @@ BEGIN
   UPDATE trucker.verification_application a
   SET status = p_decision, decided_by = entered.staff_id, decided_at = entered.at,
       decision_reason = p_reason, decision_note = note, no_conflict_declared = true,
-      row_version = a.row_version + 1
+      decided_on_version = a.row_version, row_version = a.row_version + 1
   WHERE a.id = app.id RETURNING * INTO app;
 
   IF p_decision = 'verified' THEN

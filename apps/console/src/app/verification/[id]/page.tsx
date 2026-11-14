@@ -52,12 +52,23 @@ export default async function ApplicationPage({ params, searchParams }: Props) {
   const search = await searchParams;
   const found = await requireStaff();
   const route = `/verification/${id}`;
+  // What a request whose answer was lost sent: "<version>.<decision>:<reason>".
+  const sentMatch =
+    search.error === 'unconfirmed' && typeof search.sent === 'string'
+      ? /^([0-9]{1,9})\.([a-z_]{1,40}):([a-z_]{1,40})$/.exec(search.sent)
+      : null;
+  const sent = sentMatch
+    ? { version: sentMatch[1]!, decision: sentMatch[2]!, reason: sentMatch[3]! }
+    : null;
+  const retryHref = sent
+    ? `${route}?error=unconfirmed&sent=${sent.version}.${sent.decision}:${sent.reason}`
+    : route;
   if (found.state === 'unknown') {
     return (
       <>
         <ConsoleHeader />
         <main id="main" tabIndex={-1}>
-          <Unavailable retryHref={route} />
+          <Unavailable retryHref={retryHref} />
         </main>
       </>
     );
@@ -82,7 +93,7 @@ export default async function ApplicationPage({ params, searchParams }: Props) {
               </div>
             </div>
           ) : (
-            <Unavailable retryHref={route} />
+            <Unavailable retryHref={retryHref} />
           )}
         </main>
       </>
@@ -130,9 +141,40 @@ export default async function ApplicationPage({ params, searchParams }: Props) {
           </p>
           {error ? (
             <div className="notice notice-error" role="alert" id="review-error" tabIndex={-1}>
-              <h2>Not recorded</h2>
+              <h2>{search.error === 'unconfirmed' ? 'Not confirmed' : 'Not recorded'}</h2>
               <p>{error}</p>
             </div>
+          ) : null}
+          {sent ? (
+            <section className="section" aria-labelledby="resend-title">
+              <h2 id="resend-title">Send the same decision again</h2>
+              <p>
+                You sent: {DECISIONS.find(([key]) => key === sent.decision)?.[1] ?? sent.decision},
+                reason “{REASONS[sent.reason] ?? sent.reason}”. If it was recorded, sending it again
+                records nothing more and confirms it. If it was not, it is recorded now.
+              </p>
+              <form className="form card" id="resend-form" action={decideVerificationAction}>
+                <input type="hidden" name="applicationId" value={application.id} />
+                <input type="hidden" name="version" value={sent.version} />
+                <input type="hidden" name="decision" value={`${sent.decision}:${sent.reason}`} />
+                <div className="check">
+                  <input
+                    id="resendNoConflict"
+                    name="noConflict"
+                    type="checkbox"
+                    value="yes"
+                    required
+                  />
+                  <label htmlFor="resendNoConflict">
+                    I declare that I have no connection with this organisation or with the people
+                    acting for it
+                  </label>
+                </div>
+                <button className="button button-primary" type="submit" id="resend-decision">
+                  Send the same decision again
+                </button>
+              </form>
+            </section>
           ) : null}
           {done && !error ? (
             <p className="notice notice-success" role="status" id="review-confirmation">

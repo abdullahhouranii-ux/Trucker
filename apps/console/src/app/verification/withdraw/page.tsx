@@ -48,7 +48,7 @@ export default async function WithdrawPage({ searchParams }: Props) {
           </p>
           {error ? (
             <div className="notice notice-error" role="alert" id="review-error" tabIndex={-1}>
-              <h2>Not recorded</h2>
+              <h2>{search.error === 'unconfirmed' ? 'Not confirmed' : 'Not recorded'}</h2>
               <p>{error}</p>
             </div>
           ) : null}

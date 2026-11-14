@@ -41,6 +41,7 @@ const relay = { mode: 'pass', lost: [] };
 const LOSABLE = [
   ['POST', /^\/staff\/accounts\/[^/]+\/privileges$/],
   ['POST', /^\/staff\/sign-out$/],
+  ['POST', /^\/staff\/verification\/[^/]+\/decision$/],
 ];
 function startRelay() {
   const server = http.createServer((request, response) => {
@@ -168,6 +169,7 @@ async function main() {
   let server;
   let relayServer;
   let browser;
+  const closers = [];
   let apiLog = '';
   let serverLog = '';
   try {
@@ -231,6 +233,7 @@ async function main() {
     const shots = {
       application: 'console-application-390',
       withdraw: 'console-withdraw-390',
+      'lost decision': 'console-lost-decision-390',
     };
 
     /** Helpers bound to one page, so that two staff members can be signed in at once. */
@@ -952,6 +955,10 @@ async function main() {
       `the test applicant could not submit: ${sent.status} ${JSON.stringify(sent.body)}`,
     );
     const applicationId = sent.body.verification?.applications[0].id;
+    // Read directly, as the migration role, to show that a retry changes nothing.
+    const db = new pg.Client({ connectionString: databaseUrl.toString() });
+    await db.connect();
+    closers.push(() => db.end());
 
     // An administrator who is not a reviewer does not see applications; it is recorded.
     for (const path of ['/verification', `/verification/${applicationId}`]) {
@@ -1028,19 +1035,87 @@ async function main() {
         ((await two.text('#earlier')) ?? '').includes('Please give the full licence number.'),
       'the earlier version and its decision are not shown to the reviewer',
     );
+    // The decision is recorded and its answer is lost on the way back.
+    const recorded = async () => ({
+      application: (
+        await db.query(
+          `SELECT status, decided_by, decided_at, decision_reason, row_version
+           FROM trucker.verification_application WHERE id = $1`,
+          [secondApplication],
+        )
+      ).rows[0],
+      capabilities: (
+        await db.query(
+          `SELECT status, granted_at FROM trucker.organisation_capability WHERE organisation_id = $1`,
+          [applicantOrg],
+        )
+      ).rows,
+      organisationEntries: Number(
+        (
+          await db.query(
+            'SELECT count(*) AS n FROM trucker.audit_entry WHERE organisation_id = $1',
+            [applicantOrg],
+          )
+        ).rows[0].n,
+      ),
+      decisionEntries: Number(
+        (
+          await db.query(
+            `SELECT count(*) AS n FROM trucker.staff_audit_entry
+             WHERE action = 'staff.verification_decide' AND detail ->> 'application' = $1`,
+            [secondApplication],
+          )
+        ).rows[0].n,
+      ),
+    });
     await two.page.select('#decision', 'verified:evidence_accepted');
     await two.page.click('#noConflict');
+    relay.lost.length = 0;
+    relay.mode = 'lose';
     await two.submit('#record-decision');
+    check(
+      'lost answer',
+      relay.lost[0] === `POST /staff/verification/${secondApplication}/decision -> 200` &&
+        two.page.url().includes('error=unconfirmed') &&
+        (await two.text('#review-confirmation')) === null,
+      `a lost decision answer led to ${two.page.url()}: ${relay.lost}`,
+    );
+    relay.mode = 'pass';
+    // The page could not be shown either; trying again keeps what was sent.
+    if ((await two.page.$('#retry')) !== null) await two.submit('#retry');
+    const afterLost = await recorded();
+    check(
+      'lost answer',
+      afterLost.application.status === 'verified' &&
+        afterLost.capabilities.length === 1 &&
+        afterLost.decisionEntries === 1 &&
+        ((await two.text('#review-error h2')) ?? '') === 'Not confirmed' &&
+        ((await two.text('#review-error')) ?? '').includes('not confirmed') &&
+        (await two.page.$('#resend-form')) !== null &&
+        (await two.page.evaluate(
+          () => document.querySelector('#application-status').dataset.status,
+        )) === 'verified',
+      `after the lost answer the page is ${two.page.url()}, the application ${afterLost.application.status}`,
+    );
+    await two.inspect('lost decision');
+    // Sent again: the original result is confirmed, and nothing is decided, granted or
+    // recorded a second time.
+    await two.page.click('#resendNoConflict');
+    await two.submit('#resend-decision');
+    const afterRetry = await recorded();
+    check(
+      'lost answer',
+      two.page.url().includes('done=already_decided') &&
+        ((await two.text('#review-confirmation')) ?? '').includes('Nothing was recorded twice') &&
+        JSON.stringify(afterRetry) === JSON.stringify(afterLost),
+      `the retry led to ${two.page.url()}; before ${JSON.stringify(afterLost)}, after ${JSON.stringify(afterRetry)}`,
+    );
     const afterVerify = await overviewOf();
     check(
       'verification',
-      two.page.url().includes('done=decided') &&
-        (await two.page.evaluate(
-          () => document.querySelector('#application-status').dataset.status,
-        )) === 'verified' &&
-        afterVerify.organisation.status === 'verified' &&
+      afterVerify.organisation.status === 'verified' &&
         afterVerify.capability?.basis === 'demonstration',
-      `verifying led to ${two.page.url()} and the organisation is ${afterVerify.organisation.status}`,
+      `the organisation is ${afterVerify.organisation.status}`,
     );
 
     // Withdrawing the verification. The first administrator's own declaration was never
@@ -1196,6 +1271,7 @@ async function main() {
     if (serverLog.includes('Error') || apiLog.includes('error'))
       console.error(`${serverLog.slice(-2000)}\n${apiLog.slice(-2000)}`);
   } finally {
+    for (const close of closers) await close().catch(() => undefined);
     await browser?.close().catch(() => undefined);
     server?.kill();
     relayServer?.close();
