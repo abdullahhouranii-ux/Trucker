@@ -15,7 +15,8 @@
     "db:app-role": "npm run build && node dist/cli/local-database.js app-role",
     "db:fixtures": "npm run build && node dist/cli/local-database.js fixtures",
     "db:mark": "npm run build && node dist/cli/local-database.js mark",
-    "db:settings": "npm run build && node dist/cli/security-settings.js"
+    "db:settings": "npm run build && node dist/cli/security-settings.js",
+    "staff:bootstrap": "npm run build && node dist/cli/staff-bootstrap.js"
   },
   "dependencies": {
     "@nestjs/common": "12.5.0",
@@ -28,6 +29,7 @@
   },
   "devDependencies": {
     "@types/node": "22.20.5",
-    "@types/pg": "8.23.1"
+    "@types/pg": "8.23.1",
+    "otplib": "13.6.0"
   }
 }

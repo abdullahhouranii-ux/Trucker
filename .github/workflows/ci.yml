@@ -55,7 +55,7 @@ jobs:
       - name: Nothing is pending and nothing was edited after applying
         run: npm run db:status
       - run: npm test
-      - name: Build the API and the web application, then run the browser checks against both
+      - name: Build the API, the web application and the staff console, then run the browser checks
         # Starts the API with code display and demonstration terms on this runner only,
         # against the service database above. Uses Chrome on the runner.
         run: npm run test:browser
@@ -156,6 +156,8 @@ jobs:
         run: npm run verify
       - name: Build the web application
         run: npm run build -w @trucker/web
+      - name: Build the staff console
+        run: npm run build -w @trucker/console
       - name: Migrate, then confirm nothing is pending
         run: |
           npm run db:migrate

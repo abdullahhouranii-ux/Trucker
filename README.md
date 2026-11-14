@@ -46,6 +46,17 @@ public home page. It has no sign-in and calls no API yet (docs/delivery/WEB_FOUN
 - `npm run build -w @trucker/web`, then `npm run start:web`, serves it on http://localhost:3100.
 - `npm run test:browser` builds it and checks it in Chrome (set CHROME_PATH if Chrome is not found).
 
+## Staff console
+
+`apps/console` is a separate application for staff, with its own sign-in: work email and
+password, then a mandatory authenticator-app code (docs/delivery/STAFF_IDENTITY_SLICE_8.md).
+Staff accounts are separate from participant accounts and neither opens the other's routes.
+
+- `npm run build -w @trucker/console`, then `npm run start:console`, serves it on http://localhost:3200.
+- The first administrator is created once by an operator: `npm run dev:staff:bootstrap -- <work email> <name>`
+  prints a single-use enrolment link. It refuses when an administrator exists and never resets one.
+- It needs the `pgcrypto` extension, which ships with PostgreSQL; the migration creates it.
+
 ## Product reference
 
 The intended product context is the TruckLink Plan B freight platform: shipper,
