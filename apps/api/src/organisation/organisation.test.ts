@@ -315,6 +315,13 @@ test('every table has row security: a policy, or no right at all for the API', a
     'session',
     'shipment_retry_key',
     'sign_in_challenge',
+    'staff_account',
+    'staff_audit_entry',
+    'staff_enrolment',
+    'staff_privilege',
+    'staff_recovery_code',
+    'staff_session',
+    'staff_sign_in_ticket',
     'terms_acceptance',
     'test_clock',
   ];

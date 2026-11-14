@@ -16,6 +16,12 @@ export const SECURITY_SETTING_DEFAULTS = {
   shipment_open_draft_limit: 200,
   shipment_page_size: 20,
   retry_key_retention_hours: 24,
+  staff_session_idle_minutes: 15,
+  staff_session_absolute_hours: 8,
+  staff_failure_limit: 5,
+  staff_lock_minutes: 15,
+  staff_ticket_seconds: 300,
+  staff_enrolment_hours: 24,
 } as const;
 
 export type SettingName = keyof typeof SECURITY_SETTING_DEFAULTS;

@@ -1,0 +1,160 @@
+/* Staff console additions. Everything else comes from the web application's stylesheet and
+   the design tokens, so the two applications look like one product. */
+.console-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  padding: var(--s-3) var(--s-4);
+  background: var(--c-asphalt);
+  color: var(--c-surface);
+}
+.console-header .brand {
+  color: var(--c-surface);
+  font-size: var(--t-lg);
+  font-weight: 700;
+  text-decoration: none;
+}
+.console-header nav ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2) var(--s-4);
+}
+.console-header nav a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
+  color: var(--c-surface);
+  font-weight: 600;
+}
+.console-header nav a[aria-current='page'] {
+  text-decoration-thickness: 3px;
+  text-underline-offset: 0.3em;
+}
+.account {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  padding: var(--s-4);
+}
+.account h3 {
+  font-size: var(--t-lg);
+  overflow-wrap: anywhere;
+}
+.account-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+}
+.account-actions form {
+  display: contents;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+}
+.secret {
+  font-family: var(--f-latin);
+  font-size: var(--t-lg);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  overflow-wrap: anywhere;
+}
+.qr {
+  width: min(14rem, 100%);
+  padding: var(--s-2);
+  border: 2px solid var(--c-asphalt);
+  border-radius: var(--r-md);
+  background: #ffffff;
+}
+.qr svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.codes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(13rem, 100%), 1fr));
+  gap: var(--s-2);
+  font-family: var(--f-latin);
+  font-weight: 600;
+}
+.codes li {
+  padding: var(--s-2) var(--s-3);
+  border: 1.5px solid var(--c-border);
+  border-radius: var(--r-sm);
+  background: var(--c-surface);
+  overflow-wrap: anywhere;
+}
+.link-once {
+  display: block;
+  padding: var(--s-3);
+  border: 2px dashed var(--c-asphalt);
+  border-radius: var(--r-md);
+  background: var(--c-surface);
+  font-family: var(--f-latin);
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+.audit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+.audit li {
+  padding: var(--s-3) var(--s-4);
+}
+.audit dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(12rem, 100%), 1fr));
+  gap: var(--s-1) var(--s-4);
+  margin: 0;
+}
+.audit li[data-outcome='refused'] {
+  border: 2px dashed var(--c-red);
+}
+.audit dt {
+  color: var(--c-muted);
+  font-size: var(--t-sm);
+}
+.audit dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+fieldset.choice {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+fieldset.choice legend {
+  padding: 0;
+  font-weight: 600;
+}
+.choice label {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-height: var(--target-min);
+}
+.choice input[type='radio'] {
+  flex: none;
+  width: 1.75rem;
+  height: 1.75rem;
+  margin: 0;
+}
+input[type='password'] {
+  width: 100%;
+  min-height: var(--target-min);
+  padding: var(--s-2) var(--s-3);
+  border: 2px solid var(--c-border);
+  border-radius: var(--r-md);
+  background: var(--c-surface);
+  color: var(--c-text);
+  font: inherit;
+}

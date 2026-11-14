@@ -12,6 +12,8 @@ export default tseslint.config(
       'apps/web/scripts/**/*.mjs',
       'apps/web/tests/**/*.mjs',
       'apps/web/*.mjs',
+      'apps/console/tests/**/*.mjs',
+      'apps/console/*.mjs',
     ],
     languageOptions: {
       globals: {
@@ -25,7 +27,7 @@ export default tseslint.config(
   },
   {
     // Browser checks: functions here are sent to the page and run there.
-    files: ['apps/web/tests/**/*.mjs'],
+    files: ['apps/web/tests/**/*.mjs', 'apps/console/tests/**/*.mjs'],
     languageOptions: {
       globals: { document: 'readonly', window: 'readonly', getComputedStyle: 'readonly' },
     },

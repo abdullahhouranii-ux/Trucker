@@ -27,3 +27,27 @@ export function sessionToken(secret: string, sessionId: string): string {
 export function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
+
+/**
+ * The key for what the database stores about staff credentials: password hashes are keyed
+ * with it, authenticator secrets are encrypted with it and recovery codes are hashed with it.
+ * The database never keeps it, so its tables alone do not yield a secret or a code.
+ */
+export function staffPepper(secret: string): string {
+  return createHmac('sha256', secret).update('trucker:staff-credential-pepper:v1').digest('hex');
+}
+
+/** A staff session token: derived like a participant's, under a label of its own. */
+export function staffSessionToken(secret: string, sessionId: string): string {
+  const mac = createHmac('sha256', secret).update(`staff-session:${sessionId}`).digest('base64url');
+  return `${sessionId}.${mac}`;
+}
+
+/**
+ * The identifier of the session a sign-in ticket leads to. Derived from the ticket, so that
+ * asking again with the same ticket after a lost answer names the same session.
+ */
+export function staffSessionIdFor(secret: string, ticket: string): string {
+  const hex = createHmac('sha256', secret).update(`staff-session-id:${ticket}`).digest('hex');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+}
