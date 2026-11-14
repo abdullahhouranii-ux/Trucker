@@ -43,7 +43,9 @@ export interface HistoryEntry {
   readonly id: string;
   readonly occurredAt: string;
   readonly action: string;
-  readonly actorPersonId: string;
+  /** Nothing when the entry was made by staff. Which staff member is not shown. */
+  readonly actorPersonId: string | null;
+  readonly byStaff: boolean;
   readonly requestId: string | null;
   readonly before: unknown;
   readonly after: unknown;
@@ -352,11 +354,29 @@ export class OrganisationService {
         [id],
       );
       if (!seen.rows[0]) throw notFound();
-      if (seen.rows[0].status !== 'draft')
+      const status = seen.rows[0].status;
+      // Under review, nothing may change. Verified, everything but the legal identity may:
+      // that changes only through an approved amendment.
+      if (
+        !['draft', 'changes_requested', 'rejected', 'verification_withdrawn', 'verified'].includes(
+          status,
+        )
+      )
         throw new ApiError(
           409,
           'organisation_not_editable',
-          'This organisation can no longer be changed here.',
+          'This organisation cannot be changed while it is under review.',
+        );
+      if (
+        status === 'verified' &&
+        (input.legalName !== seen.rows[0].legal_name ||
+          input.countryCode !== seen.rows[0].country_code ||
+          input.registrationNumber !== seen.rows[0].registration_number)
+      )
+        throw new ApiError(
+          409,
+          'identity_needs_review',
+          'The legal name, country and registration number of a verified organisation change only through a reviewed amendment.',
         );
       const locked = await client.query<OrganisationRow>(
         `SELECT ${COLUMNS} FROM trucker.organisation WHERE id = $1 FOR UPDATE`,
@@ -420,12 +440,14 @@ export class OrganisationService {
         id: string;
         occurred_at: Date;
         action: string;
-        actor_person_id: string;
+        actor_person_id: string | null;
+        by_staff: boolean;
         request_id: string | null;
         before_values: unknown;
         after_values: unknown;
       }>(
-        `SELECT id, occurred_at, action, actor_person_id, request_id, before_values, after_values
+        `SELECT id, occurred_at, action, actor_person_id, actor_staff_id IS NOT NULL AS by_staff,
+                request_id, before_values, after_values
          FROM trucker.audit_entry WHERE organisation_id = $1 ORDER BY occurred_at, id`,
         [id],
       );
@@ -434,6 +456,7 @@ export class OrganisationService {
         occurredAt: row.occurred_at.toISOString(),
         action: row.action,
         actorPersonId: row.actor_person_id,
+        byStaff: row.by_staff,
         requestId: row.request_id,
         before: row.before_values,
         after: row.after_values,

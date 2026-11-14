@@ -158,3 +158,6 @@ input[type='password'] {
   color: var(--c-text);
   font: inherit;
 }
+.page > .chip {
+  align-self: flex-start;
+}

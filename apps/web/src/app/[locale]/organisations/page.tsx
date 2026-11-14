@@ -70,7 +70,10 @@ export default async function OrganisationsPage({ params, searchParams }: Props)
               <bdi>{organisation.legalName}</bdi>
             </h2>
             <p className="chip chip-draft">
-              {organisation.status === 'draft' ? t.statusDraft : t.statusOther}
+              {organisation.status === 'draft'
+                ? t.statusDraft
+                : (m.verify.status[organisation.status as keyof typeof m.verify.status] ??
+                  organisation.status)}
             </p>
             <p>
               {t.registrationNumber}: <Ltr>{organisation.registrationNumber}</Ltr>

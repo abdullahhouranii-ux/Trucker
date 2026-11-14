@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { z } from 'zod';
 import { ApiError } from '../http/api-error.js';
+import { ReviewService, type QueueEntry } from './review.service.js';
 import {
   StaffService,
   type AuditEntry,
@@ -70,6 +71,24 @@ const createBody = z
   })
   .and(participantLink);
 const statusBody = z.object({ status: z.enum(['enabled', 'disabled']) });
+const note = z
+  .union([z.string(), z.null()])
+  .optional()
+  .transform((value) => (value ?? '').normalize('NFC').trim())
+  .pipe(z.string().max(1000))
+  .transform((value) => (value === '' ? null : value));
+const decisionBody = z.object({
+  version: z.number().int().min(1),
+  decision: z.enum(['verified', 'changes_requested', 'rejected']),
+  reason: z.string().regex(/^[a-z_]{2,40}$/),
+  note,
+  noConflict: z.boolean(),
+});
+const revokeBody = z.object({
+  reason: z.string().regex(/^[a-z_]{2,40}$/),
+  note,
+  noConflict: z.boolean(),
+});
 const privilegeBody = z.object({
   privilege: z.enum(['staff_admin', 'reviewer']),
   granted: z.boolean(),
@@ -103,7 +122,10 @@ const identifier = (value: string): string => {
  */
 @Controller('staff')
 export class StaffController {
-  constructor(@Inject(StaffService) private readonly staff: StaffService) {}
+  constructor(
+    @Inject(StaffService) private readonly staff: StaffService,
+    @Inject(ReviewService) private readonly review: ReviewService,
+  ) {}
 
   private caller(request: IncomingRequest): Promise<StaffCaller> {
     return this.staff.authenticate(bearer(request), request.requestId);
@@ -250,5 +272,44 @@ export class StaffController {
         fields: ['after'],
       });
     return this.staff.audit(caller, after ?? null);
+  }
+  // ------------------------------------------------------------------------------------------
+  // Verification. The reviewer privilege is checked by the database in each call.
+  // ------------------------------------------------------------------------------------------
+  @Get('verification')
+  async verificationQueue(
+    @Req() request: IncomingRequest,
+  ): Promise<{ applications: QueueEntry[] }> {
+    return { applications: await this.review.queue(await this.caller(request)) };
+  }
+
+  @Get('verification/:id')
+  async verificationView(
+    @Param('id') id: string,
+    @Req() request: IncomingRequest,
+  ): Promise<Record<string, unknown>> {
+    return this.review.view(await this.caller(request), identifier(id));
+  }
+
+  @Post('verification/:id/decision')
+  @HttpCode(200)
+  async verificationDecide(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Req() request: IncomingRequest,
+  ): Promise<{ outcome: 'decided' | 'already_decided' | 'claim_review' }> {
+    const caller = await this.caller(request);
+    return this.review.decide(caller, identifier(id), parse(decisionBody, body));
+  }
+
+  @Post('verification/organisations/:organisationId/revoke')
+  @HttpCode(200)
+  async verificationRevoke(
+    @Param('organisationId') organisationId: string,
+    @Body() body: unknown,
+    @Req() request: IncomingRequest,
+  ): Promise<{ outcome: 'revoked' | 'already_revoked' }> {
+    const caller = await this.caller(request);
+    return this.review.revoke(caller, identifier(organisationId), parse(revokeBody, body));
   }
 }

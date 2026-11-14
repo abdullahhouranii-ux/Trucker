@@ -96,10 +96,19 @@ interface FixtureFile {
     name: { en: string; ar: string; ur: string };
   }[];
   lanes: { origin: string; destination: string; state: 'enabled' | 'closed'; transit: string[] }[];
+  /** Demonstration only: not a statement of any legal requirement. */
+  evidenceRequirements?: {
+    country: string;
+    capability: 'ship';
+    documentType: string;
+    required: boolean;
+    name: { en: string; ar: string; ur: string };
+  }[];
 }
 
 /**
- * Loads the fictional countries with their time zones and the fictional lanes between them.
+ * Loads the fictional countries with their time zones, the fictional lanes between them and
+ * the fictional evidence requirements.
  * The database itself refuses them unless it is marked for it.
  */
 export async function loadCountryFixtures(
@@ -146,6 +155,26 @@ export async function loadCountryFixtures(
         [laneId, index + 1, code],
       );
     }
+  }
+  for (const [index, requirement] of (data.evidenceRequirements ?? []).entries()) {
+    await owner.query(
+      `INSERT INTO trucker.evidence_requirement
+         (country_code, capability, document_type, name_en, name_ar, name_ur, required, position)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       ON CONFLICT (country_code, capability, document_type) DO UPDATE
+         SET name_en = EXCLUDED.name_en, name_ar = EXCLUDED.name_ar, name_ur = EXCLUDED.name_ur,
+             required = EXCLUDED.required, position = EXCLUDED.position`,
+      [
+        requirement.country,
+        requirement.capability,
+        requirement.documentType,
+        requirement.name.en,
+        requirement.name.ar,
+        requirement.name.ur,
+        requirement.required,
+        index + 1,
+      ],
+    );
   }
   return data.countries.map((country) => country.code);
 }

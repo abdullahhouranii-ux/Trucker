@@ -41,6 +41,7 @@ const relay = { mode: 'pass', lost: [] };
 const LOSABLE = [
   ['POST', /^\/staff\/accounts\/[^/]+\/privileges$/],
   ['POST', /^\/staff\/sign-out$/],
+  ['POST', /^\/staff\/verification\/[^/]+\/decision$/],
 ];
 function startRelay() {
   const server = http.createServer((request, response) => {
@@ -158,17 +159,27 @@ async function main() {
     PORT: String(apiPort),
     DATABASE_URL: databaseUrl.toString(),
     CONSOLE_ORIGIN: origin,
+    // For the test participant who applies for verification: displayed codes, demonstration
+    // terms and the fictional countries, all local-development only.
+    SIGN_IN_CODE_DELIVERY: 'development-display',
+    REGISTRATION_TERMS: 'demonstration',
+    COUNTRY_FIXTURES: 'local-development',
   };
   let apiServer;
   let server;
   let relayServer;
   let browser;
+  const closers = [];
   let apiLog = '';
   let serverLog = '';
   try {
     await run(cli('migrate'), ['up'], apiEnv);
     const appRole = await run(cli('local-database'), ['app-role'], apiEnv);
     apiEnv.APP_DATABASE_URL = /APP_DATABASE_URL=(\S+)/.exec(appRole)[1];
+    await run(cli('local-database'), ['fixtures'], {
+      ...apiEnv,
+      TRUCKER_LOCAL_FIXTURES: 'local-development-only',
+    });
 
     apiServer = spawn(process.execPath, [apiMain], {
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -220,11 +231,9 @@ async function main() {
     mkdirSync(outDir, { recursive: true });
     // At most five pictures, for design review only.
     const shots = {
-      'enrol authenticator': 'console-enrol-authenticator-390',
-      'enrol done': 'console-enrol-done-390',
-      'staff accounts': 'console-staff-390',
-      forbidden: 'console-forbidden-390',
-      audit: 'console-audit-390',
+      application: 'console-application-390',
+      withdraw: 'console-withdraw-390',
+      'lost decision': 'console-lost-decision-390',
     };
 
     /** Helpers bound to one page, so that two staff members can be signed in at once. */
@@ -248,7 +257,107 @@ async function main() {
         ]);
         await page.evaluate(() => document.fonts.ready);
       };
+      // Keyboard only: Tab from the top of the page must reach every control, each must show
+      // where the focus is, and the skip link must move the focus to the content.
+      const keyboard = async (state) => {
+        await page.evaluate(() => {
+          // Tab continues from wherever the focus last was, so put it at the very start.
+          document.getElementById('kb-start')?.remove();
+          document.body.insertAdjacentHTML(
+            'afterbegin',
+            '<span id="kb-start" tabindex="-1"></span>',
+          );
+          document.getElementById('kb-start').focus();
+          window.scrollTo(0, 0);
+          const controls = [
+            ...document.querySelectorAll(
+              'a[href], button:not([disabled]), input:not([type=hidden]):not([disabled]), select, textarea, summary',
+            ),
+          ].filter((element) => {
+            if (element.closest('details:not([open])') && element.tagName !== 'SUMMARY')
+              return false;
+            const box = element.getBoundingClientRect();
+            return box.width > 0 || element.classList.contains('skip-link');
+          });
+          controls.forEach((element, index) => (element.dataset.kb = String(index)));
+          document.body.dataset.kbCount = String(controls.length);
+        });
+        const total = Number(await page.evaluate(() => document.body.dataset.kbCount));
+        const reached = new Set();
+        const unseen = [];
+        let skipWorks = null;
+        for (let press = 0; press < total + 3; press += 1) {
+          await page.keyboard.press('Tab');
+          const focused = await page.evaluate(() => {
+            const element = document.activeElement;
+            if (!element || element === document.body) return null;
+            const style = getComputedStyle(element);
+            return {
+              kb: element.dataset.kb ?? null,
+              skip: element.classList.contains('skip-link'),
+              shown:
+                (style.outlineStyle !== 'none' && parseFloat(style.outlineWidth) > 0) ||
+                style.boxShadow !== 'none',
+              name: (
+                element.textContent.trim() ||
+                element.id ||
+                element.name ||
+                element.tagName
+              ).slice(0, 40),
+            };
+          });
+          if (!focused) break;
+          if (focused.kb !== null) {
+            if (reached.has(focused.kb)) break;
+            reached.add(focused.kb);
+          }
+          if (!focused.shown) unseen.push(focused.name);
+          if (focused.skip && skipWorks === null) {
+            await page.keyboard.press('Enter');
+            skipWorks = (await page.evaluate(() => document.activeElement?.id)) === 'main';
+            // Back to the skip link, to carry on from where Tab was.
+            await page.evaluate(() => document.querySelector('.skip-link').focus());
+          }
+        }
+        const missed = await page.evaluate(
+          (seen) => {
+            const groups = new Set(
+              [...document.querySelectorAll('[data-kb]')]
+                .filter((element) => seen.includes(element.dataset.kb) && element.type === 'radio')
+                .map((element) => `${element.form?.id ?? ''}:${element.name}`),
+            );
+            return (
+              [...document.querySelectorAll('[data-kb]')]
+                .filter((element) => !seen.includes(element.dataset.kb))
+                // Tab stops once at a group of radio buttons; the arrow keys move within it.
+                .filter(
+                  (element) =>
+                    !(
+                      element.type === 'radio' &&
+                      groups.has(`${element.form?.id ?? ''}:${element.name}`)
+                    ),
+                )
+                .map((element) =>
+                  (
+                    element.textContent.trim() ||
+                    element.id ||
+                    element.name ||
+                    element.tagName
+                  ).slice(0, 40),
+                )
+            );
+          },
+          [...reached],
+        );
+        await page.evaluate(() => document.getElementById('kb-start')?.remove());
+        check(
+          'keyboard',
+          missed.length === 0 && unseen.length === 0 && skipWorks === true,
+          `${state}: not reached by Tab [${missed.join(', ')}], focus not shown on [${unseen.join(', ')}], skip link works: ${skipWorks}`,
+        );
+      };
       const inspect = async (state) => {
+        await keyboard(state);
         for (const width of [320, 390, 768, 1280]) {
           await page.setViewport({ width, height: 900 });
           const found = await page.evaluate(findOverflow);
@@ -672,10 +781,30 @@ async function main() {
       'a new enrolment link was not shown',
     );
     // The declaration is changed, and that is recorded.
+    // Done with the keyboard alone: open the disclosure, choose with the arrow keys or Space,
+    // and send the form with Enter.
     await one.open('/staff');
-    await page.click(`#account-${otherId} summary`);
-    await page.click(`#account-${otherId} input[name=participantLink][value=declared_none]`);
-    await act('declare');
+    await page.focus(`#account-${otherId} summary`);
+    await page.keyboard.press('Enter');
+    await page.keyboard.press('Tab');
+    const radioFocused = await page.evaluate(() => document.activeElement?.type);
+    await page.keyboard.press('Space');
+    const chosen = await page.evaluate(() => document.activeElement?.value);
+    if (chosen !== 'declared_none') await page.keyboard.press('ArrowUp');
+    check(
+      'keyboard',
+      radioFocused === 'radio' &&
+        (await page.evaluate(
+          (id) =>
+            document.querySelector(`#account-${id} input[name=participantLink]:checked`)?.value,
+          otherId,
+        )) === 'declared_none',
+      `the declaration could not be chosen with the keyboard (focus was on ${radioFocused})`,
+    );
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'networkidle0' }),
+      page.keyboard.press('Enter'),
+    ]);
     check(
       'staff accounts',
       page.url().startsWith(`${origin}/staff?done=declared`) &&
@@ -737,6 +866,343 @@ async function main() {
     await one.inspect('audit');
 
     // ------------------------------------------------------------------------------------
+    // Organisation verification: queue, application, decision, withdrawal
+    // ------------------------------------------------------------------------------------
+    // A participant (a test account, by the API) creates an organisation in a fictional
+    // country and submits it. The staff screens are driven in the browser.
+    const participant = async (method, route, { token, body, key } = {}) => {
+      const response = await fetch(apiOrigin + route, {
+        method,
+        headers: {
+          ...(body ? { 'content-type': 'application/json' } : {}),
+          ...(token ? { authorization: `Bearer ${token}` } : {}),
+          ...(key ? { 'idempotency-key': key } : {}),
+          ...(route.startsWith('/auth/code')
+            ? { 'x-trucker-development-code': 'local-visitor' }
+            : {}),
+        },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      });
+      const raw = await response.text();
+      return { status: response.status, body: raw ? JSON.parse(raw) : {} };
+    };
+    const newKey = () => `console-${randomBytes(12).toString('hex')}`;
+    const asked = await participant('POST', '/auth/code-requests', {
+      body: { phone: '+99988000777' },
+      key: newKey(),
+    });
+    const signedIn = await participant('POST', '/auth/code-verifications', {
+      body: { challengeId: asked.body.challengeId, code: asked.body.developmentCode },
+      key: newKey(),
+    });
+    const applicant = signedIn.body.token;
+    const terms = await participant('GET', '/registration/terms?language=en', { token: applicant });
+    await participant('POST', '/me/registration', {
+      token: applicant,
+      body: {
+        displayName: 'Console Test Applicant (fictional)',
+        termsVersion: terms.body.version,
+        termsLanguage: 'en',
+        termsSeen: true,
+      },
+    });
+    const madeOrg = await participant('POST', '/organisations', {
+      token: applicant,
+      key: newKey(),
+      body: {
+        legalName: 'Console Fixture Haulage (fictional)',
+        countryCode: 'XA',
+        registrationNumber: 'CON-0001',
+      },
+    });
+    const applicantOrg = madeOrg.body.organisation?.id;
+    const overviewOf = async () =>
+      (
+        await participant('GET', `/organisations/${applicantOrg}/verification`, {
+          token: applicant,
+        })
+      ).body.verification;
+    const submitApplication = async () =>
+      participant('POST', `/organisations/${applicantOrg}/verification/applications`, {
+        token: applicant,
+        key: newKey(),
+        body: {
+          version: (await overviewOf()).organisation.version,
+          declarationAccepted: true,
+          declarationLanguage: 'en',
+          evidence: [
+            {
+              documentType: 'registration_certificate',
+              documentNumber: 'REG-0001',
+              issuingCountry: 'XA',
+              issuedOn: '2025-01-15',
+              expiresOn: null,
+            },
+            {
+              documentType: 'transport_licence',
+              documentNumber: 'LIC-0002',
+              issuingCountry: 'XA',
+              issuedOn: null,
+              expiresOn: null,
+            },
+          ],
+        },
+      });
+    const sent = await submitApplication();
+    check(
+      'verification',
+      sent.status === 201,
+      `the test applicant could not submit: ${sent.status} ${JSON.stringify(sent.body)}`,
+    );
+    const applicationId = sent.body.verification?.applications[0].id;
+    // Read directly, as the migration role, to show that a retry changes nothing.
+    const db = new pg.Client({ connectionString: databaseUrl.toString() });
+    await db.connect();
+    closers.push(() => db.end());
+
+    // An administrator who is not a reviewer does not see applications; it is recorded.
+    for (const path of ['/verification', `/verification/${applicationId}`]) {
+      await one.open(path);
+      check(
+        'verification',
+        (await one.text('#forbidden')) !== null &&
+          !(await page.content()).includes('Console Fixture Haulage'),
+        `${path} is shown to an administrator who is not a reviewer`,
+      );
+    }
+    // The reviewer sees the queue and the application.
+    await two.open('/verification');
+    check(
+      'verification',
+      (await two.page.evaluate(
+        (id) => document.querySelector(`#queue [data-application="${id}"]`)?.dataset.status,
+        applicationId,
+      )) === 'submitted',
+      'the queue does not show the submitted application',
+    );
+    await two.inspect('verification queue');
+    await two.submit(`#queue [data-application="${applicationId}"] a`);
+    check(
+      'verification',
+      two.page.url() === `${origin}/verification/${applicationId}` &&
+        ((await two.text('#demonstration-notice')) ?? '').includes('Demonstration only') &&
+        ((await two.text('#application-facts')) ?? '').includes('CON-0001') &&
+        (await two.page.evaluate(() => document.querySelectorAll('.evidence li').length)) === 2 &&
+        (await two.text('#competing')) === null,
+      `opening the application led to ${two.page.url()}`,
+    );
+    await two.inspect('application');
+    // "Other" without a note is not a decision.
+    await two.page.select('#decision', 'changes_requested:other');
+    await two.page.click('#noConflict');
+    await two.submit('#record-decision');
+    check(
+      'verification',
+      two.page.url().includes('error=validation_failed') &&
+        (await two.text('#review-error')) !== null &&
+        (await overviewOf()).applications[0].status === 'submitted',
+      `"other" without a note led to ${two.page.url()}`,
+    );
+    // Changes requested, with the keyboard alone: choose, type the note, tick, send.
+    await two.page.focus('#decision');
+    await two.page.select('#decision', 'changes_requested:evidence_unclear');
+    await two.page.keyboard.press('Tab');
+    await two.page.keyboard.type('Please give the full licence number.');
+    await two.page.keyboard.press('Tab');
+    await two.page.keyboard.press('Space');
+    await two.page.keyboard.press('Tab');
+    await Promise.all([
+      two.page.waitForNavigation({ waitUntil: 'networkidle0' }),
+      two.page.keyboard.press('Enter'),
+    ]);
+    const afterAsk = await overviewOf();
+    check(
+      'verification',
+      two.page.url().includes('done=decided') &&
+        (await two.text('#review-confirmation')) !== null &&
+        (await two.page.evaluate(() => document.querySelector('#decision-form'))) === null &&
+        afterAsk.organisation.status === 'changes_requested' &&
+        afterAsk.applications[0].decisionNote === 'Please give the full licence number.',
+      `requesting changes led to ${two.page.url()} and the organisation is ${afterAsk.organisation.status}`,
+    );
+    // A new version; the reviewer sees the earlier one beside it, and verifies.
+    const resent = await submitApplication();
+    const secondApplication = resent.body.verification.applications[0].id;
+    await two.open(`/verification/${secondApplication}`);
+    check(
+      'verification',
+      (await two.page.evaluate(() => document.querySelectorAll('#earlier > li').length)) === 1 &&
+        ((await two.text('#earlier')) ?? '').includes('Please give the full licence number.'),
+      'the earlier version and its decision are not shown to the reviewer',
+    );
+    // The decision is recorded and its answer is lost on the way back.
+    const recorded = async () => ({
+      application: (
+        await db.query(
+          `SELECT status, decided_by, decided_at, decision_reason, row_version
+           FROM trucker.verification_application WHERE id = $1`,
+          [secondApplication],
+        )
+      ).rows[0],
+      capabilities: (
+        await db.query(
+          `SELECT status, granted_at FROM trucker.organisation_capability WHERE organisation_id = $1`,
+          [applicantOrg],
+        )
+      ).rows,
+      organisationEntries: Number(
+        (
+          await db.query(
+            'SELECT count(*) AS n FROM trucker.audit_entry WHERE organisation_id = $1',
+            [applicantOrg],
+          )
+        ).rows[0].n,
+      ),
+      decisionEntries: Number(
+        (
+          await db.query(
+            `SELECT count(*) AS n FROM trucker.staff_audit_entry
+             WHERE action = 'staff.verification_decide' AND detail ->> 'application' = $1`,
+            [secondApplication],
+          )
+        ).rows[0].n,
+      ),
+    });
+    await two.page.select('#decision', 'verified:evidence_accepted');
+    await two.page.click('#noConflict');
+    relay.lost.length = 0;
+    relay.mode = 'lose';
+    await two.submit('#record-decision');
+    check(
+      'lost answer',
+      relay.lost[0] === `POST /staff/verification/${secondApplication}/decision -> 200` &&
+        two.page.url().includes('error=unconfirmed') &&
+        (await two.text('#review-confirmation')) === null,
+      `a lost decision answer led to ${two.page.url()}: ${relay.lost}`,
+    );
+    relay.mode = 'pass';
+    // The page could not be shown either; trying again keeps what was sent.
+    if ((await two.page.$('#retry')) !== null) await two.submit('#retry');
+    const afterLost = await recorded();
+    check(
+      'lost answer',
+      afterLost.application.status === 'verified' &&
+        afterLost.capabilities.length === 1 &&
+        afterLost.decisionEntries === 1 &&
+        ((await two.text('#review-error h2')) ?? '') === 'Not confirmed' &&
+        ((await two.text('#review-error')) ?? '').includes('not confirmed') &&
+        (await two.page.$('#resend-form')) !== null &&
+        (await two.page.evaluate(
+          () => document.querySelector('#application-status').dataset.status,
+        )) === 'verified',
+      `after the lost answer the page is ${two.page.url()}, the application ${afterLost.application.status}`,
+    );
+    await two.inspect('lost decision');
+    // Sent again: the original result is confirmed, and nothing is decided, granted or
+    // recorded a second time.
+    await two.page.click('#resendNoConflict');
+    await two.submit('#resend-decision');
+    const afterRetry = await recorded();
+    check(
+      'lost answer',
+      two.page.url().includes('done=already_decided') &&
+        ((await two.text('#review-confirmation')) ?? '').includes('Nothing was recorded twice') &&
+        JSON.stringify(afterRetry) === JSON.stringify(afterLost),
+      `the retry led to ${two.page.url()}; before ${JSON.stringify(afterLost)}, after ${JSON.stringify(afterRetry)}`,
+    );
+    const afterVerify = await overviewOf();
+    check(
+      'verification',
+      afterVerify.organisation.status === 'verified' &&
+        afterVerify.capability?.basis === 'demonstration',
+      `the organisation is ${afterVerify.organisation.status}`,
+    );
+
+    // Withdrawing the verification. The first administrator's own declaration was never
+    // recorded, and "not declared" is not "independent": refused.
+    const withdraw = async (who, reason = 'verified_in_error') => {
+      await who.open(`/verification/withdraw?organisation=${applicantOrg}`);
+      await who.page.select('#reason', reason);
+      await who.page.click('#noConflict');
+      await who.submit('#withdraw-verification');
+    };
+    await withdraw(one);
+    check(
+      'verification',
+      page.url().includes('error=link_not_declared') &&
+        ((await one.text('#review-error')) ?? '').includes('not recorded') &&
+        (await overviewOf()).organisation.status === 'verified',
+      `an administrator with no declaration withdrawing led to ${page.url()}`,
+    );
+    await one.inspect('withdraw');
+    // The reviewer is made an administrator too, and records the first one's declaration.
+    await one.open('/staff');
+    await act('grant-staff_admin');
+    await two.open('/staff');
+    const adminId = await two.page.evaluate(
+      (email) =>
+        [...document.querySelectorAll('[id^=account-]')]
+          .find((item) => item.textContent.includes(email))
+          ?.id.slice('account-'.length),
+      adminEmail,
+    );
+    await two.page.evaluate((id) => {
+      document.querySelector(`#account-${id} details`).open = true;
+    }, adminId);
+    await two.page.click(`#account-${adminId} input[name=participantLink][value=declared_none]`);
+    await two.submit(`#account-${adminId} [data-action="declare"]`);
+    check(
+      'verification',
+      two.page.url().startsWith(`${origin}/staff?done=declared`),
+      `recording the administrator's declaration led to ${two.page.url()}`,
+    );
+    // Not the one who gave the verification, though now an administrator.
+    await withdraw(two);
+    check(
+      'verification',
+      two.page.url().includes('error=different_person_required') &&
+        (await overviewOf()).organisation.status === 'verified',
+      `the one who verified withdrawing led to ${two.page.url()}`,
+    );
+    // A different, independent administrator: done, status and capability together.
+    await withdraw(one);
+    const afterWithdraw = await overviewOf();
+    check(
+      'verification',
+      page.url().includes('done=revoked') &&
+        (await one.text('#review-confirmation')) !== null &&
+        afterWithdraw.organisation.status === 'verification_withdrawn' &&
+        afterWithdraw.capability?.status === 'revoked' &&
+        afterWithdraw.mayPublish === false &&
+        afterWithdraw.applications.length === 2,
+      `withdrawing led to ${page.url()} and the organisation is ${afterWithdraw.organisation.status}`,
+    );
+    await withdraw(one);
+    check(
+      'verification',
+      page.url().includes('done=already_revoked'),
+      `withdrawing again led to ${page.url()}`,
+    );
+    // All of it is in the audit list, refusals included.
+    await one.open('/audit');
+    const reviewAudit = await page.evaluate(() =>
+      [...document.querySelectorAll('#audit-list li')].map(
+        (item) => `${item.dataset.action} ${item.dataset.outcome}`,
+      ),
+    );
+    check(
+      'audit',
+      [
+        'staff.verification_view done',
+        'staff.verification_decide done',
+
+        'staff.verification_revoke refused',
+        'staff.verification_revoke done',
+      ].every((entry) => reviewAudit.includes(entry)),
+      `the audit list lacks verification entries: ${[...new Set(reviewAudit)].join(', ')}`,
+    );
+
+    // ------------------------------------------------------------------------------------
     // Sign-out whose answer is lost: never reported as done
     // ------------------------------------------------------------------------------------
     await one.open('/');
@@ -763,7 +1229,22 @@ async function main() {
       `after the connection returned the page is ${page.url()}`,
     );
     // Signed in again with a recovery code, and out again, confirmed this time.
-    await one.signIn(adminEmail, adminPassword, adminCodes[0]);
+    // With the keyboard alone: type, Tab, Enter.
+    await one.open('/sign-in');
+    await page.focus('#email');
+    await page.keyboard.type(adminEmail);
+    await page.keyboard.press('Tab');
+    await page.keyboard.type(adminPassword);
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'networkidle0' }),
+      page.keyboard.press('Enter'),
+    ]);
+    await page.focus('#code');
+    await page.keyboard.type(adminCodes[0]);
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'networkidle0' }),
+      page.keyboard.press('Enter'),
+    ]);
     check('sign-in', page.url() === `${origin}/`, `a recovery code sign-in led to ${page.url()}`);
     await one.submit('#sign-out');
     check(
@@ -790,6 +1271,7 @@ async function main() {
     if (serverLog.includes('Error') || apiLog.includes('error'))
       console.error(`${serverLog.slice(-2000)}\n${apiLog.slice(-2000)}`);
   } finally {
+    for (const close of closers) await close().catch(() => undefined);
     await browser?.close().catch(() => undefined);
     server?.kill();
     relayServer?.close();

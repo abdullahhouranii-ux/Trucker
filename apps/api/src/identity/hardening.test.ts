@@ -218,6 +218,7 @@ const CALLABLE = [
   'my_organisations()',
   'my_sessions(p_token_hash text)',
   'offset_choices(p_draft uuid)',
+  'organisation_may_publish()',
   'organisation_selected()',
   'request_organisation()',
   'request_person()',
@@ -244,7 +245,13 @@ const CALLABLE = [
   'staff_sign_in_password(p_email text, p_password text, p_pepper text, p_ticket_hash text, p_request_id text)',
   'staff_sign_in_verify(p_ticket_hash text, p_code text, p_pepper text, p_session uuid, p_token_hash text, p_request_id text)',
   'staff_sign_out(p_token_hash text, p_request_id text)',
+  'staff_verification_decide(p_token_hash text, p_application uuid, p_expected_version integer, p_decision text, p_reason text, p_note text, p_no_conflict boolean, p_request_id text)',
+  'staff_verification_queue(p_token_hash text)',
+  'staff_verification_revoke(p_token_hash text, p_organisation uuid, p_reason text, p_note text, p_no_conflict boolean, p_request_id text)',
+  'staff_verification_view(p_token_hash text, p_application uuid, p_request_id text)',
+  'submit_verification(p_key text, p_expected_version integer, p_content jsonb, p_allow_fixtures boolean)',
   'update_shipment_draft(p_draft uuid, p_expected_version integer, p_key text, p_content jsonb, p_allow_fixtures boolean)',
+  'withdraw_verification(p_application uuid, p_key text)',
 ];
 
 // ---------------------------------------------------------------------------------------------
@@ -329,12 +336,16 @@ test('the privilege catalogue shows no right for the API role or PUBLIC on the c
     'country',
     'country_time_zone',
     'environment',
+    'evidence_requirement',
     'lane',
     'lane_transit',
     'membership',
     'organisation',
+    'organisation_capability',
     'retry_key',
     'shipment_draft',
+    'verification_application',
+    'verification_evidence',
   ]);
   // Shipment drafts can be read and nothing else: every write goes through a function.
   assert.deepEqual(

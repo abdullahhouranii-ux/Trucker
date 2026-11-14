@@ -561,6 +561,7 @@ main:focus {
 input[type='text'],
 input[type='tel'],
 input[type='email'],
+input[type='date'],
 select,
 textarea {
   width: 100%;
@@ -827,4 +828,13 @@ textarea {
   color: var(--c-surface);
   text-decoration: underline;
   text-underline-offset: 0.2em;
+}
+/* Evidence entries of an application: declared details, one line each. */
+.evidence {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  padding-inline-start: var(--s-5);
+  list-style: disc;
+  overflow-wrap: anywhere;
 }

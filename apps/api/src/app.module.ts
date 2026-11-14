@@ -17,8 +17,11 @@ import { OrganisationController } from './organisation/organisation.controller.j
 import { OrganisationService } from './organisation/organisation.service.js';
 import { ShipmentController } from './shipment/shipment.controller.js';
 import { ShipmentService } from './shipment/shipment.service.js';
+import { ReviewService } from './staff/review.service.js';
 import { StaffController } from './staff/staff.controller.js';
 import { StaffService } from './staff/staff.service.js';
+import { VerificationController } from './verification/verification.controller.js';
+import { VerificationService } from './verification/verification.service.js';
 import { APP_CONFIG, CLOCK, DB_POOL, type Clock } from './tokens.js';
 
 @Injectable()
@@ -46,6 +49,7 @@ export class AppModule {
         OrganisationController,
         ShipmentController,
         StaffController,
+        VerificationController,
       ],
       providers: [
         { provide: APP_CONFIG, useValue: config },
@@ -58,6 +62,8 @@ export class AppModule {
         OrganisationService,
         ShipmentService,
         StaffService,
+        ReviewService,
+        VerificationService,
       ],
     };
   }

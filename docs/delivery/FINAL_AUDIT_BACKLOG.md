@@ -49,6 +49,9 @@ No accessibility conformance is claimed for any page.
 | WD-12 | "Earliest: date", "Latest: time" are built from two words with a colon | Slice 7, shipment form | Understandable, not natural, least so in Arabic and Urdu |
 | WD-13 | The draft notice says a draft "gives no right to transport", and the route note says "not legal clearance" | Slice 7, draft page | Wording follows SD-1 and SD-3. Statements with legal weight; review with the terms |
 | WD-14 | After a lost answer, changing the details and trying again reports "An earlier attempt may already have been saved. Check the draft before saving again." | Slice 7 | Correct, but the next step could be clearer (as WD-08) |
+| WD-15 | The declaration of authority is demonstration wording | Slice 9, verification page | To be replaced by approved legal text |
+| WD-16 | Console decision choices repeat the decision in each option ("Request changes: Details incomplete") | Slice 9, console application page | Clear but long |
+| WD-17 | The withdrawal form asks for an organisation identifier | Slice 9, console | Functional; a search by name would read better |
 
 ## 4. Translation corrections (Arabic and Urdu)
 
@@ -65,6 +68,8 @@ All Arabic and Urdu text in the repository is a draft written without a native r
 | TR-07 | Organisation messages: the draft notice, the "not confirmed" messages for create and save, the changed-elsewhere message, field labels and errors | Slice 5, `org` | High: the draft notice and the uncertain-outcome messages carry meaning that must not shift |
 | TR-08 | Names of the fictional countries | Slice 5, `db/fixtures/local-development/countries.json` | Low: development data only |
 | TR-09 | All shipment messages (112 strings): the private-draft notice, route wording, conflict and "not confirmed" messages, time errors, field labels | Slice 7, `ship` | High: "not published", "not legal clearance", "not confirmed" and the clock-change messages carry meaning that must not shift |
+| TR-10 | All verification messages (86 strings) and five changed organisation messages: the demonstration notice, statuses, reasons, the declaration, "not confirmed" messages | Slice 9, `verify`, `org` | High: "demonstration only", "declared, not verified" and the declaration of authority carry meaning that must not shift |
+| TR-11 | Names of the fictional evidence requirements | Slice 9, `db/fixtures/local-development/countries.json` | Low: development data only |
 
 ## 5. How this list is used
 
