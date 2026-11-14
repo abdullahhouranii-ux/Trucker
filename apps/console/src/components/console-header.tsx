@@ -20,6 +20,7 @@ export function ConsoleHeader({ staff, current }: { staff?: StaffAccount; curren
           <ul>
             {link('/', 'My account')}
             {reviewer ? link('/verification', 'Verification') : null}
+            {reviewer || admin ? link('/shipments', 'Published shipments') : null}
             {admin ? link('/verification/withdraw', 'Withdraw a verification') : null}
             {admin ? link('/staff', 'Staff accounts') : null}
             {admin ? link('/audit', 'Audit') : null}

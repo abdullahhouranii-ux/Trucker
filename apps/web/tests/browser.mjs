@@ -46,6 +46,8 @@ const REVOCATIONS = [
   ['POST', /^\/organisations\/[^/]+\/shipments\/[^/]+\/discard$/],
   // Submitting an application for verification.
   ['POST', /^\/organisations\/[^/]+\/verification\/applications$/],
+  // Publishing a shipment.
+  ['POST', /^\/organisations\/[^/]+\/shipments\/[^/]+\/publish$/],
 ];
 function startRelay() {
   const server = http.createServer((request, response) => {
@@ -642,9 +644,9 @@ async function main() {
     mkdirSync(outDir, { recursive: true });
     // At most five pictures, for design review only.
     const shots = {
-      'ur:verification form': 'verification-form-ur-390',
-      'ar:verification changes requested': 'verification-changes-requested-ar-390',
-      'en:verification verified': 'verification-verified-en-390',
+      'ur:publish form': 'publish-form-ur-390',
+      'ar:published': 'published-preview-ar-390',
+      'en:suspended': 'suspended-en-390',
     };
     // Fictional numbers: country code 999 is not assigned. Unique per run.
     const stamp = String(Date.now()).slice(-7);
@@ -2219,6 +2221,257 @@ async function main() {
       'with the API unreachable the verification page claims something',
     );
     relay.mode = 'pass';
+    await open('/ur/account', 390);
+
+    // ------------------------------------------------------------------------------------
+    // Shipment publication: publish, preview, change, lose an answer, expire, withdraw, copy
+    // ------------------------------------------------------------------------------------
+    // The verified organisation from the verification checks publishes. No carrier can read
+    // anything: the preview is the shipper's only. Times are made from the real clock, in the
+    // fictional zones (XA is UTC+4, XB is UTC+3).
+    const zoned = (hours, offsetHours) =>
+      new Date(Date.now() + (hours + offsetHours) * 3_600_000).toISOString().slice(0, 16);
+    const pubShipment = (
+      await (
+        await fetch(`${apiOrigin}/organisations/${verifyOrg}/shipments`, {
+          method: 'POST',
+          headers: {
+            authorization: `Bearer ${urToken}`,
+            'content-type': 'application/json',
+            'idempotency-key': `publish-${stamp}-draft`,
+          },
+          body: JSON.stringify({
+            shipperReference: `PUB-${stamp}`,
+            cargoDescription: 'Ceramic tiles in crates (fictional)',
+            grossWeightKg: '12000',
+            pieces: '24',
+            packaging: 'Wooden crates',
+            pickup: {
+              address: 'Warehouse 9, Private Street',
+              countryCode: 'XA',
+              timeZone: 'Etc/GMT-4',
+              accessNotes: 'Gate code 5512',
+              from: { local: zoned(48, 4) },
+              until: { local: zoned(50, 4) },
+            },
+            delivery: {
+              address: 'Depot 3, Hidden Road',
+              countryCode: 'XB',
+              timeZone: 'Etc/GMT-3',
+              from: { local: zoned(54, 3) },
+              until: { local: zoned(58, 3) },
+            },
+          }),
+        })
+      ).json()
+    ).shipment.id;
+    const shipmentPath = (locale) =>
+      `/${locale}/organisations/${verifyOrg}/shipments/${pubShipment}`;
+    const stateShown = () =>
+      page.evaluate(() => document.querySelector('#shipment-status')?.dataset.state ?? null);
+    const pubCount = async (action) =>
+      Number(
+        (
+          await owner.query(
+            'SELECT count(*) AS n FROM trucker.audit_entry WHERE record_id = $1 AND action = $2',
+            [pubShipment, action],
+          )
+        ).rows[0].n,
+      );
+    const inEachLocale = async (state) => {
+      for (const locale of locales) {
+        await open(shipmentPath(locale), 390);
+        await inspect(locale, state);
+      }
+    };
+    const urPub = messagesFor('ur').pub;
+    const enPub = messagesFor('en').pub;
+    await inEachLocale('publish form');
+
+    // Sent without the details: refused by field, focus on the summary, nothing published.
+    await open(shipmentPath('ur'), 390);
+    await submit('#publish-shipment');
+    const pubLinks = await page.evaluate(() =>
+      [...document.querySelectorAll('#error-summary a')].map((a) => a.getAttribute('href')),
+    );
+    check(
+      'publication',
+      (await focusedId()) === 'error-summary' &&
+        [
+          '#cargoCategory',
+          '#equipmentType',
+          '#dangerousGoods-no',
+          '#pickupArea',
+          '#deliveryArea',
+          '#deadlineDate',
+        ].every((href) => pubLinks.includes(href)) &&
+        (await pubCount('shipment.published')) === 0,
+      `an empty publication answered with links ${pubLinks}`,
+    );
+    await inspect('ur', 'publish errors');
+
+    // Filled in; the server publishes it and the answer is lost. Not reported as done; the
+    // retry shows the server's state, published once.
+    const deadline = zoned(24, 4);
+    await page.select('#cargoCategory', 'general_dry');
+    await page.select('#equipmentType', 'curtain_side');
+    await page.click('#dangerousGoods-no');
+    await page.type('#pickupArea', 'North industrial area');
+    await page.type('#deliveryArea', 'Port district');
+    await page.type('#deadlineDate', deadline.slice(0, 10));
+    await page.type('#deadlineTime', deadline.slice(11, 16));
+    relay.lost.length = 0;
+    relay.mode = 'lose';
+    await submit('#publish-shipment');
+    relay.mode = 'pass';
+    check(
+      'lost answer',
+      relay.lost[0] ===
+        `POST /organisations/${verifyOrg}/shipments/${pubShipment}/publish -> 200` &&
+        page.url().includes('error=publish_unconfirmed') &&
+        (await text('#shipment-confirmation')) === null,
+      `a lost publication answer led to ${page.url()}: ${relay.lost}`,
+    );
+    relay.lost.length = 0;
+    await submit('#retry-shipments');
+    check(
+      'lost answer',
+      (await stateShown()) === 'published' &&
+        (await pubCount('shipment.published')) === 1 &&
+        (await page.evaluate(() => document.querySelector('#publish-form'))) === null,
+      `after a lost publication the page shows ${await stateShown()} with ${await pubCount('shipment.published')} publications`,
+    );
+    await inEachLocale('published');
+    await open(shipmentPath('en'), 390);
+    const previewText = (await text('#carrier-preview')) ?? '';
+    check(
+      'publication',
+      previewText.includes('North industrial area') &&
+        previewText.includes(enPub.verifiedShipper) &&
+        ![
+          'Private Street',
+          'Hidden Road',
+          'Gate code',
+          `PUB-${stamp}`,
+          'Verification Fixture',
+        ].some((secret) => previewText.includes(secret)) &&
+        ((await text('#preview-caution')) ?? '') === enPub.previewCaution &&
+        ((await text('#preview-hidden')) ?? '') === enPub.previewHidden &&
+        (await page.evaluate(() => document.querySelectorAll('#published-versions li').length)) ===
+          1,
+      `the preview shows "${previewText.slice(0, 200)}"`,
+    );
+
+    // A material change through the change page: a new version.
+    await submit('#change-published');
+    await inEachLocale('published change');
+    await open(`${shipmentPath('en')}/change`, 390);
+    await page.$eval('#grossWeightKg', (input) => (input.value = ''));
+    await page.type('#grossWeightKg', '13000');
+    await submit('#save-published-change');
+    check(
+      'publication',
+      page.url().includes('pubDone=changed_material') &&
+        ((await text('#shipment-confirmation')) ?? '') === enPub.done.changed_material &&
+        (await page.evaluate(() => document.querySelectorAll('#published-versions li').length)) ===
+          2 &&
+        (await pubCount('shipment.version_created')) === 1,
+      `a material change led to ${page.url()}`,
+    );
+
+    // Suspended when the verification is withdrawn by staff (test accounts, migration role).
+    const adminToken = `${randomBytes(16).toString('hex')}.${randomBytes(16).toString('hex')}`;
+    const adminId = (
+      await owner.query(
+        `INSERT INTO trucker.staff_account
+           (email, display_name, status, enrolled_at, password_hash, totp_secret, participant_link,
+            created_at, updated_at)
+         VALUES ($1, 'Browser Test Administrator', 'active', now(), 'not-a-real-hash', '\\x00',
+                 'declared_none', now(), now())
+         RETURNING id`,
+        [`admin-${stamp}@example.test`],
+      )
+    ).rows[0].id;
+    await owner.query(
+      `INSERT INTO trucker.staff_privilege (staff_id, privilege, granted_by, granted_at)
+       VALUES ($1, 'staff_admin', NULL, now())`,
+      [adminId],
+    );
+    await owner.query(
+      `INSERT INTO trucker.staff_session (id, staff_id, token_hash, created_at, last_used_at, absolute_expires_at)
+       VALUES (gen_random_uuid(), $1, $2, now(), now(), now() + interval '1 hour')`,
+      [adminId, createHash('sha256').update(adminToken).digest('hex')],
+    );
+    const revoke = await fetch(
+      `${apiOrigin}/staff/verification/organisations/${verifyOrg}/revoke`,
+      {
+        method: 'POST',
+        headers: { authorization: `Bearer ${adminToken}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ reason: 'verified_in_error', noConflict: true }),
+      },
+    );
+    await inEachLocale('suspended');
+    await open(shipmentPath('ar'), 390);
+    check(
+      'publication',
+      revoke.status === 200 &&
+        (await stateShown()) === 'suspended' &&
+        (await page.evaluate(() =>
+          [...document.querySelectorAll('#suspension-causes li')]
+            .map((item) => item.dataset.cause)
+            .join(),
+        )) === 'verification' &&
+        (await pubCount('shipment.suspended')) === 1,
+      `after the withdrawal of verification the page shows ${await stateShown()}`,
+    );
+
+    // The deadline passes. The real clock cannot be moved here, so the migration role moves
+    // the record's own times back 25 hours, all of them consistently: the deadline and the start
+    // of the open suspension. The page shows it expired and records the expiry once; the
+    // suspension ends with it.
+    await owner.query(
+      `UPDATE trucker.shipment_draft
+       SET deadline_local = deadline_local - interval '25 hours', deadline_at = deadline_at - interval '25 hours'
+       WHERE id = $1`,
+      [pubShipment],
+    );
+    await owner.query(
+      `UPDATE trucker.shipment_suspension SET started_at = started_at - interval '25 hours'
+       WHERE shipment_id = $1 AND ended_at IS NULL`,
+      [pubShipment],
+    );
+    await inEachLocale('expired');
+    check(
+      'publication',
+      (await stateShown()) === 'expired' &&
+        (await pubCount('shipment.expired')) === 1 &&
+        (await page.$('#republish-form')) !== null &&
+        (await page.$('#copy-form')) !== null,
+      `after the deadline the page shows ${await stateShown()} with ${await pubCount('shipment.expired')} expiry records`,
+    );
+    // Publishing again needs every check: the verification is withdrawn, so it is refused.
+    await open(shipmentPath('ur'), 390);
+    const newDeadline = zoned(20, 4);
+    await page.type('#deadlineDate', newDeadline.slice(0, 10));
+    await page.type('#deadlineTime', newDeadline.slice(11, 16));
+    await submit('#republish-shipment');
+    check(
+      'publication',
+      page.url().includes('error=publication_not_allowed') &&
+        ((await text('#error-summary')) ?? '').includes(urPub.errors.publication_not_allowed) &&
+        (await stateShown()) === 'expired',
+      `republishing without verification led to ${page.url()}`,
+    );
+    // A new draft from a copy.
+    await submit('#copy-shipment');
+    check(
+      'publication',
+      page.url().includes('pubDone=copied') &&
+        (await stateShown()) === 'draft' &&
+        !page.url().includes(pubShipment) &&
+        (await page.$eval('#pickupArea', (input) => input.value)) === 'North industrial area',
+      `copying led to ${page.url()}`,
+    );
     await open('/ur/account', 390);
 
     // ------------------------------------------------------------------------------------

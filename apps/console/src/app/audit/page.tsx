@@ -26,6 +26,8 @@ const ACTIONS: Record<string, string> = {
   'staff.verification_view': 'Application viewed',
   'staff.verification_decide': 'Decision on an application',
   'staff.verification_revoke': 'Verification withdrawn',
+  'staff.shipment_list': 'Published shipments viewed',
+  'staff.shipment_view': 'Published shipment viewed',
 };
 
 const detail = (entry: AuditEntry): string =>

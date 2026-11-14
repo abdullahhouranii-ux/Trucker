@@ -36,7 +36,15 @@ const TEXT_FIELDS = [
   'packaging',
   'equipmentNeeded',
 ] as const;
-const PLACE_FIELDS = ['address', 'countryCode', 'timeZone', 'accessNotes', 'from', 'until'];
+const PLACE_FIELDS = ['address', 'countryCode', 'timeZone', 'accessNotes', 'from', 'until', 'area'];
+/** Fields of publication that the API names on their own. */
+const PUBLICATION_FIELDS = [
+  'cargoCategory',
+  'equipmentType',
+  'dangerousGoods',
+  'quotationDeadline',
+  'route',
+] as const;
 
 const query = (values: Record<string, string | number | undefined>): string => {
   const params = new URLSearchParams();
@@ -100,11 +108,17 @@ function content(form: FormData): { body: Record<string, unknown>; problems: str
 
 /** A problem the API reported, as `field:code` with the two offsets of an ambiguous time. */
 function problemCode(problem: { field?: unknown; code?: unknown; offsets?: unknown }): string {
-  const parts = String(problem.field ?? '').split('.');
+  // The API's input check names the two areas as one field each; the database by place.
+  const named = String(problem.field ?? '')
+    .replace(/^pickupArea$/, 'pickup.area')
+    .replace(/^deliveryArea$/, 'delivery.area')
+    .replace(/^publication\./, '');
+  const parts = named.split('.');
   const field =
     (parts[0] === 'pickup' || parts[0] === 'delivery') && PLACE_FIELDS.includes(parts[1] ?? '')
       ? `${parts[0]}.${parts[1]}`
-      : (TEXT_FIELDS as readonly string[]).includes(parts[0] ?? '')
+      : (TEXT_FIELDS as readonly string[]).includes(parts[0] ?? '') ||
+          (PUBLICATION_FIELDS as readonly string[]).includes(parts[0] ?? '')
         ? parts[0]!
         : '';
   const code =
@@ -114,7 +128,12 @@ function problemCode(problem: { field?: unknown; code?: unknown; offsets?: unkno
     code === 'time_ambiguous' && Array.isArray(problem.offsets)
       ? problem.offsets.filter((offset): offset is number => Number.isInteger(offset))
       : [];
-  return [field, code, ...offsets].join(':');
+  // How far ahead a deadline must be travels with the problem, so the message can say it.
+  const minutes =
+    code === 'too_soon' && Number.isInteger((problem as { minutes?: unknown }).minutes)
+      ? [(problem as { minutes: number }).minutes]
+      : [];
+  return [field, code, ...offsets, ...minutes].join(':');
 }
 
 /** The code to show for a refusal. */
@@ -241,6 +260,161 @@ export async function discardShipmentAction(form: FormData): Promise<void> {
     `${base}/${id}${query({
       error: code === 'invalid' ? 'discard_unconfirmed' : code,
       discardRetry: retryKey,
+    })}`,
+  );
+}
+
+// ---------------------------------------------------------------------------------------------
+// Publication (slice 10). The same rules: a redirect for every outcome, nothing reported as
+// done unless the server confirmed it, the retry key kept with the page when no answer came.
+// ---------------------------------------------------------------------------------------------
+
+/** The publication details from the form, in the shape the API takes. */
+function publicationDetails(form: FormData, problems: string[]): Record<string, unknown> {
+  const dangerous = text(form, 'dangerousGoods');
+  return {
+    cargoCategory: text(form, 'cargoCategory'),
+    equipmentType: text(form, 'equipmentType'),
+    dangerousGoods: dangerous === 'yes' ? true : dangerous === 'no' ? false : null,
+    pickupArea: text(form, 'pickupArea'),
+    deliveryArea: text(form, 'deliveryArea'),
+    quotationDeadline: windowEnd(form, 'deadline', 'quotationDeadline', problems),
+  };
+}
+
+/** What to show when a publication request was refused or got no answer. */
+function publicationRefusal(
+  reply: Extract<ApiReply<unknown>, { ok: false }>,
+  unconfirmed: string,
+): { error: string; limit?: number } {
+  const code = refusal(reply, unconfirmed);
+  return {
+    error: code,
+    ...(typeof reply.details.limit === 'number' ? { limit: reply.details.limit } : {}),
+  };
+}
+
+async function publicationRequest(
+  form: FormData,
+  operation: 'publish' | 'published-changes' | 'withdraw' | 'republish',
+  unconfirmed: string,
+  body: (problems: string[]) => Record<string, unknown>,
+  page: 'shipment' | 'change',
+): Promise<void> {
+  const { locale, token, organisationId, retryKey } = await target(form);
+  const base = `/${locale}/organisations/${organisationId}/shipments`;
+  const id = text(form, 'shipmentId');
+  if (!UUID.test(id)) redirect(`${base}?error=shipment_not_found`);
+  const version = Number(text(form, 'version'));
+  const here = page === 'change' ? `${base}/${id}/change` : `${base}/${id}`;
+  // The key goes back with the page only while the outcome is unknown or the request can be
+  // sent again as it was; a refusal that needs a different request gets a new key.
+  const back = (error: string, extra: Record<string, string | number | undefined> = {}): never =>
+    redirect(`${here}${query({ error, ...extra })}`);
+
+  const problems: string[] = [];
+  const payload = body(problems);
+  if (problems.length > 0) back(problems.join(','), { [`${operation}Retry`]: retryKey });
+  if (!Number.isInteger(version) || version < 1) back('shipment_changed');
+
+  const reply = await api<{ shipment: Shipment; outcome: string; material?: boolean | null }>(
+    'POST',
+    `/organisations/${organisationId}/shipments/${id}/${operation}`,
+    { token, retryKey, body: { ...payload, version } },
+  );
+  if (reply.ok) {
+    const outcome = reply.data.outcome;
+    const done =
+      outcome === 'changed'
+        ? reply.data.material
+          ? 'changed_material'
+          : 'changed_minor'
+        : outcome === 'already_applied'
+          ? 'already_changed'
+          : outcome === 'already_withdrawn'
+            ? 'withdrawn'
+            : outcome === 'already_republished'
+              ? 'republished'
+              : outcome;
+    redirect(`${base}/${id}?pubDone=${done}`);
+  }
+  if (reply.status === 401) await signedOut(locale);
+  if (reply.status === 404) redirect(`${base}?error=shipment_not_found`);
+  // A refusal about the shipment's state is shown with the shipment as it is now.
+  if (
+    reply.code === 'shipment_changed' ||
+    reply.code.startsWith('shipment_not_') ||
+    reply.code === 'publication_not_allowed' ||
+    reply.code === 'retry_key_conflict'
+  )
+    redirect(`${base}/${id}?error=${reply.code}`);
+  const { error, limit } = publicationRefusal(reply, unconfirmed);
+  back(error, {
+    limit,
+    // Unknown outcome: the same key goes back, so sending again cannot apply it twice.
+    ...(error === unconfirmed ? { [`${operation}Retry`]: retryKey } : {}),
+  });
+}
+
+export async function publishShipmentAction(form: FormData): Promise<void> {
+  await publicationRequest(
+    form,
+    'publish',
+    'publish_unconfirmed',
+    (problems) => publicationDetails(form, problems),
+    'shipment',
+  );
+}
+
+export async function changePublishedShipmentAction(form: FormData): Promise<void> {
+  await publicationRequest(
+    form,
+    'published-changes',
+    'change_unconfirmed',
+    (problems) => {
+      const { body, problems: found } = content(form);
+      problems.push(...found);
+      return { ...body, publication: publicationDetails(form, problems) };
+    },
+    'change',
+  );
+}
+
+export async function withdrawShipmentAction(form: FormData): Promise<void> {
+  await publicationRequest(form, 'withdraw', 'withdraw_unconfirmed', () => ({}), 'shipment');
+}
+
+export async function republishShipmentAction(form: FormData): Promise<void> {
+  await publicationRequest(
+    form,
+    'republish',
+    'republish_unconfirmed',
+    (problems) => ({
+      quotationDeadline: windowEnd(form, 'deadline', 'quotationDeadline', problems),
+    }),
+    'shipment',
+  );
+}
+
+export async function copyShipmentAction(form: FormData): Promise<void> {
+  const { locale, token, organisationId, retryKey } = await target(form);
+  const base = `/${locale}/organisations/${organisationId}/shipments`;
+  const id = text(form, 'shipmentId');
+  if (!UUID.test(id)) redirect(`${base}?error=shipment_not_found`);
+  const reply = await api<{ shipment: Shipment }>(
+    'POST',
+    `/organisations/${organisationId}/shipments/${id}/copy`,
+    { token, retryKey },
+  );
+  if (reply.ok) redirect(`${base}/${reply.data.shipment.id}?pubDone=copied`);
+  if (reply.status === 401) await signedOut(locale);
+  if (reply.status === 404) redirect(`${base}?error=shipment_not_found`);
+  const { error, limit } = publicationRefusal(reply, 'copy_unconfirmed');
+  redirect(
+    `${base}/${id}${query({
+      error: error === 'invalid' ? 'copy_unconfirmed' : error,
+      limit,
+      ...(error === 'copy_unconfirmed' ? { copyRetry: retryKey } : {}),
     })}`,
   );
 }

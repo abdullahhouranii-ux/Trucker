@@ -79,6 +79,8 @@ const FIELD_CODES = [
   'time_ambiguous',
   'window_order',
   'delivery_before_pickup',
+  'required_to_publish',
+  'in_past',
 ] as const;
 
 /** Splits the codes in the address into field problems and page problems. */

@@ -5,12 +5,15 @@ import { ApiError } from '../http/api-error.js';
 import { DB_POOL } from '../tokens.js';
 
 /**
- * Shipment drafts: private to one organisation, never published. The API's database role may
- * read drafts of the organisation a request selected and may write nothing: creating,
- * changing and discarding are database functions (db/migrations/0005_shipment_drafts.sql)
- * that establish for themselves who is asking, take their locks, read the database's clock
- * and only then decide. Limits, the page size and the time are the database's; nothing sent
- * from here can loosen them.
+ * Shipments: private drafts, then possibly published. The API's database role may read the
+ * shipments of the organisation a request selected and may write nothing: creating, changing,
+ * discarding, publishing, withdrawing and republishing are database functions
+ * (db/migrations/0005_shipment_drafts.sql, 0008_shipment_publication.sql) that establish for
+ * themselves who is asking, take their locks, read the database's clock and only then decide.
+ * Limits, the page size and the time are the database's; nothing sent from here can loosen them.
+ * Every read first asks the database to bring the shipment up to date, so an expiry or a
+ * suspension that is due is recorded, once, before anything is shown. No carrier can read a
+ * shipment: what carriers would see is offered to the shipper as a preview only.
  */
 
 export interface Caller {
@@ -30,6 +33,15 @@ export interface PlaceInput {
   readonly accessNotes: string | null;
   readonly from: WindowEndInput;
   readonly until: WindowEndInput;
+}
+/** The details publication needs beyond the draft (PB-2 to PB-4). */
+export interface PublicationInput {
+  readonly cargoCategory: string | null;
+  readonly equipmentType: string | null;
+  readonly dangerousGoods: boolean | null;
+  readonly pickupArea: string | null;
+  readonly deliveryArea: string | null;
+  readonly quotationDeadline: WindowEndInput;
 }
 export interface ShipmentInput {
   readonly shipperReference: string | null;
@@ -73,9 +85,27 @@ export interface RouteView {
     position?: number;
   }[];
 }
+export type ShipmentState =
+  'draft' | 'discarded' | 'published' | 'suspended' | 'withdrawn' | 'expired';
+export interface PublicationView {
+  readonly cargoCategory: string | null;
+  readonly equipmentType: string | null;
+  readonly dangerousGoods: boolean | null;
+  readonly pickupArea: string | null;
+  readonly deliveryArea: string | null;
+  readonly quotationDeadline: WindowEndView;
+  readonly publishedVersion: number | null;
+  readonly publishedAt: string | null;
+  readonly withdrawnAt: string | null;
+  readonly expiredAt: string | null;
+  /** The causes of the open suspensions, in order; empty when not suspended. */
+  readonly suspendedFor: ('verification' | 'route')[];
+  readonly copiedFrom: string | null;
+}
 export interface ShipmentView {
   readonly id: string;
-  readonly status: 'draft' | 'discarded';
+  /** The state now: a published shipment with an open suspension is `suspended`. */
+  readonly status: ShipmentState;
   readonly version: number;
   readonly shipperReference: string | null;
   readonly cargoDescription: string | null;
@@ -89,10 +119,11 @@ export interface ShipmentView {
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly discardedAt: string | null;
+  readonly publication: PublicationView;
 }
 export interface ShipmentSummary {
   readonly id: string;
-  readonly status: 'draft' | 'discarded';
+  readonly status: ShipmentState;
   readonly version: number;
   readonly shipperReference: string | null;
   readonly cargoDescription: string | null;
@@ -100,6 +131,23 @@ export interface ShipmentSummary {
   readonly deliveryCountry: string | null;
   readonly createdAt: string;
   readonly updatedAt: string;
+  readonly publishedVersion: number | null;
+  readonly quotationDeadlineAt: string | null;
+}
+export interface CatalogueEntry {
+  readonly code: string;
+  readonly name: { en: string; ar: string; ur: string };
+}
+export interface PublicationRecord {
+  readonly versions: { versionNo: number; kind: string; createdAt: string }[];
+  readonly suspensions: {
+    cause: 'verification' | 'route';
+    startedAt: string;
+    endedAt: string | null;
+    endedBy: string | null;
+  }[];
+  /** What carriers would see. Nobody but the shipper and staff can read it in this slice. */
+  readonly carrierView: Record<string, unknown> | null;
 }
 export interface PlaceOption {
   readonly code: string;
@@ -111,7 +159,9 @@ export interface HistoryEntry {
   readonly id: string;
   readonly occurredAt: string;
   readonly action: string;
-  readonly actorPersonId: string;
+  /** Nobody for an expiry or a suspension; a staff member is never named. */
+  readonly actorPersonId: string | null;
+  readonly byStaff: boolean;
   readonly requestId: string | null;
   readonly before: unknown;
   readonly after: unknown;
@@ -119,7 +169,7 @@ export interface HistoryEntry {
 
 interface DraftRow {
   id: string;
-  status: 'draft' | 'discarded';
+  status: 'draft' | 'discarded' | 'published' | 'withdrawn' | 'expired';
   version: number;
   shipper_reference: string | null;
   cargo_description: string | null;
@@ -152,6 +202,20 @@ interface DraftRow {
   discarded_at: Date | null;
   route: RouteView;
   choices: Record<string, number[]>;
+  cargo_category: string | null;
+  equipment_type: string | null;
+  dangerous_goods: boolean | null;
+  pickup_area: string | null;
+  delivery_area: string | null;
+  deadline_local: string | null;
+  deadline_offset_minutes: number | null;
+  deadline_at: Date | null;
+  published_version: number | null;
+  published_at: Date | null;
+  withdrawn_at: Date | null;
+  expired_at: Date | null;
+  copied_from: string | null;
+  suspended_for: ('verification' | 'route')[];
 }
 
 const LOCAL = `'YYYY-MM-DD"T"HH24:MI'`;
@@ -171,6 +235,11 @@ const DRAFT = `
          to_char(d.delivery_until_local, ${LOCAL}) AS delivery_until_local,
          d.delivery_until_offset_minutes, d.delivery_until_at,
          d.created_at, d.updated_at, d.discarded_at,
+         d.cargo_category, d.equipment_type, d.dangerous_goods, d.pickup_area, d.delivery_area,
+         to_char(d.deadline_local, ${LOCAL}) AS deadline_local, d.deadline_offset_minutes, d.deadline_at,
+         d.published_version, d.published_at, d.withdrawn_at, d.expired_at, d.copied_from,
+         coalesce((SELECT array_agg(s.cause ORDER BY s.cause) FROM trucker.shipment_suspension s
+                   WHERE s.shipment_id = d.id AND s.ended_at IS NULL), '{}') AS suspended_for,
          trucker.route_check(d.pickup_country, d.delivery_country, $2) AS route,
          trucker.offset_choices(d.id) AS choices
   FROM trucker.shipment_draft d WHERE d.id = $1`;
@@ -189,7 +258,7 @@ const end = (
 
 const view = (row: DraftRow): ShipmentView => ({
   id: row.id,
-  status: row.status,
+  status: row.status === 'published' && row.suspended_for.length > 0 ? 'suspended' : row.status,
   version: row.version,
   shipperReference: row.shipper_reference,
   cargoDescription: row.cargo_description,
@@ -237,7 +306,30 @@ const view = (row: DraftRow): ShipmentView => ({
   createdAt: row.created_at.toISOString(),
   updatedAt: row.updated_at.toISOString(),
   discardedAt: row.discarded_at ? row.discarded_at.toISOString() : null,
+  publication: {
+    cargoCategory: row.cargo_category,
+    equipmentType: row.equipment_type,
+    dangerousGoods: row.dangerous_goods,
+    pickupArea: row.pickup_area,
+    deliveryArea: row.delivery_area,
+    quotationDeadline: end(
+      row.deadline_local,
+      row.deadline_offset_minutes,
+      row.deadline_at,
+      row.choices.quotationDeadline ?? null,
+    ),
+    publishedVersion: row.published_version,
+    publishedAt: row.published_at ? row.published_at.toISOString() : null,
+    withdrawnAt: row.withdrawn_at ? row.withdrawn_at.toISOString() : null,
+    expiredAt: row.expired_at ? row.expired_at.toISOString() : null,
+    suspendedFor: row.suspended_for,
+    copiedFrom: row.copied_from,
+  },
 });
+
+/** A refusal that says what the shipment is now, so a page can show it. */
+const refusedWith = (status: number, code: string, message: string, current: ShipmentView) =>
+  new ApiError(status, code, message, { current });
 
 const notFound = (): ApiError =>
   new ApiError(404, 'not_found', 'The requested resource was not found.');
@@ -293,6 +385,13 @@ export class ShipmentService {
       await client.query('COMMIT');
       return result;
     } catch (error) {
+      // A definite refusal is kept: the database functions write nothing when they refuse,
+      // except what brings the shipment up to date (an expiry or suspension that was due), and
+      // that must not be lost because the request that found it was refused.
+      if (error instanceof ApiError && error.status >= 400 && error.status < 500) {
+        await client.query('COMMIT');
+        throw error;
+      }
       await client.query('ROLLBACK').catch(() => undefined);
       throw error;
     } finally {
@@ -305,6 +404,7 @@ export class ShipmentService {
     id: string,
     allowFixtures: boolean,
   ): Promise<ShipmentView | undefined> {
+    await client.query('SELECT trucker.refresh_shipments($1)', [id]);
     const found = await client.query<DraftRow>(DRAFT, [id, allowFixtures]);
     return found.rows[0] ? view(found.rows[0]) : undefined;
   }
@@ -393,7 +493,7 @@ export class ShipmentService {
   async list(
     caller: Caller,
     organisationId: string,
-    status: 'draft' | 'discarded' | 'all',
+    status: 'draft' | 'discarded' | 'published' | 'withdrawn' | 'expired' | 'all',
     after: string | null,
   ): Promise<{ shipments: ShipmentSummary[]; nextAfter: string | null }> {
     return this.asCaller(caller, organisationId, async (client) => {
@@ -401,9 +501,10 @@ export class ShipmentService {
         organisationId,
       ]);
       if (visible.rowCount === 0) throw notFound();
+      await client.query('SELECT trucker.refresh_shipments(NULL)');
       let rows: {
         id: string;
-        status: 'draft' | 'discarded';
+        status: ShipmentState;
         version: number;
         shipper_reference: string | null;
         cargo_description: string | null;
@@ -412,6 +513,8 @@ export class ShipmentService {
         created_at: Date;
         updated_at: Date;
         more: boolean;
+        published_version: number | null;
+        deadline_at: Date | null;
       }[];
       try {
         await client.query('SAVEPOINT listing');
@@ -437,6 +540,8 @@ export class ShipmentService {
           deliveryCountry: row.delivery_country,
           createdAt: row.created_at.toISOString(),
           updatedAt: row.updated_at.toISOString(),
+          publishedVersion: row.published_version,
+          quotationDeadlineAt: row.deadline_at ? row.deadline_at.toISOString() : null,
         })),
         nextAfter: last?.more ? last.id : null,
       };
@@ -507,6 +612,13 @@ export class ShipmentService {
           'The draft was changed since it was opened. Nothing was saved.',
           { current: draft },
         );
+      if (row.status === 'not_draft')
+        throw refusedWith(
+          409,
+          'shipment_not_draft',
+          'This shipment is no longer a draft. Nothing was saved.',
+          draft,
+        );
       return {
         shipment: draft,
         outcome: row.status === 'repeated' ? 'already_applied' : 'updated',
@@ -544,9 +656,297 @@ export class ShipmentService {
           'The draft was changed since it was opened. Nothing was discarded.',
           { current: draft },
         );
+      if (row.status === 'not_draft')
+        throw refusedWith(
+          409,
+          'shipment_not_draft',
+          'Only a draft can be discarded. A published shipment is withdrawn instead.',
+          draft,
+        );
       return {
         shipment: draft,
         outcome: row.status === 'discarded' ? 'discarded' : 'already_discarded',
+      };
+    });
+  }
+
+  /** The fictional catalogues. Empty unless fixtures are allowed and the database is marked. */
+  async catalogues(
+    caller: Caller,
+    organisationId: string,
+  ): Promise<{ cargoCategories: CatalogueEntry[]; equipmentTypes: CatalogueEntry[] }> {
+    return this.asCaller(caller, organisationId, async (client, allowFixtures) => {
+      const visible = await client.query('SELECT 1 FROM trucker.organisation WHERE id = $1', [
+        organisationId,
+      ]);
+      if (visible.rowCount === 0) throw notFound();
+      if (!allowFixtures) return { cargoCategories: [], equipmentTypes: [] };
+      type Row = { code: string; name_en: string; name_ar: string; name_ur: string };
+      const entry = (row: Row): CatalogueEntry => ({
+        code: row.code,
+        name: { en: row.name_en, ar: row.name_ar, ur: row.name_ur },
+      });
+      const categories = await client.query<Row>(
+        `SELECT code, name_en, name_ar, name_ur FROM trucker.cargo_category
+         WHERE NOT excluded ORDER BY position, code`,
+      );
+      const types = await client.query<Row>(
+        `SELECT code, name_en, name_ar, name_ur FROM trucker.equipment_type ORDER BY position, code`,
+      );
+      return {
+        cargoCategories: categories.rows.map(entry),
+        equipmentTypes: types.rows.map(entry),
+      };
+    });
+  }
+
+  /**
+   * Runs one publication function and turns its answer into a result or a refusal. Every
+   * refusal carries the shipment as it is now, so a page never shows an outcome it was not told.
+   */
+  private async publicationCall(
+    client: pg.PoolClient,
+    allowFixtures: boolean,
+    id: string,
+    sql: string,
+    values: unknown[],
+  ): Promise<{ status: string; detail: unknown; shipment: ShipmentView }> {
+    const result = await client.query<{ status: string; detail: unknown }>(sql, values);
+    const row = result.rows[0]!;
+    if (row.status === 'unauthorized') throw unauthorized();
+    if (row.status === 'not_found') throw notFound();
+    if (row.status === 'key_conflict') throw keyConflict();
+    if (row.status === 'invalid') throw invalid(row.detail as Problem[]);
+    const shipment = await this.read(client, id, allowFixtures);
+    if (!shipment) throw notFound();
+    const refusals: Record<string, [string, string]> = {
+      conflict: [
+        'shipment_changed',
+        'The shipment was changed since it was opened. Nothing was done.',
+      ],
+      discarded: ['shipment_discarded', 'This draft was discarded.'],
+      not_draft: ['shipment_not_draft', 'This shipment is no longer a draft.'],
+      not_published: ['shipment_not_published', 'This shipment is not published now.'],
+      not_expired: ['shipment_not_expired', 'Only an expired shipment can be published again.'],
+      not_copyable: [
+        'shipment_not_copyable',
+        'Only a withdrawn or expired shipment can be copied to a new draft.',
+      ],
+      not_eligible: [
+        'publication_not_allowed',
+        'This organisation may not publish: it is not verified, or its verification does not allow it here.',
+      ],
+    };
+    const refusal = refusals[row.status];
+    if (refusal) throw refusedWith(409, refusal[0], refusal[1], shipment);
+    if (row.status === 'limit')
+      throw new ApiError(
+        409,
+        'published_limit_reached',
+        'This organisation has as many published shipments as it may.',
+        {
+          limit: (row.detail as { limit: number }).limit,
+          current: shipment,
+        },
+      );
+    return { status: row.status, detail: row.detail, shipment };
+  }
+
+  /** Publishes a draft with the details publication needs. */
+  async publish(
+    caller: Caller,
+    organisationId: string,
+    id: string,
+    expectedVersion: number,
+    retryKey: string,
+    details: PublicationInput,
+  ): Promise<{ shipment: ShipmentView; outcome: 'published' | 'already_published' }> {
+    return this.asCaller(caller, organisationId, async (client, allowFixtures) => {
+      const done = await this.publicationCall(
+        client,
+        allowFixtures,
+        id,
+        'SELECT status, detail FROM trucker.publish_shipment($1, $2, $3, $4::jsonb, $5)',
+        [id, expectedVersion, retryKey, JSON.stringify(details), allowFixtures],
+      );
+      return {
+        shipment: done.shipment,
+        outcome: done.status === 'repeated' ? 'already_published' : 'published',
+      };
+    });
+  }
+
+  /** Changes a published shipment. A material change is a new published version. */
+  async change(
+    caller: Caller,
+    organisationId: string,
+    id: string,
+    expectedVersion: number,
+    retryKey: string,
+    input: ShipmentInput,
+    details: PublicationInput,
+  ): Promise<{
+    shipment: ShipmentView;
+    outcome: 'changed' | 'unchanged' | 'already_applied';
+    material: boolean | null;
+  }> {
+    return this.asCaller(caller, organisationId, async (client, allowFixtures) => {
+      const done = await this.publicationCall(
+        client,
+        allowFixtures,
+        id,
+        'SELECT status, detail FROM trucker.change_published_shipment($1, $2, $3, $4::jsonb, $5)',
+        [
+          id,
+          expectedVersion,
+          retryKey,
+          JSON.stringify({ ...input, publication: details }),
+          allowFixtures,
+        ],
+      );
+      return {
+        shipment: done.shipment,
+        outcome:
+          done.status === 'repeated'
+            ? 'already_applied'
+            : done.status === 'unchanged'
+              ? 'unchanged'
+              : 'changed',
+        material:
+          done.status === 'changed' ? (done.detail as { material: boolean }).material : null,
+      };
+    });
+  }
+
+  /** Withdraws a published shipment. Final; publishing again starts from a copy. */
+  async withdraw(
+    caller: Caller,
+    organisationId: string,
+    id: string,
+    expectedVersion: number,
+    retryKey: string,
+  ): Promise<{ shipment: ShipmentView; outcome: 'withdrawn' | 'already_withdrawn' }> {
+    return this.asCaller(caller, organisationId, async (client, allowFixtures) => {
+      const done = await this.publicationCall(
+        client,
+        allowFixtures,
+        id,
+        'SELECT status, detail FROM trucker.withdraw_shipment($1, $2, $3)',
+        [id, expectedVersion, retryKey],
+      );
+      return {
+        shipment: done.shipment,
+        outcome: done.status === 'withdrawn' ? 'withdrawn' : 'already_withdrawn',
+      };
+    });
+  }
+
+  /** Publishes an expired shipment again, as a new version with a new deadline. */
+  async republish(
+    caller: Caller,
+    organisationId: string,
+    id: string,
+    expectedVersion: number,
+    retryKey: string,
+    deadline: WindowEndInput,
+  ): Promise<{ shipment: ShipmentView; outcome: 'republished' | 'already_republished' }> {
+    return this.asCaller(caller, organisationId, async (client, allowFixtures) => {
+      const done = await this.publicationCall(
+        client,
+        allowFixtures,
+        id,
+        'SELECT status, detail FROM trucker.republish_shipment($1, $2, $3, $4::jsonb, $5)',
+        [id, expectedVersion, retryKey, JSON.stringify(deadline), allowFixtures],
+      );
+      return {
+        shipment: done.shipment,
+        outcome: done.status === 'repeated' ? 'already_republished' : 'republished',
+      };
+    });
+  }
+
+  /** A new draft from a withdrawn or expired shipment. Sent again, it answers with the same draft. */
+  async copy(
+    caller: Caller,
+    organisationId: string,
+    id: string,
+    retryKey: string,
+  ): Promise<{ shipment: ShipmentView; outcome: 'copied' | 'already_copied' }> {
+    return this.asCaller(caller, organisationId, async (client, allowFixtures) => {
+      const result = await client.query<{
+        status: string;
+        draft_id: string | null;
+        detail: unknown;
+      }>('SELECT * FROM trucker.copy_shipment($1, $2)', [id, retryKey]);
+      const row = result.rows[0]!;
+      if (row.status === 'unauthorized') throw unauthorized();
+      if (row.status === 'not_found') throw notFound();
+      if (row.status === 'key_conflict') throw keyConflict();
+      if (row.status === 'limit')
+        throw new ApiError(
+          409,
+          'shipment_limit_reached',
+          'This organisation has as many open drafts as it may.',
+          {
+            limit: (row.detail as { limit: number }).limit,
+          },
+        );
+      if (row.status === 'not_copyable') {
+        const source = await this.read(client, id, allowFixtures);
+        throw refusedWith(
+          409,
+          'shipment_not_copyable',
+          'Only a withdrawn or expired shipment can be copied to a new draft.',
+          source!,
+        );
+      }
+      const made = await this.read(client, row.draft_id!, allowFixtures);
+      if (!made) throw notFound();
+      return { shipment: made, outcome: row.status === 'repeated' ? 'already_copied' : 'copied' };
+    });
+  }
+
+  /** Published versions, suspensions and the preview of what carriers would see. */
+  async publication(
+    caller: Caller,
+    organisationId: string,
+    id: string,
+  ): Promise<PublicationRecord> {
+    return this.asCaller(caller, organisationId, async (client, allowFixtures) => {
+      const shipment = await this.read(client, id, allowFixtures);
+      if (!shipment) throw notFound();
+      const versions = await client.query<{ version_no: number; kind: string; created_at: Date }>(
+        `SELECT version_no, kind, created_at FROM trucker.shipment_publication_version
+         WHERE shipment_id = $1 ORDER BY version_no DESC`,
+        [id],
+      );
+      const suspensions = await client.query<{
+        cause: 'verification' | 'route';
+        started_at: Date;
+        ended_at: Date | null;
+        ended_by: string | null;
+      }>(
+        `SELECT cause, started_at, ended_at, ended_by FROM trucker.shipment_suspension
+         WHERE shipment_id = $1 ORDER BY started_at DESC, cause`,
+        [id],
+      );
+      const preview = await client.query<{ view: Record<string, unknown> | null }>(
+        'SELECT trucker.shipment_carrier_view($1) AS view',
+        [id],
+      );
+      return {
+        versions: versions.rows.map((row) => ({
+          versionNo: row.version_no,
+          kind: row.kind,
+          createdAt: row.created_at.toISOString(),
+        })),
+        suspensions: suspensions.rows.map((row) => ({
+          cause: row.cause,
+          startedAt: row.started_at.toISOString(),
+          endedAt: row.ended_at ? row.ended_at.toISOString() : null,
+          endedBy: row.ended_by,
+        })),
+        carrierView: preview.rows[0]?.view ?? null,
       };
     });
   }
@@ -562,12 +962,14 @@ export class ShipmentService {
         id: string;
         occurred_at: Date;
         action: string;
-        actor_person_id: string;
+        actor_person_id: string | null;
+        by_staff: boolean;
         request_id: string | null;
         before_values: unknown;
         after_values: unknown;
       }>(
-        `SELECT id, occurred_at, action, actor_person_id, request_id, before_values, after_values
+        `SELECT id, occurred_at, action, actor_person_id, actor_staff_id IS NOT NULL AS by_staff,
+                request_id, before_values, after_values
          FROM trucker.audit_entry WHERE record_id = $1 AND record_type = 'shipment_draft'
          ORDER BY occurred_at, id`,
         [id],
@@ -577,6 +979,7 @@ export class ShipmentService {
         occurredAt: row.occurred_at.toISOString(),
         action: row.action,
         actorPersonId: row.actor_person_id,
+        byStaff: row.by_staff,
         requestId: row.request_id,
         before: row.before_values,
         after: row.after_values,

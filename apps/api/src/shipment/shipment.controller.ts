@@ -17,8 +17,11 @@ import { IdentityService } from '../identity/identity.service.js';
 import {
   ShipmentService,
   type Caller,
+  type CatalogueEntry,
   type HistoryEntry,
   type PlaceOption,
+  type PublicationInput,
+  type PublicationRecord,
   type ShipmentInput,
   type ShipmentSummary,
   type ShipmentView,
@@ -136,6 +139,33 @@ const createBody = z.object(contentFields);
 const updateBody = z.object({ ...contentFields, version: z.number().int().min(1) });
 const discardBody = z.object({ version: z.number().int().min(1) });
 
+/** A catalogue code: absent, empty or a code. Anything else is refused at the field. */
+const code = z
+  .union([z.string().regex(/^$|^[a-z][a-z0-9_]{1,39}$/), z.null()])
+  .optional()
+  .transform((value) => (value ? value : null));
+const publicationFields = {
+  cargoCategory: code,
+  equipmentType: code,
+  // Required to publish, so absent stays absent: the database names it.
+  dangerousGoods: z
+    .union([z.boolean(), z.null()])
+    .optional()
+    .transform((value) => value ?? null),
+  pickupArea: optionalText(120),
+  deliveryArea: optionalText(120),
+  quotationDeadline: windowEnd,
+};
+const publicationBody = z.object(publicationFields);
+const publishBody = z.object({ ...publicationFields, version: z.number().int().min(1) });
+const changeBody = z.object({
+  ...contentFields,
+  publication: publicationBody,
+  version: z.number().int().min(1),
+});
+const republishBody = z.object({ quotationDeadline: windowEnd, version: z.number().int().min(1) });
+const LIST_STATES = ['draft', 'discarded', 'published', 'withdrawn', 'expired', 'all'] as const;
+
 function parse<T>(schema: z.ZodType<T>, body: unknown): T {
   const result = schema.safeParse(body);
   if (result.success) return result.data;
@@ -174,8 +204,9 @@ const retryKey = (key: string | undefined): string => {
 };
 
 /**
- * Shipment drafts of one organisation. There is no route here that publishes a shipment,
- * asks for or gives a quotation, books or takes payment: none of that exists.
+ * Shipments of one organisation: drafts and their publication. There is no route here through
+ * which a carrier reads a shipment, asks for or gives a quotation, books or takes payment: none
+ * of that exists. What carriers would see is a preview for the shipper only.
  */
 @Controller('organisations/:organisationId')
 export class ShipmentController {
@@ -232,12 +263,12 @@ export class ShipmentController {
       new ApiError(422, 'validation_failed', 'Some fields are missing or not valid.', {
         fields: [field],
       });
-    if (wanted !== 'draft' && wanted !== 'discarded' && wanted !== 'all') throw invalid('status');
+    if (!(LIST_STATES as readonly string[]).includes(wanted)) throw invalid('status');
     if (after !== undefined && !UUID.test(after)) throw invalid('after');
     return this.shipments.list(
       caller,
       identifier(organisationId),
-      wanted,
+      wanted as (typeof LIST_STATES)[number],
       after?.toLowerCase() ?? null,
     );
   }
@@ -307,6 +338,127 @@ export class ShipmentController {
     const caller = await this.caller(request);
     return {
       entries: await this.shipments.history(caller, identifier(organisationId), identifier(id)),
+    };
+  }
+
+  @Get('shipment-catalogues')
+  async catalogues(
+    @Param('organisationId') organisationId: string,
+    @Req() request: IncomingRequest,
+  ): Promise<{ cargoCategories: CatalogueEntry[]; equipmentTypes: CatalogueEntry[] }> {
+    const caller = await this.caller(request);
+    return this.shipments.catalogues(caller, identifier(organisationId));
+  }
+
+  @Post('shipments/:id/publish')
+  @HttpCode(200)
+  async publish(
+    @Param('organisationId') organisationId: string,
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Headers('idempotency-key') key: string | undefined,
+    @Req() request: IncomingRequest,
+  ) {
+    const caller = await this.caller(request);
+    const { version, ...details } = parse(publishBody, body);
+    return this.shipments.publish(
+      caller,
+      identifier(organisationId),
+      identifier(id),
+      version,
+      retryKey(key),
+      details as PublicationInput,
+    );
+  }
+
+  @Post('shipments/:id/published-changes')
+  @HttpCode(200)
+  async change(
+    @Param('organisationId') organisationId: string,
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Headers('idempotency-key') key: string | undefined,
+    @Req() request: IncomingRequest,
+  ) {
+    const caller = await this.caller(request);
+    const { version, publication, ...input } = parse(changeBody, body);
+    return this.shipments.change(
+      caller,
+      identifier(organisationId),
+      identifier(id),
+      version,
+      retryKey(key),
+      input,
+      publication as PublicationInput,
+    );
+  }
+
+  @Post('shipments/:id/withdraw')
+  @HttpCode(200)
+  async withdraw(
+    @Param('organisationId') organisationId: string,
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Headers('idempotency-key') key: string | undefined,
+    @Req() request: IncomingRequest,
+  ) {
+    const caller = await this.caller(request);
+    const { version } = parse(discardBody, body);
+    return this.shipments.withdraw(
+      caller,
+      identifier(organisationId),
+      identifier(id),
+      version,
+      retryKey(key),
+    );
+  }
+
+  @Post('shipments/:id/republish')
+  @HttpCode(200)
+  async republish(
+    @Param('organisationId') organisationId: string,
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Headers('idempotency-key') key: string | undefined,
+    @Req() request: IncomingRequest,
+  ) {
+    const caller = await this.caller(request);
+    const { version, quotationDeadline } = parse(republishBody, body);
+    return this.shipments.republish(
+      caller,
+      identifier(organisationId),
+      identifier(id),
+      version,
+      retryKey(key),
+      quotationDeadline,
+    );
+  }
+
+  @Post('shipments/:id/copy')
+  @HttpCode(201)
+  async copy(
+    @Param('organisationId') organisationId: string,
+    @Param('id') id: string,
+    @Headers('idempotency-key') key: string | undefined,
+    @Req() request: IncomingRequest,
+  ) {
+    const caller = await this.caller(request);
+    return this.shipments.copy(caller, identifier(organisationId), identifier(id), retryKey(key));
+  }
+
+  @Get('shipments/:id/publication')
+  async publication(
+    @Param('organisationId') organisationId: string,
+    @Param('id') id: string,
+    @Req() request: IncomingRequest,
+  ): Promise<{ publication: PublicationRecord }> {
+    const caller = await this.caller(request);
+    return {
+      publication: await this.shipments.publication(
+        caller,
+        identifier(organisationId),
+        identifier(id),
+      ),
     };
   }
 }

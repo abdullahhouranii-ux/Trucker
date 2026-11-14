@@ -161,3 +161,11 @@ input[type='password'] {
 .page > .chip {
   align-self: flex-start;
 }
+.code-block {
+  margin: 0;
+  padding: var(--s-3);
+  font-family: var(--f-latin);
+  font-size: var(--t-sm);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

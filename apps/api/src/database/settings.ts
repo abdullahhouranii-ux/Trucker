@@ -16,6 +16,8 @@ export const SECURITY_SETTING_DEFAULTS = {
   shipment_open_draft_limit: 200,
   shipment_page_size: 20,
   retry_key_retention_hours: 24,
+  publication_lead_minutes: 120,
+  published_shipment_limit: 50,
   staff_session_idle_minutes: 15,
   staff_session_absolute_hours: 8,
   staff_failure_limit: 5,

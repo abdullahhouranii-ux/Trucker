@@ -52,6 +52,8 @@ No accessibility conformance is claimed for any page.
 | WD-15 | The declaration of authority is demonstration wording | Slice 9, verification page | To be replaced by approved legal text |
 | WD-16 | Console decision choices repeat the decision in each option ("Request changes: Details incomplete") | Slice 9, console application page | Clear but long |
 | WD-17 | The withdrawal form asks for an organisation identifier | Slice 9, console | Functional; a search by name would read better |
+| WD-18 | The console shows what carriers would see as raw data | Slice 10, console shipment page | Readable for staff, not presented |
+| WD-19 | A publication window is written "from – until" across lines at phone width | Slice 10, carrier preview | Clear but not elegant |
 
 ## 4. Translation corrections (Arabic and Urdu)
 
@@ -70,6 +72,8 @@ All Arabic and Urdu text in the repository is a draft written without a native r
 | TR-09 | All shipment messages (112 strings): the private-draft notice, route wording, conflict and "not confirmed" messages, time errors, field labels | Slice 7, `ship` | High: "not published", "not legal clearance", "not confirmed" and the clock-change messages carry meaning that must not shift |
 | TR-10 | All verification messages (86 strings) and five changed organisation messages: the demonstration notice, statuses, reasons, the declaration, "not confirmed" messages | Slice 9, `verify`, `org` | High: "demonstration only", "declared, not verified" and the declaration of authority carry meaning that must not shift |
 | TR-11 | Names of the fictional evidence requirements | Slice 9, `db/fixtures/local-development/countries.json` | Low: development data only |
+| TR-12 | All publication messages (104 strings) and two new shipment errors: statuses, suspension causes, the preview caution, "not confirmed" messages | Slice 10, `pub` | High: the anonymity caution and "no carrier can see it yet" must not shift |
+| TR-13 | Names of the fictional cargo categories and equipment types | Slice 10, fixtures | Low: development data only |
 
 ## 5. How this list is used
 
