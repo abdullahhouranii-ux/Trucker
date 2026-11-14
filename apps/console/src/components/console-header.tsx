@@ -2,6 +2,7 @@ import type { StaffAccount } from '../server/types.ts';
 
 export function ConsoleHeader({ staff, current }: { staff?: StaffAccount; current?: string }) {
   const admin = staff?.privileges.includes('staff_admin') ?? false;
+  const reviewer = staff?.privileges.includes('reviewer') ?? false;
   const link = (href: string, label: string) => (
     <li>
       <a href={href} aria-current={current === href ? 'page' : undefined}>
@@ -18,6 +19,8 @@ export function ConsoleHeader({ staff, current }: { staff?: StaffAccount; curren
         <nav aria-label="Console">
           <ul>
             {link('/', 'My account')}
+            {reviewer ? link('/verification', 'Verification') : null}
+            {admin ? link('/verification/withdraw', 'Withdraw a verification') : null}
             {admin ? link('/staff', 'Staff accounts') : null}
             {admin ? link('/audit', 'Audit') : null}
           </ul>

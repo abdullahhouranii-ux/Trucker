@@ -57,6 +57,15 @@ Staff accounts are separate from participant accounts and neither opens the othe
   prints a single-use enrolment link. It refuses when an administrator exists and never resets one.
 - It needs the `pgcrypto` extension, which ships with PostgreSQL; the migration creates it.
 
+## Organisation verification
+
+An organisation's administrator submits it for verification with evidence entries; a reviewer
+decides in the staff console (docs/delivery/ORGANISATION_VERIFICATION_SLICE_9.md). This is
+demonstration only: the evidence requirements are fictional, exist only for the fictional
+countries loaded by `npm run dev:fixtures`, and no document is uploaded or checked. A
+verification given on them never allows publication in a production database. Open security
+work is listed in docs/delivery/SECURITY_BACKLOG.md.
+
 ## Product reference
 
 The intended product context is the TruckLink Plan B freight platform: shipper,

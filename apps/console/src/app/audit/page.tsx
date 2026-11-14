@@ -22,6 +22,10 @@ const ACTIONS: Record<string, string> = {
   'staff.participant_link': 'Participant-account declaration recorded',
   'staff.list': 'Staff accounts viewed',
   'staff.audit_list': 'Audit list viewed',
+  'staff.verification_queue': 'Verification queue viewed',
+  'staff.verification_view': 'Application viewed',
+  'staff.verification_decide': 'Decision on an application',
+  'staff.verification_revoke': 'Verification withdrawn',
 };
 
 const detail = (entry: AuditEntry): string =>

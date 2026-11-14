@@ -252,3 +252,75 @@ export async function setParticipantLinkAction(form: FormData): Promise<void> {
     'declared',
   );
 }
+
+// ---------------------------------------------------------------------------------------------
+// Organisation verification
+// ---------------------------------------------------------------------------------------------
+const REVIEW_REFUSALS = [
+  'staff_privilege_required',
+  'reviewer_not_independent',
+  'different_person_required',
+  'application_changed',
+  'application_not_open',
+  'organisation_not_verified',
+  'validation_failed',
+  'not_found',
+];
+const reviewRefusal = (reply: Extract<ApiReply<unknown>, { ok: false }>): string => {
+  if (unknown(reply)) return 'unconfirmed';
+  if (reply.code === 'reviewer_not_independent') {
+    const reason = reply.details.reason;
+    return typeof reason === 'string' && /^[a-z_]{1,40}$/.test(reason) ? reason : 'connected';
+  }
+  return REVIEW_REFUSALS.includes(reply.code) ? reply.code : 'refused';
+};
+
+export async function decideVerificationAction(form: FormData): Promise<void> {
+  const token = await signedIn();
+  const id = text(form, 'applicationId');
+  if (!UUID.test(id)) redirect('/verification?error=not_found');
+  // One choice carries the decision and its reason, so the two always belong together.
+  const [decision = '', reason = ''] = text(form, 'decision').split(':');
+  if (!decision || !reason) redirect(`/verification/${id}?error=decision_missing`);
+  const note = text(form, 'note').trim();
+  const reply = await api<{ outcome: 'decided' | 'already_decided' | 'claim_review' }>(
+    'POST',
+    `/staff/verification/${id}/decision`,
+    {
+      token,
+      body: {
+        version: Number(text(form, 'version')),
+        decision,
+        reason,
+        note: note === '' ? null : note,
+        noConflict: text(form, 'noConflict') === 'yes',
+      },
+    },
+  );
+  if (reply.ok) redirect(`/verification/${id}?done=${reply.data.outcome}`);
+  if (reply.status === 401) await sessionEnded();
+  redirect(`/verification/${id}?error=${reviewRefusal(reply)}`);
+}
+
+export async function revokeVerificationAction(form: FormData): Promise<void> {
+  const token = await signedIn();
+  const id = text(form, 'organisationId').trim();
+  const back = `/verification/withdraw?organisation=${UUID.test(id) ? id : ''}`;
+  if (!UUID.test(id)) redirect(`${back}&error=not_found`);
+  const note = text(form, 'note').trim();
+  const reply = await api<{ outcome: 'revoked' | 'already_revoked' }>(
+    'POST',
+    `/staff/verification/organisations/${id}/revoke`,
+    {
+      token,
+      body: {
+        reason: text(form, 'reason'),
+        note: note === '' ? null : note,
+        noConflict: text(form, 'noConflict') === 'yes',
+      },
+    },
+  );
+  if (reply.ok) redirect(`${back}&done=${reply.data.outcome}`);
+  if (reply.status === 401) await sessionEnded();
+  redirect(`${back}&error=${reviewRefusal(reply)}`);
+}

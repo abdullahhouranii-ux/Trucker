@@ -167,3 +167,58 @@ export interface ShipmentSummary {
 export interface PlaceOption extends Country {
   timeZones: string[];
 }
+
+/** One evidence entry: what the applicant typed. No file is held and nothing is verified. */
+export interface EvidenceEntry {
+  documentType: string;
+  documentNumber: string;
+  issuingCountry: string;
+  issuedOn: string | null;
+  expiresOn: string | null;
+}
+export interface VerificationRequirement {
+  documentType: string;
+  name: { en: string; ar: string; ur: string };
+  required: boolean;
+}
+export type ApplicationStatus =
+  'submitted' | 'claim_review' | 'withdrawn' | 'verified' | 'changes_requested' | 'rejected';
+export interface VerificationApplication {
+  id: string;
+  versionNo: number;
+  kind: 'initial' | 'amendment';
+  status: ApplicationStatus;
+  legalName: string;
+  countryCode: string;
+  registrationNumber: string;
+  submittedAt: string;
+  withdrawnAt: string | null;
+  decidedAt: string | null;
+  decisionReason: string | null;
+  decisionNote: string | null;
+  evidenceKind: 'declared_demonstration';
+  evidence: EvidenceEntry[];
+}
+export interface VerificationOverview {
+  organisation: {
+    id: string;
+    status: string;
+    version: number;
+    legalName: string;
+    countryCode: string;
+    registrationNumber: string;
+  };
+  requirements: VerificationRequirement[];
+  /** Newest first. */
+  applications: VerificationApplication[];
+  capability: {
+    status: 'granted' | 'revoked';
+    basis: 'demonstration';
+    grantedAt: string;
+    revokedAt: string | null;
+    revokeReason: string | null;
+    revokeNote: string | null;
+  } | null;
+  maySubmit: 'initial' | 'amendment' | null;
+  mayPublish: boolean;
+}

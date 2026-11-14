@@ -67,6 +67,14 @@ export default async function OrganisationPage({ params, searchParams }: Props) 
   }
   const organisation = one.data.organisation;
   const draft = organisation.status === 'draft';
+  const verified = organisation.status === 'verified';
+  // Under review nothing can be changed; a verified identity changes only by amendment.
+  const editable = ['draft', 'changes_requested', 'rejected', 'verification_withdrawn'].includes(
+    organisation.status,
+  );
+  const statusText = draft
+    ? t.statusDraft
+    : (m.verify.status[organisation.status as keyof typeof m.verify.status] ?? organisation.status);
   const open = countries?.ok ? countries.data.countries : [];
   // The organisation's own country stays selectable even if it has since closed.
   const choices = open.some((country) => country.code === organisation.countryCode)
@@ -115,12 +123,21 @@ export default async function OrganisationPage({ params, searchParams }: Props) 
         >
           {t.shipmentsLink}
         </a>
+        <a
+          className="button"
+          id="open-verification"
+          href={`/${locale}/organisations/${organisation.id}/verification`}
+        >
+          {m.verify.link}
+        </a>
       </div>
       <div className="notice" role="note" id="organisation-status">
         <h2>
-          {t.statusLabel}: {draft ? t.statusDraft : t.statusOther}
+          {t.statusLabel}: {statusText}
         </h2>
         {draft ? <p>{t.draftNotice}</p> : null}
+        {verified ? <p>{t.verifiedNotice}</p> : null}
+        {!editable && !verified ? <p>{t.lockedNotice}</p> : null}
       </div>
       <section className="section" aria-labelledby="details-title">
         <h2 id="details-title">{t.detailsTitle}</h2>
@@ -155,17 +172,19 @@ export default async function OrganisationPage({ params, searchParams }: Props) 
             <dt>{t.contactName}</dt>
             <dd>{organisation.contactName ? <bdi>{organisation.contactName}</bdi> : t.notGiven}</dd>
           </div>
-          <div>
-            <dt>{t.capabilityLabel}</dt>
-            <dd>{t.capabilityShip}</dd>
-          </div>
+          {verified ? null : (
+            <div>
+              <dt>{t.capabilityLabel}</dt>
+              <dd>{t.capabilityShip}</dd>
+            </div>
+          )}
           <div>
             <dt>{t.role}</dt>
             <dd>{t.roleAdmin}</dd>
           </div>
         </dl>
       </section>
-      {draft ? (
+      {editable || verified ? (
         <section className="section" aria-labelledby="edit-title">
           <h2 id="edit-title">{t.editTitle}</h2>
           <form className="form card" id={formId} action={updateOrganisationAction} noValidate>
@@ -186,7 +205,7 @@ export default async function OrganisationPage({ params, searchParams }: Props) 
         </section>
       ) : null}
       <DraftKeeper formId="organisation-new-form" clear />
-      {draft ? (
+      {editable || verified ? (
         <DraftKeeper
           key={`${organisation.version}-${dropDraft}`}
           formId={formId}

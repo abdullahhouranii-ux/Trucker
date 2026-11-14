@@ -1230,3 +1230,71 @@ test('the audit list is read by administrators only, in pages, and cannot be cha
     await refused(() => app.query(statement), /permission denied/i);
   }
 });
+
+// ---------------------------------------------------------------------------------------------
+// SEC-01 (docs/delivery/SECURITY_BACKLOG.md): an open defect. This is its acceptance test.
+// It is marked "todo" so that it runs and is reported without failing the suite; the fix
+// removes the mark. Today an administrator is left only by accident: PostgreSQL's deadlock
+// detector aborts one of the two requests, which answers 500. Nothing in the design enforces
+// it. The test asks for what the design must guarantee: one removal succeeds, the other is
+// refused cleanly, and an administrator remains.
+// It is the last test in this file because it changes who the administrators are.
+// ---------------------------------------------------------------------------------------------
+test(
+  'SEC-01: two administrators removing each other at the same moment leave an administrator',
+  { todo: 'open security defect SEC-01: the invariant holds only through a deadlock abort (500)' },
+  async () => {
+    const first = await newStaff(['staff_admin']);
+    const second = await newStaff(['staff_admin']);
+    first.token = await signIn(first);
+    second.token = await signIn(second);
+    // Everyone else stops being an administrator first, so that these two are the only ones.
+    await owner.query(
+      `DELETE FROM trucker.staff_privilege WHERE privilege = 'staff_admin' AND staff_id NOT IN ($1, $2)`,
+      [first.id, second.id],
+    );
+    const remove = (as: Staff, target: Staff): Promise<Reply> =>
+      call('POST', `/staff/accounts/${target.id}/privileges`, {
+        token: as.token,
+        body: { privilege: 'staff_admin', granted: false },
+      });
+    // Both requests pass their checks, then both wait here, at the point of removing.
+    const holder = await owner.connect();
+    let replies: Reply[];
+    try {
+      await holder.query('BEGIN');
+      await holder.query('LOCK TABLE trucker.staff_privilege IN SHARE MODE');
+      const both = Promise.all([remove(first, second), remove(second, first)]);
+      for (let attempt = 0; ; attempt += 1) {
+        const waiting = await owner.query<{ n: number }>(
+          `SELECT count(*)::int AS n FROM pg_locks l JOIN pg_stat_activity a ON a.pid = l.pid
+           WHERE NOT l.granted AND a.datname = current_database()`,
+        );
+        if (waiting.rows[0]!.n >= 2) break;
+        if (attempt > 400) throw new Error('the two removals did not both start waiting');
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      await holder.query('COMMIT');
+      replies = await both;
+    } finally {
+      await holder.query('ROLLBACK').catch(() => undefined);
+      holder.release();
+    }
+    const left = await count(
+      'staff_privilege p JOIN trucker.staff_account a ON a.id = p.staff_id',
+      `p.privilege = 'staff_admin' AND a.status = 'active'`,
+    );
+    const answers = replies.map((r) => `${r.status} ${String(r.body.outcome ?? r.body.code)}`);
+    assert.ok(left >= 1, `no administrator is left (${answers.join(' and ')})`);
+    // One removal succeeds. The other is refused on purpose, not aborted by the database.
+    assert.equal(replies.filter((reply) => reply.body.outcome === 'changed').length, 1);
+    assert.ok(
+      replies.every((reply) => reply.status < 500),
+      `a request failed instead of being refused (${answers.join(' and ')})`,
+    );
+    assert.ok(
+      replies.some((reply) => reply.status === 409),
+      answers.join(' and '),
+    );
+  },
+);

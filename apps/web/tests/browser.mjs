@@ -5,7 +5,7 @@
 // What these checks do not cover is listed in docs/delivery/WEB_FOUNDATION_SLICE_3.md.
 import { Buffer } from 'node:buffer';
 import { spawn } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import http from 'node:http';
 import { createRequire } from 'node:module';
@@ -44,6 +44,8 @@ const REVOCATIONS = [
   ['POST', /^\/organisations\/[^/]+\/shipments$/],
   ['PATCH', /^\/organisations\/[^/]+\/shipments\/[^/]+$/],
   ['POST', /^\/organisations\/[^/]+\/shipments\/[^/]+\/discard$/],
+  // Submitting an application for verification.
+  ['POST', /^\/organisations\/[^/]+\/verification\/applications$/],
 ];
 function startRelay() {
   const server = http.createServer((request, response) => {
@@ -640,8 +642,9 @@ async function main() {
     mkdirSync(outDir, { recursive: true });
     // At most five pictures, for design review only.
     const shots = {
-      'ur:shipment overwrite': 'shipment-overwrite-ur-390',
-      'ar:shipment overwrite': 'shipment-overwrite-ar-390',
+      'ur:verification form': 'verification-form-ur-390',
+      'ar:verification changes requested': 'verification-changes-requested-ar-390',
+      'en:verification verified': 'verification-verified-en-390',
     };
     // Fictional numbers: country code 999 is not assigned. Unique per run.
     const stamp = String(Date.now()).slice(-7);
@@ -1909,6 +1912,313 @@ async function main() {
       `after a lost discard the page is ${page.url()}, a second discard answered ${again.status}`,
     );
     relay.lost.length = 0;
+    await open('/ur/account', 390);
+
+    // ------------------------------------------------------------------------------------
+    // Organisation verification: submit, lose an answer, withdraw, correct, amend
+    // ------------------------------------------------------------------------------------
+    // The applicant's side is driven in the browser. Staff decide through the staff API with a
+    // test staff account and session put in place by the migration role; the console's own
+    // checks drive the staff screens.
+    const verifyOrg = (
+      await (
+        await fetch(`${apiOrigin}/organisations`, {
+          method: 'POST',
+          headers: {
+            authorization: `Bearer ${urToken}`,
+            'content-type': 'application/json',
+            'idempotency-key': `verify-${stamp}-organisation`,
+          },
+          body: JSON.stringify({
+            legalName: 'Verification Fixture Company (fictional)',
+            countryCode: 'XA',
+            registrationNumber: `VER-${stamp}`,
+          }),
+        })
+      ).json()
+    ).organisation.id;
+    const reviewerToken = `${randomBytes(16).toString('hex')}.${randomBytes(16).toString('hex')}`;
+    const reviewerId = (
+      await owner.query(
+        `INSERT INTO trucker.staff_account
+           (email, display_name, status, enrolled_at, password_hash, totp_secret, participant_link,
+            created_at, updated_at)
+         VALUES ($1, 'Browser Test Reviewer', 'active', now(), 'not-a-real-hash', '\\x00',
+                 'declared_none', now(), now())
+         RETURNING id`,
+        [`reviewer-${stamp}@example.test`],
+      )
+    ).rows[0].id;
+    await owner.query(
+      `INSERT INTO trucker.staff_privilege (staff_id, privilege, granted_by, granted_at)
+       VALUES ($1, 'reviewer', NULL, now())`,
+      [reviewerId],
+    );
+    await owner.query(
+      `INSERT INTO trucker.staff_session (id, staff_id, token_hash, created_at, last_used_at, absolute_expires_at)
+       VALUES (gen_random_uuid(), $1, $2, now(), now(), now() + interval '1 hour')`,
+      [reviewerId, createHash('sha256').update(reviewerToken).digest('hex')],
+    );
+    const overviewOf = async () =>
+      (await urApi(`/organisations/${verifyOrg}/verification`)).body.verification;
+    const decideAs = async (decision, reason, note = null) => {
+      const overview = await overviewOf();
+      const response = await fetch(
+        `${apiOrigin}/staff/verification/${overview.applications[0].id}/decision`,
+        {
+          method: 'POST',
+          headers: {
+            authorization: `Bearer ${reviewerToken}`,
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({ version: 1, decision, reason, note, noConflict: true }),
+        },
+      );
+      return { status: response.status, body: await response.json() };
+    };
+    const verifyPath = (locale) => `/${locale}/organisations/${verifyOrg}/verification`;
+    const statusOf = () =>
+      page.evaluate(() => document.querySelector('#verification-status')?.dataset.status ?? null);
+    const versionsShown = () =>
+      page.evaluate(() => document.querySelectorAll('#versions > li').length);
+    const everyLocale = async (state) => {
+      for (const locale of locales) {
+        await open(verifyPath(locale), 390);
+        await inspect(locale, state);
+      }
+    };
+    const urVerify = messagesFor('ur').verify;
+
+    // From the organisation's page to its verification page.
+    await open(`/ur/organisations/${verifyOrg}`, 390);
+    await submit('#open-verification');
+    check(
+      'verification',
+      page.url() === `${origin}${verifyPath('ur')}` &&
+        (await statusOf()) === 'draft' &&
+        ((await text('#demonstration-notice')) ?? '') === urVerify.demoNotice &&
+        ((await text('#publication-check')) ?? '').includes(urVerify.publishNo) &&
+        (await page.evaluate(() => document.querySelectorAll('fieldset[id^=ev-]').length)) === 3,
+      `the verification page is ${page.url()} with status ${await statusOf()}`,
+    );
+    await everyLocale('verification form');
+
+    // Nothing typed: refused by field, and the summary links to the first field.
+    await open(verifyPath('ur'), 390);
+    await submit('#submit-verification');
+    const summaryLinks = await page.evaluate(() =>
+      [...document.querySelectorAll('#error-summary a')].map((a) => a.getAttribute('href')),
+    );
+    check(
+      'verification',
+      (await focusedId()) === 'error-summary' &&
+        summaryLinks.includes('#ev-registration_certificate-documentNumber') &&
+        summaryLinks.includes('#ev-transport_licence-documentNumber') &&
+        summaryLinks.includes('#declaration') &&
+        !summaryLinks.some((href) => href.includes('tax_certificate')) &&
+        (await overviewOf()).applications.length === 0,
+      `an empty submission answered with links ${summaryLinks}`,
+    );
+    await inspect('ur', 'verification errors');
+
+    // Filled in and sent; the server submits it and the answer is lost. The page does not say
+    // it was done, and what it shows afterwards is the server's state: one version, submitted.
+    await page.type('#ev-registration_certificate-documentNumber', 'REG-0001');
+    await page.type('#ev-transport_licence-documentNumber', 'LIC-0002');
+    await page.$eval('#ev-registration_certificate-issuedOn', (input) => {
+      input.value = '2025-01-15';
+      input.dispatchEvent(new window.Event('input', { bubbles: true }));
+    });
+    await page.click('#declaration');
+    relay.lost.length = 0;
+    relay.mode = 'lose';
+    await submit('#submit-verification');
+    check(
+      'lost answer',
+      relay.lost[0] === `POST /organisations/${verifyOrg}/verification/applications -> 201` &&
+        page.url().includes('error=submit_unconfirmed') &&
+        (await text('#verification-confirmation')) === null &&
+        (await page.evaluate(() =>
+          document.querySelector('[data-state=verification-unavailable]'),
+        )) !== null,
+      `a lost submission answer led to ${page.url()}: ${relay.lost}`,
+    );
+    relay.mode = 'pass';
+    relay.lost.length = 0;
+    await submit('#retry-verification');
+    // The page keeps no claim of its own: what it shows now is the server's state.
+    check(
+      'lost answer',
+      (await statusOf()) === 'submitted' &&
+        (await versionsShown()) === 1 &&
+        (await text('#verification-confirmation')) === null &&
+        (await page.evaluate(() => document.querySelector('#submit-verification'))) === null &&
+        (await overviewOf()).applications.length === 1,
+      `after a lost submission the page shows ${await statusOf()} with ${await versionsShown()} versions`,
+    );
+    await everyLocale('verification submitted');
+    // Under review the organisation's details cannot be changed.
+    await open(`/ur/organisations/${verifyOrg}`, 390);
+    check(
+      'verification',
+      (await page.evaluate(() => document.querySelector('form[id^=organisation-form]'))) === null &&
+        ((await text('#organisation-status')) ?? '').includes(urVerify.status.submitted) &&
+        ((await text('#organisation-status')) ?? '').includes(urOrg.lockedNotice),
+      'an organisation under review still offers its edit form',
+    );
+
+    // Withdrawn: back to a draft, the withdrawn version kept. Then submitted again.
+    await open(verifyPath('ur'), 390);
+    await submit('#withdraw-application');
+    check(
+      'verification',
+      page.url().includes('done=withdrawn') &&
+        (await statusOf()) === 'draft' &&
+        (await versionsShown()) === 1 &&
+        ((await text('#versions .chip')) ?? '') === urVerify.status.withdrawn,
+      `withdrawing led to ${page.url()} with status ${await statusOf()}`,
+    );
+    // What the withdrawn version said is offered again, so nothing is retyped.
+    check(
+      'verification',
+      (await page.$eval('#ev-registration_certificate-documentNumber', (i) => i.value)) ===
+        'REG-0001' &&
+        (await page.$eval('#ev-registration_certificate-issuedOn', (i) => i.value)) ===
+          '2025-01-15',
+      'the earlier entries are not offered again',
+    );
+    await page.click('#declaration');
+    await submit('#submit-verification');
+    check(
+      'verification',
+      page.url().includes('done=submitted') &&
+        ((await text('#verification-confirmation')) ?? '') === urVerify.doneSubmitted &&
+        (await versionsShown()) === 2,
+      `submitting again led to ${page.url()}`,
+    );
+
+    // Staff ask for changes, with a note. The applicant sees the reason and the note, in each
+    // language, and nothing about who decided.
+    const asked = await decideAs(
+      'changes_requested',
+      'other',
+      'The licence number looks incomplete.',
+    );
+    check('verification', asked.status === 200, `the decision answered ${asked.status}`);
+    await everyLocale('verification changes requested');
+    await open(verifyPath('ar'), 390);
+    const arVerify = messagesFor('ar').verify;
+    check(
+      'verification',
+      (await statusOf()) === 'changes_requested' &&
+        ((await text('#decision')) ?? '').includes(arVerify.reasons.other) &&
+        ((await text('#decision')) ?? '').includes('The licence number looks incomplete.') &&
+        !(await page.content()).includes(reviewerId) &&
+        !(await page.content()).includes(`reviewer-${stamp}`),
+      'the applicant is not shown the reason and note, or is shown who decided',
+    );
+    // Corrected and sent as a new version; the earlier ones stay as they were.
+    await page.$eval('#ev-transport_licence-documentNumber', (input) => (input.value = ''));
+    await page.type('#ev-transport_licence-documentNumber', 'LIC-0002-FULL');
+    await page.click('#declaration');
+    await submit('#submit-verification');
+    const afterCorrection = await overviewOf();
+    check(
+      'verification',
+      afterCorrection.applications.map((item) => `${item.versionNo}:${item.status}`).join() ===
+        '3:submitted,2:changes_requested,1:withdrawn' &&
+        afterCorrection.applications[0].evidence.some(
+          (entry) => entry.documentNumber === 'LIC-0002-FULL',
+        ) &&
+        afterCorrection.applications[1].evidence.some(
+          (entry) => entry.documentNumber === 'LIC-0002',
+        ),
+      `after the correction the versions are ${JSON.stringify(afterCorrection.applications.map((item) => [item.versionNo, item.status]))}`,
+    );
+
+    // Verified. The page says on what basis, and offers only an amendment.
+    const accepted = await decideAs('verified', 'evidence_accepted');
+    check('verification', accepted.body.outcome === 'decided', JSON.stringify(accepted.body));
+    await everyLocale('verification verified');
+    await open(verifyPath('en'), 390);
+    const enVerify = messagesFor('en').verify;
+    check(
+      'verification',
+      (await statusOf()) === 'verified' &&
+        ((await text('#verification-status h3')) ?? '') === enVerify.status.verified &&
+        ((await text('#publication-check')) ?? '').includes(enVerify.publishYes) &&
+        (await page.$eval('#proposedLegalName', (input) => input.value)) ===
+          'Verification Fixture Company (fictional)',
+      `a verified organisation's page shows ${await statusOf()}`,
+    );
+    // An amendment that changes nothing is refused at the field.
+    await page.click('#declaration');
+    await submit('#submit-verification');
+    check(
+      'verification',
+      (await page.evaluate(() =>
+        document.querySelector('#error-summary a')?.getAttribute('href'),
+      )) === '#proposedLegalName' &&
+        ((await text('#error-summary')) ?? '').includes(enVerify.errors.nothing_changed),
+      'an amendment that changes nothing was not refused at the field',
+    );
+    // The verified identity cannot be changed on the organisation's own page; the rest can.
+    await open(`/en/organisations/${verifyOrg}`, 390);
+    await page.$eval('#legalName', (input) => (input.value = ''));
+    await page.type('#legalName', 'Quietly Renamed (fictional)');
+    await submit('form[id^=organisation-form] button[type=submit]');
+    const enOrg = messagesFor('en').org;
+    check(
+      'verification',
+      ((await text('#error-summary')) ?? '').includes(enOrg.errors.identity_needs_review) &&
+        (await overviewOf()).organisation.legalName === 'Verification Fixture Company (fictional)',
+      'a verified legal name was changed without a review',
+    );
+    await inspect('en', 'verified organisation');
+    // Proposed properly: under review, and the approved identity stays in force meanwhile.
+    await open(verifyPath('en'), 390);
+    await page.$eval('#proposedLegalName', (input) => (input.value = ''));
+    await page.type('#proposedLegalName', 'Verification Fixture Renamed (fictional)');
+    await page.click('#declaration');
+    await submit('#submit-verification');
+    const amending = await overviewOf();
+    check(
+      'verification',
+      page.url().includes('done=submitted') &&
+        amending.organisation.status === 'verified' &&
+        amending.organisation.legalName === 'Verification Fixture Company (fictional)' &&
+        amending.applications[0].kind === 'amendment' &&
+        amending.mayPublish === true &&
+        ((await text('#verification-status')) ?? '').includes(enVerify.next.amendment),
+      `after proposing an amendment the organisation is ${amending.organisation.status} named ${amending.organisation.legalName}`,
+    );
+    await inspect('en', 'verification amendment');
+
+    // Another person's organisation answers exactly like one that does not exist.
+    const theirVerification = await open(
+      `/ur/organisations/${people.en.organisationId}/verification`,
+      390,
+    );
+    const noVerification = await open(
+      '/ur/organisations/00000000-0000-4000-8000-000000000000/verification',
+      390,
+    );
+    check(
+      'verification',
+      theirVerification.status() === 404 && noVerification.status() === 404,
+      `another person's verification page answered ${theirVerification.status()}, a missing one ${noVerification.status()}`,
+    );
+    // With no answer from the API the page says so and claims nothing.
+    relay.mode = 'down';
+    await open(verifyPath('ur'), 390);
+    check(
+      'verification',
+      (await page.evaluate(() =>
+        document.querySelector('[data-state=verification-unavailable]'),
+      )) !== null && ((await text('#error-summary')) ?? '').includes(urVerify.errors.unavailable),
+      'with the API unreachable the verification page claims something',
+    );
+    relay.mode = 'pass';
     await open('/ur/account', 390);
 
     // ------------------------------------------------------------------------------------

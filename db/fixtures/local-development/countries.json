@@ -78,5 +78,51 @@
       "state": "closed",
       "transit": []
     }
+  ],
+  "evidenceRequirements": [
+    {
+      "country": "XA",
+      "capability": "ship",
+      "documentType": "registration_certificate",
+      "required": true,
+      "name": {
+        "en": "Company registration certificate (fictional)",
+        "ar": "شهادة تسجيل الشركة (وهمية)",
+        "ur": "کمپنی رجسٹریشن سرٹیفکیٹ (فرضی)"
+      }
+    },
+    {
+      "country": "XA",
+      "capability": "ship",
+      "documentType": "transport_licence",
+      "required": true,
+      "name": {
+        "en": "Licence to consign goods (fictional)",
+        "ar": "ترخيص إرسال البضائع (وهمي)",
+        "ur": "سامان بھیجنے کا لائسنس (فرضی)"
+      }
+    },
+    {
+      "country": "XA",
+      "capability": "ship",
+      "documentType": "tax_certificate",
+      "required": false,
+      "name": {
+        "en": "Tax registration certificate (fictional)",
+        "ar": "شهادة التسجيل الضريبي (وهمية)",
+        "ur": "ٹیکس رجسٹریشن سرٹیفکیٹ (فرضی)"
+      }
+    },
+    {
+      "country": "XB",
+      "capability": "ship",
+      "documentType": "registration_certificate",
+      "required": true,
+      "name": {
+        "en": "Company registration certificate (fictional)",
+        "ar": "شهادة تسجيل الشركة (وهمية)",
+        "ur": "کمپنی رجسٹریشن سرٹیفکیٹ (فرضی)"
+      }
+    }
   ]
 }
