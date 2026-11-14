@@ -317,7 +317,7 @@
     "retry": "Try again",
     "conflictTitle": "This draft was changed while you were working on it",
     "conflictLead": "Nothing of yours was saved, and nothing of yours was lost: what you typed is still in the form below. The draft as it is saved now is shown under Details.",
-    "conflictKeep": "To save your version over the saved one, check the form and save again. Every field of the form is saved, also the ones you did not change.",
+    "conflictKeep": "To keep your version, check the form and choose “Save my version over the saved draft”. That replaces every field of the saved draft with what the form holds, including fields you did not change. If the draft is changed again before you do, nothing is saved and you are asked again.",
     "conflictDrop": "Drop my changes and show the saved draft",
     "kilograms": "kg",
     "errors": {
@@ -345,7 +345,9 @@
       "retry_key_conflict": "An earlier attempt may already have been saved. Check the draft before saving again.",
       "shipment_not_found": "That draft was not found.",
       "organisation_access_closed": "Organisation data is closed in this environment.",
-      "shipment_unavailable": "The service did not answer, so this cannot be shown. Try again."
-    }
+      "shipment_unavailable": "The service did not answer, so this cannot be shown. Try again.",
+      "overwrite_not_chosen": "Your changes were typed against an earlier version of this draft, so they were not saved. Choose whether to save your version over the saved draft."
+    },
+    "overwrite": "Save my version over the saved draft"
   }
 }
