@@ -60,4 +60,6 @@ That outcome is an accident, not a rule. Writing the audit entry makes each requ
 | Exceptional recovery of a sole staff administrator | Not built; needs separate explicit authorisation |
 | Message supplier for participant sign-in codes | Not chosen; production sign-in is closed |
 | Approved legal terms | Do not exist; production registration is closed |
-| Real evidence requirements, document storage and document checking | Do not exist; verification is demonstration only and never allows production publication |
+| Real evidence requirements, document storage and document checking | Do not exist; verification is demonstration only and never allows production publication or discovery |
+| Retention of the carrier access log (`carrier_access_log`) | **Unresolved production requirement.** The log is append-only and staff-only; how long entries are kept, and how they are removed after that, is not decided. Nothing removes them now |
+| Discovery page size, read limit and cursor lifetime | Development defaults (20, 120 per minute, 2 hours); need production review with the other settings |

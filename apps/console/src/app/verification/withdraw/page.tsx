@@ -7,8 +7,8 @@ type Props = { searchParams: Promise<Record<string, string | string[] | undefine
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DONE: Record<string, string> = {
   revoked:
-    'The verification was withdrawn and the capability revoked in the same step. The server confirmed it.',
-  already_revoked: 'You had already withdrawn this verification. Nothing was recorded twice.',
+    'The capability was withdrawn. The other capability, if the organisation holds one, is unchanged. The server confirmed it.',
+  already_revoked: 'You had already withdrawn this capability. Nothing was recorded twice.',
 };
 
 export default async function WithdrawPage({ searchParams }: Props) {
@@ -33,6 +33,10 @@ export default async function WithdrawPage({ searchParams }: Props) {
       ? (REVIEW_ERRORS[search.error] ?? REVIEW_ERRORS.refused)
       : null;
   const done = typeof search.done === 'string' ? DONE[search.done] : undefined;
+  const capability =
+    search.capability === 'ship' || search.capability === 'carry_as_company'
+      ? search.capability
+      : '';
   const admin = found.staff.privileges.includes('staff_admin');
   return (
     <>
@@ -41,10 +45,11 @@ export default async function WithdrawPage({ searchParams }: Props) {
         <div className="page page-narrow">
           <h1>Withdraw a verification</h1>
           <p>
-            For a verification given by mistake. The organisation stops being verified and its
-            capability is revoked in the same step, so new commercial actions are blocked from that
-            moment. Its history is kept and its existing work is not cancelled. The staff member who
-            gave the verification cannot withdraw it.
+            For a capability given by mistake. Each capability is withdrawn on its own: the shipper
+            or the carrier capability, never both at once. New commercial actions under it are
+            blocked from that moment; its history is kept and existing work is not cancelled. The
+            organisation stops being verified only when it holds no capability any more. The staff
+            member who gave the capability cannot withdraw it.
           </p>
           {error ? (
             <div className="notice notice-error" role="alert" id="review-error" tabIndex={-1}>
@@ -82,6 +87,14 @@ export default async function WithdrawPage({ searchParams }: Props) {
                 />
               </div>
               <div className="field">
+                <label htmlFor="capability">Capability</label>
+                <select id="capability" name="capability" required defaultValue={capability}>
+                  <option value="">Choose</option>
+                  <option value="ship">Shipper</option>
+                  <option value="carry_as_company">Carrier</option>
+                </select>
+              </div>
+              <div className="field">
                 <label htmlFor="reason">Reason</label>
                 <select id="reason" name="reason" required defaultValue="">
                   <option value="">Choose</option>
@@ -113,7 +126,7 @@ export default async function WithdrawPage({ searchParams }: Props) {
                 </label>
               </div>
               <button className="button button-primary" type="submit" id="withdraw-verification">
-                Withdraw the verification
+                Withdraw the capability
               </button>
             </form>
           )}

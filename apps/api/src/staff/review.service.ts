@@ -17,11 +17,13 @@ export interface QueueEntry {
   readonly applicationId: string;
   readonly organisationId: string;
   readonly versionNo: number;
-  readonly kind: 'initial' | 'amendment';
+  readonly kind: 'initial' | 'capability' | 'amendment';
   readonly status: 'submitted' | 'claim_review';
   readonly legalName: string;
   readonly countryCode: string;
   readonly submittedAt: string;
+  readonly capability: 'ship' | 'carry_as_company';
+  readonly revalidates: ('ship' | 'carry_as_company')[] | null;
 }
 export type Decision = 'verified' | 'changes_requested' | 'rejected';
 
@@ -87,6 +89,8 @@ export class ReviewService {
       legal_name: string;
       country_code: string;
       submitted_at: Date;
+      capability: QueueEntry['capability'];
+      revalidates: QueueEntry['revalidates'];
     }>('SELECT * FROM trucker.staff_verification_queue($1)', [caller.tokenHash]);
     return result.rows.map((row) => ({
       applicationId: row.application_id,
@@ -97,6 +101,8 @@ export class ReviewService {
       legalName: row.legal_name,
       countryCode: row.country_code,
       submittedAt: row.submitted_at.toISOString(),
+      capability: row.capability,
+      revalidates: row.revalidates,
     }));
   }
 
@@ -163,13 +169,19 @@ export class ReviewService {
   async revoke(
     caller: StaffCaller,
     organisationId: string,
-    input: { reason: string; note: string | null; noConflict: boolean },
+    input: {
+      capability: 'ship' | 'carry_as_company';
+      reason: string;
+      note: string | null;
+      noConflict: boolean;
+    },
   ): Promise<{ outcome: 'revoked' | 'already_revoked' }> {
     const result = await this.pool.query<{ status: string; detail: unknown }>(
-      'SELECT status, detail FROM trucker.staff_verification_revoke($1, $2, $3, $4, $5, $6)',
+      'SELECT status, detail FROM trucker.staff_verification_revoke($1, $2, $3, $4, $5, $6, $7)',
       [
         caller.tokenHash,
         organisationId,
+        input.capability,
         input.reason,
         input.note,
         input.noConflict,
@@ -180,7 +192,24 @@ export class ReviewService {
     refuse(row.status, row.detail);
     if (row.status === 'revoked') return { outcome: 'revoked' };
     if (row.status === 'repeated') return { outcome: 'already_revoked' };
-    throw new ApiError(409, 'organisation_not_verified', 'This organisation is not verified.');
+    throw new ApiError(
+      409,
+      'organisation_not_verified',
+      'This organisation does not hold that capability.',
+    );
+  }
+
+  /** Who read a shipment's carrier projection: the access log, for staff only. */
+  async carrierAccess(caller: StaffCaller, shipmentId: string): Promise<Record<string, unknown>> {
+    const result = await this.pool.query<{ status: string; detail: Record<string, unknown> }>(
+      'SELECT status, detail FROM trucker.staff_carrier_access($1, $2, $3)',
+      [caller.tokenHash, shipmentId, caller.requestId ?? null],
+    );
+    const row = result.rows[0]!;
+    if (row.status === 'forbidden') throw forbidden();
+    if (row.status === 'not_found') throw notFound();
+    if (row.status !== 'ok') throw unauthorized();
+    return row.detail;
   }
 
   // ------------------------------------------------------------------------------------------

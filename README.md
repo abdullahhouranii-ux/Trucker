@@ -70,9 +70,18 @@ work is listed in docs/delivery/SECURITY_BACKLOG.md.
 
 A verified shipper organisation publishes a complete draft with a quotation deadline, changes it
 (material changes are new versions), withdraws it or sees it expire
-(docs/delivery/SHIPMENT_PUBLICATION_SLICE_10.md). No carrier can read anything yet: what carriers
-would see is a preview for the shipper only. Cargo categories and equipment types are fictional
-and exist only in development and test databases, so nothing is publishable in production.
+(docs/delivery/SHIPMENT_PUBLICATION_SLICE_10.md). Cargo categories and equipment types are
+fictional and exist only in development and test databases, so nothing is publishable in
+production.
+
+## Carrier onboarding and discovery
+
+An organisation applies for the carrier capability through verification, declaring the countries
+and equipment types it serves; a verified carrier lists and opens the published shipments that
+match, seeing only the carrier projection (docs/delivery/CARRIER_DISCOVERY_SLICE_11.md). The
+declared service is matching criteria only: not verified vehicles, availability or permission to
+accept work. Shipper and carrier capabilities are decided and withdrawn independently. No
+quotation exists yet.
 
 ## Product reference
 

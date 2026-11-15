@@ -648,6 +648,8 @@ async function main() {
       'ur:publish form': 'publish-form-ur-390',
       'ar:published': 'published-preview-ar-390',
       'en:suspended': 'suspended-en-390',
+      'ur:carrier apply': 'carrier-apply-ur-390',
+      'ar:discovery list': 'discovery-list-ar-390',
     };
     // Fictional numbers: country code 999 is not assigned. Unique per run.
     const stamp = String(Date.now()).slice(-7);
@@ -2459,6 +2461,191 @@ async function main() {
       `after a lost withdrawal the page shows ${await stateShown()}, the same request again answered ${resent.status} ${resent.body.outcome}, with ${await pubCount('shipment.withdrawn', wdShipment)} withdrawals`,
     );
 
+    // ------------------------------------------------------------------------------------
+    // Carrier onboarding and discovery: apply, lose an answer, verified, discover, open
+    // ------------------------------------------------------------------------------------
+    // A second organisation of the same person applies as a carrier in the browser. Staff
+    // decide through the staff API. It then discovers the shipment published above.
+    const carrierOrg = (
+      await (
+        await fetch(`${apiOrigin}/organisations`, {
+          method: 'POST',
+          headers: {
+            authorization: `Bearer ${urToken}`,
+            'content-type': 'application/json',
+            'idempotency-key': `carrier-${stamp}-organisation`,
+          },
+          body: JSON.stringify({
+            legalName: 'Carrier Fixture Company (fictional)',
+            countryCode: 'XA',
+            registrationNumber: `CAR-${stamp}`,
+          }),
+        })
+      ).json()
+    ).organisation.id;
+    const carrierPath = (locale) => `/${locale}/organisations/${carrierOrg}/carrier`;
+    const discoverPath = (locale) => `/${locale}/organisations/${carrierOrg}/discover`;
+    const carrierState = () =>
+      page.evaluate(() => document.querySelector('#carrier-status')?.dataset.state ?? null);
+    const carrierOverview = async () =>
+      (await urApi(`/organisations/${carrierOrg}/verification`)).body.verification;
+    const urCarrier = messagesFor('ur').carrier;
+    await open(`/en/organisations/${carrierOrg}`, 390);
+    await submit('#open-carrier-page');
+    check(
+      'carrier',
+      page.url() === `${origin}${carrierPath('en')}` && (await carrierState()) === 'none',
+      `the organisation's carrier link led to ${page.url()} showing ${await carrierState()}`,
+    );
+    for (const locale of locales) {
+      await open(carrierPath(locale), 390);
+      await inspect(locale, 'carrier apply');
+    }
+    // Sent with nothing declared: refused by field, nothing submitted.
+    await open(carrierPath('ur'), 390);
+    await page.type('#ev-registration_certificate-documentNumber', 'REG-CAR-1');
+    await page.type('#ev-haulage_licence-documentNumber', 'HAUL-CAR-2');
+    await page.click('#declaration');
+    await submit('#submit-carrier');
+    const carrierLinks = await page.evaluate(() =>
+      [...document.querySelectorAll('#error-summary a')].map((a) => a.getAttribute('href')),
+    );
+    check(
+      'carrier',
+      (await focusedId()) === 'error-summary' &&
+        carrierLinks.includes('#service-countries') &&
+        carrierLinks.includes('#service-equipment') &&
+        ((await text('#error-summary')) ?? '').includes(urCarrier.errors.countries) &&
+        (await carrierOverview()).applications.length === 0,
+      `an application with nothing declared answered ${page.url()} with links ${carrierLinks}`,
+    );
+    await inspect('ur', 'carrier errors');
+    // Declared and sent; the server records it and the answer is lost. Not reported as done;
+    // the page then shows the application as the server holds it, recorded once.
+    await page.click('#service-country-XA');
+    await page.click('#service-country-XB');
+    await page.click('#service-equipment-curtain_side');
+    if (!(await page.$eval('#declaration', (input) => input.checked)))
+      await page.click('#declaration');
+    relay.lost.length = 0;
+    relay.mode = 'lose';
+    await submit('#submit-carrier');
+    relay.mode = 'pass';
+    const lostCarrierUrl = page.url();
+    check(
+      'lost answer',
+      relay.lost[0] === `POST /organisations/${carrierOrg}/verification/applications -> 201` &&
+        lostCarrierUrl.includes('error=submit_unconfirmed') &&
+        (await text('#carrier-confirmation')) === null,
+      `a lost carrier application answer led to ${lostCarrierUrl}: ${relay.lost}`,
+    );
+    relay.lost.length = 0;
+    await open(carrierPath('ur'), 390);
+    const afterLostCarrier = await carrierOverview();
+    check(
+      'lost answer',
+      (await carrierState()) === 'under_review' &&
+        afterLostCarrier.applications.length === 1 &&
+        afterLostCarrier.applications[0].capability === 'carry_as_company' &&
+        afterLostCarrier.applications[0].service.countries.join() === 'XA,XB' &&
+        (await page.$('#submit-carrier')) === null,
+      `after a lost carrier application the page shows ${await carrierState()} with ${afterLostCarrier.applications.length} applications`,
+    );
+    const carrierDecision = await fetch(
+      `${apiOrigin}/staff/verification/${afterLostCarrier.applications[0].id}/decision`,
+      {
+        method: 'POST',
+        headers: { authorization: `Bearer ${reviewerToken}`, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          version: 1,
+          decision: 'verified',
+          reason: 'evidence_accepted',
+          noConflict: true,
+        }),
+      },
+    );
+    await open(carrierPath('en'), 390);
+    check(
+      'carrier',
+      carrierDecision.status === 200 &&
+        (await carrierState()) === 'granted' &&
+        (await page.$('#open-discovery')) !== null &&
+        (await page.$('#declared-service')) !== null &&
+        ((await text('#matching-note')) ?? '') === messagesFor('en').carrier.matchingNote,
+      `after the decision the carrier page shows ${await carrierState()}`,
+    );
+    await inspect('en', 'carrier verified');
+
+    // Discovery: the shipment published above, as carriers see it, nothing more.
+    await submit('#open-discovery');
+    const discovered = () =>
+      page.evaluate(() =>
+        [...document.querySelectorAll('#discovery-list > li')].map((li) => li.dataset.shipment),
+      );
+    const secretsShown = async () => {
+      const body = (await page.evaluate(() => document.body.textContent)) ?? '';
+      return [
+        'Private Street',
+        'Hidden Road',
+        'Gate code',
+        `PUB-${stamp}`,
+        'Verification Fixture',
+        `VER-${stamp}`,
+      ].filter((secret) => body.includes(secret));
+    };
+    check(
+      'discovery',
+      page.url() === `${origin}${discoverPath('en')}` &&
+        (await discovered()).includes(pubShipment) &&
+        !(await discovered()).includes(wdShipment) &&
+        (await secretsShown()).length === 0,
+      `discovery showed ${await discovered()} with ${await secretsShown()}`,
+    );
+    for (const locale of locales) {
+      const response = await open(discoverPath(locale), 390);
+      check(
+        'discovery',
+        (response.headers()['cache-control'] ?? '').includes('no-store'),
+        `${locale}: the discovery page may be stored by a cache: ${response.headers()['cache-control']}`,
+      );
+      await inspect(locale, 'discovery list');
+    }
+    // A filter that matches nothing, then cleared.
+    await open(discoverPath('en'), 390);
+    await page.select('#filter-pickupCountry', 'XB');
+    await submit('#apply-filter');
+    check(
+      'discovery',
+      page.url().includes('pickupCountry=XB') &&
+        (await text('#discovery-empty')) === messagesFor('en').disc.empty &&
+        (await discovered()).length === 0,
+      `a filter matching nothing led to ${page.url()} with ${await discovered()}`,
+    );
+    await submit('#clear-filter');
+    await submit(`[data-open="${pubShipment}"]`);
+    check(
+      'discovery',
+      page.url() === `${origin}${discoverPath('en')}/${pubShipment}` &&
+        ((await text('#discovered')) ?? '').includes('North industrial area') &&
+        ((await text('#discovered')) ?? '').includes(messagesFor('en').pub.verifiedShipper) &&
+        (await secretsShown()).length === 0,
+      `the discovered shipment led to ${page.url()} with ${await secretsShown()}`,
+    );
+    for (const locale of locales) {
+      await open(`${discoverPath(locale)}/${pubShipment}`, 390);
+      await inspect(locale, 'discovered shipment');
+    }
+    // The shipper's own organisation is not a carrier: refused, and pointed to the carrier page.
+    await open(`/en/organisations/${verifyOrg}/discover`, 390);
+    check(
+      'discovery',
+      (await page.evaluate(() => document.querySelector('[data-state]')?.dataset.state)) ===
+        'discovery-carrier_not_eligible' &&
+        (await page.$('#open-carrier')) !== null &&
+        (await page.$('#discovery-list')) === null,
+      `a shipper opening discovery saw ${page.url()}`,
+    );
+
     // Suspended when the verification is withdrawn by staff (test accounts, migration role).
     const adminToken = `${randomBytes(16).toString('hex')}.${randomBytes(16).toString('hex')}`;
     const adminId = (
@@ -2487,7 +2674,7 @@ async function main() {
       {
         method: 'POST',
         headers: { authorization: `Bearer ${adminToken}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ reason: 'verified_in_error', noConflict: true }),
+        body: JSON.stringify({ capability: 'ship', reason: 'verified_in_error', noConflict: true }),
       },
     );
     await inEachLocale('suspended');
@@ -2503,6 +2690,18 @@ async function main() {
         )) === 'verification' &&
         (await pubCount('shipment.suspended')) === 1,
       `after the withdrawal of verification the page shows ${await stateShown()}`,
+    );
+
+    // Suspended: gone from discovery at the next request, detail and list alike.
+    await open(discoverPath('en'), 390);
+    const afterSuspension = await discovered();
+    await open(`${discoverPath('en')}/${pubShipment}`, 390);
+    check(
+      'discovery',
+      !afterSuspension.includes(pubShipment) &&
+        (await page.evaluate(() => document.querySelector('[data-state]')?.dataset.state)) ===
+          'discovered-not_found',
+      `a suspended shipment still discoverable: ${afterSuspension}`,
     );
 
     // The deadline passes. The real clock cannot be moved here, so the migration role moves

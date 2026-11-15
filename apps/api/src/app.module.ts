@@ -9,6 +9,8 @@ import type pg from 'pg';
 import type { AppConfig } from './config/config.js';
 import { AccessGuard } from './database/access.js';
 import { createPool } from './database/pool.js';
+import { DiscoveryController } from './discovery/discovery.controller.js';
+import { DiscoveryService } from './discovery/discovery.service.js';
 import { HealthController } from './health/health.controller.js';
 import { HealthService } from './health/health.service.js';
 import { IdentityController } from './identity/identity.controller.js';
@@ -44,6 +46,7 @@ export class AppModule {
     return {
       module: AppModule,
       controllers: [
+        DiscoveryController,
         HealthController,
         IdentityController,
         OrganisationController,
@@ -61,6 +64,7 @@ export class AppModule {
         AccessGuard,
         OrganisationService,
         ShipmentService,
+        DiscoveryService,
         StaffService,
         ReviewService,
         VerificationService,

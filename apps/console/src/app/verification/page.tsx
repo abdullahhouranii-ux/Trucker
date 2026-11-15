@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 import { api } from '../../../../web/src/server/api.ts';
 import { ConsoleHeader, Unavailable, utc } from '../../components/console-header.tsx';
-import { APPLICATION_STATUS, REVIEW_ERRORS } from '../../components/review-text.ts';
+import { APPLICATION_STATUS, CAPABILITY, REVIEW_ERRORS } from '../../components/review-text.ts';
 import { requireStaff } from '../../server/session.ts';
 import type { QueueEntry } from '../../server/types.ts';
 
@@ -74,8 +74,12 @@ export default async function VerificationQueuePage({ searchParams }: Props) {
                   <h2>{entry.legalName}</h2>
                   <p className="chip">{APPLICATION_STATUS[entry.status]}</p>
                   <p>
-                    {entry.kind === 'amendment' ? 'Change of legal identity' : 'Verification'},
-                    version {entry.versionNo}, country {entry.countryCode}, submitted{' '}
+                    {entry.kind === 'amendment'
+                      ? `Change of legal identity (revalidates ${(entry.revalidates ?? [])
+                          .map((cap) => CAPABILITY[cap])
+                          .join(' and ')})`
+                      : `${CAPABILITY[entry.capability]} verification`}
+                    , version {entry.versionNo}, country {entry.countryCode}, submitted{' '}
                     {utc(entry.submittedAt)}
                   </p>
                   <div className="form-inline">

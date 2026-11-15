@@ -318,6 +318,7 @@ test('every table has row security: a policy, or no right at all for the API', a
   // barrier. A new table is on neither list, so it must carry row security and a policy, or
   // this test fails.
   const closed = [
+    'carrier_access_log',
     'identity_event',
     'person',
     'security_setting',
@@ -367,6 +368,8 @@ test('every table has row security: a policy, or no right at all for the API', a
     checked.map((table) => table.name),
     [
       'audit_entry',
+      'carrier_service_country',
+      'carrier_service_equipment',
       'membership',
       'organisation',
       'organisation_capability',

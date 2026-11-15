@@ -233,7 +233,8 @@
     },
     "shipmentsLink": "Shipment drafts",
     "verifiedNotice": "The legal name, country and registration number are verified and change only through a reviewed amendment. The other details can be changed here.",
-    "lockedNotice": "The details cannot be changed while an application is under review."
+    "lockedNotice": "The details cannot be changed while an application is under review.",
+    "carrierLink": "Carrier capability"
   },
   "ship": {
     "listTitle": "Shipment drafts",
@@ -448,7 +449,17 @@
       "unavailable": "The service did not answer, so this cannot be shown. Try again."
     },
     "issuedShort": "Issued",
-    "expiresShort": "Expires"
+    "expiresShort": "Expires",
+    "kindCarrier": "Carrier application",
+    "kindShipper": "Shipper application",
+    "revalidates": "Revalidates",
+    "capabilityName": {
+      "ship": "Shipper",
+      "carry_as_company": "Carrier"
+    },
+    "shipperApplyTitle": "Apply as a shipper",
+    "shipperApplyLead": "Your organisation is verified as a carrier. To publish shipments it also needs the shipper capability, decided by staff on its own.",
+    "carrierLink": "Carrier capability"
   },
   "pub": {
     "sectionTitle": "Publish",
@@ -488,10 +499,10 @@
       "verification": "Your organisation's verification was withdrawn or no longer allows publication.",
       "route": "The route is not open in this environment."
     },
-    "noCarrierYet": "No carrier can see published shipments yet in this environment.",
+    "noCarrierYet": "Verified carriers whose declared service matches can see this shipment, as shown in the preview below.",
     "factsTitle": "Publication",
     "previewTitle": "What carriers would see",
-    "previewLead": "This is a preview. No carrier can see it yet in this environment.",
+    "previewLead": "Verified carriers whose declared countries and equipment match this shipment see exactly this while it is published.",
     "previewHidden": "Hidden from carriers: the exact addresses, access notes, your reference and your organisation's name. Your organisation is shown only as \"verified shipper\".",
     "previewCaution": "What you write in the description, packaging, equipment notes and areas is shown as written. If it names your company, a person or a contact, carriers would see that. Anonymity is not guaranteed.",
     "lane": "Route",
@@ -566,6 +577,71 @@
       "copy_unconfirmed": "It was not confirmed that a new draft was made. It may have been. Check your drafts before trying again.",
       "retry_key_conflict": "An earlier attempt may already have been applied. Check the current state before trying again.",
       "unavailable": "The service did not answer, so this cannot be shown. Try again."
+    }
+  },
+  "carrier": {
+    "title": "Carrier capability",
+    "back": "Back to the organisation",
+    "lead": "A verified carrier can see published shipments that match the service it declared. Staff decide the application, and any change to the declared service.",
+    "matchingNote": "The countries and equipment types you declare are used only to match shipments to you. They are not verified vehicles, they do not show availability, and they do not give permission to accept work.",
+    "statusTitle": "Carrier status",
+    "state": {
+      "under_review": "Application under review",
+      "granted": "Verified carrier on demonstration evidence",
+      "not_effective": "Not usable: the carrier capability does not rest on the organisation's present legal identity",
+      "revoked": "Carrier capability withdrawn",
+      "none": "Not a carrier"
+    },
+    "serviceTitle": "Declared service in force",
+    "countries": "Countries",
+    "equipment": "Equipment types",
+    "discoverLink": "Find shipments",
+    "waiting": "Another application of this organisation is under review. A carrier application can be sent when it is decided.",
+    "applyTitle": "Apply as a carrier",
+    "applyLead": "Choose where you operate and which equipment you offer, then enter the evidence asked for.",
+    "changeTitle": "Change the declared service",
+    "changeLead": "The service in force stays as it is until staff decide the change.",
+    "countriesLegend": "Countries where you operate",
+    "equipmentLegend": "Equipment types you offer",
+    "submit": "Submit carrier application",
+    "submitChange": "Submit the change",
+    "versionsTitle": "Carrier applications",
+    "errors": {
+      "countries": "Choose at least one country that is available here.",
+      "equipment": "Choose at least one equipment type from the list.",
+      "nothing_changed": "This is the service already in force. Change at least one country or equipment type."
+    }
+  },
+  "disc": {
+    "back": "Back to the organisation",
+    "title": "Find shipments",
+    "lead": "Published shipments that match your declared service, soonest quotation deadline first. Shown as the shipper published them, without the shipper's name, addresses or contacts.",
+    "noQuotations": "Quotations are not available yet. Nothing here commits you or the shipper to anything.",
+    "filterTitle": "Filter",
+    "pickupCountry": "Pick-up country",
+    "deliveryCountry": "Delivery country",
+    "equipmentType": "Equipment type",
+    "any": "Any",
+    "apply": "Show shipments",
+    "clear": "Clear filter",
+    "resultsTitle": "Shipments",
+    "empty": "No published shipment matches your declared service and this filter now.",
+    "endOfList": "No more shipments in this list.",
+    "changed": "Changed since this list was started",
+    "open": "Open",
+    "next": "Next page",
+    "restart": "Start the list again",
+    "toCarrier": "Carrier capability",
+    "backToList": "Back to the list",
+    "detailTitle": "Shipment",
+    "freeTextNote": "Descriptions and notes are shown as the shipper wrote them.",
+    "errors": {
+      "carrier_not_eligible": "This organisation is not a verified carrier now, so it cannot see shipments.",
+      "too_many_requests": "Too many requests in the last minute. Wait a moment, then try again.",
+      "cursor_invalid": "That page belongs to a different list. Start the list again.",
+      "cursor_expired": "This list was started too long ago. Start the list again.",
+      "unavailable": "Shipments could not be loaded. Try again.",
+      "not_found": "This shipment is not available to you. It may have been withdrawn, changed or closed, or it may not match your declared service."
     }
   }
 }

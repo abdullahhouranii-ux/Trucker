@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { notFound, redirect } from 'next/navigation';
 import { DraftKeeper } from '../../../../../components/draft-keeper.tsx';
+import { DeclarationField, EvidenceFields } from '../../../../../components/evidence-fields.tsx';
 import { describedBy, ErrorSummary, Field, type Problem } from '../../../../../components/form.tsx';
 import { Ltr } from '../../../../../components/ltr.tsx';
 import { isLocale } from '../../../../../i18n/config.ts';
@@ -78,8 +79,13 @@ export default async function VerificationPage({ params, searchParams }: Props) 
   const open = countries?.ok ? countries.data.countries : [];
   const countryName = (code: string): string =>
     open.find((country) => country.code === code)?.name[locale] ?? code;
+  const allRequirements = [
+    ...v.requirements,
+    ...v.requirementsFor.ship,
+    ...v.requirementsFor.carry_as_company,
+  ];
   const requirementName = (type: string): string =>
-    v.requirements.find((item) => item.documentType === type)?.name[locale] ?? type;
+    allRequirements.find((item) => item.documentType === type)?.name[locale] ?? type;
 
   // Problems arrive as "field:code" pairs, or as one page-level code.
   const problems: Problem[] = [];
@@ -357,106 +363,16 @@ export default async function VerificationPage({ params, searchParams }: Props) 
             )}
             <h3>{t.evidenceTitle}</h3>
             <p>{t.evidenceLead}</p>
-            {v.requirements.map((requirement) => {
-              const type = requirement.documentType;
-              const number = `ev-${type}-documentNumber`;
-              const issuer = `ev-${type}-issuingCountry`;
-              const issued = `ev-${type}-issuedOn`;
-              const expires = `ev-${type}-expiresOn`;
-              // What the last version said, so that a correction is not a retyping.
-              const before = latest?.evidence.find((entry) => entry.documentType === type);
-              return (
-                <fieldset className="fieldset" key={type} id={`ev-${type}`}>
-                  <legend>
-                    <bdi>{requirement.name[locale]}</bdi> (
-                    {requirement.required ? t.required : t.optional})
-                  </legend>
-                  <input type="hidden" name="documentType" value={type} />
-                  <input
-                    type="hidden"
-                    name={`ev-${type}-required`}
-                    value={requirement.required ? 'yes' : 'no'}
-                  />
-                  <Field id={number} label={t.documentNumber} error={invalid.get(number)}>
-                    <input
-                      id={number}
-                      name={number}
-                      type="text"
-                      dir="ltr"
-                      maxLength={80}
-                      required={requirement.required}
-                      data-draft
-                      defaultValue={before?.documentNumber ?? ''}
-                      aria-invalid={has(number) ? true : undefined}
-                      aria-describedby={describedBy(number, false, has(number))}
-                    />
-                  </Field>
-                  <Field id={issuer} label={t.issuingCountry} error={invalid.get(issuer)}>
-                    <select
-                      id={issuer}
-                      name={issuer}
-                      data-draft
-                      defaultValue={before?.issuingCountry ?? v.organisation.countryCode}
-                      aria-invalid={has(issuer) ? true : undefined}
-                      aria-describedby={describedBy(issuer, false, has(issuer))}
-                    >
-                      {open.map((country) => (
-                        <option key={country.code} value={country.code}>
-                          {country.name[locale]}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-                  <div className="field-pair">
-                    <Field id={issued} label={t.issuedOn} error={invalid.get(issued)}>
-                      <input
-                        id={issued}
-                        name={issued}
-                        type="date"
-                        dir="ltr"
-                        data-draft
-                        defaultValue={before?.issuedOn ?? ''}
-                        aria-invalid={has(issued) ? true : undefined}
-                        aria-describedby={describedBy(issued, false, has(issued))}
-                      />
-                    </Field>
-                    <Field id={expires} label={t.expiresOn} error={invalid.get(expires)}>
-                      <input
-                        id={expires}
-                        name={expires}
-                        type="date"
-                        dir="ltr"
-                        data-draft
-                        defaultValue={before?.expiresOn ?? ''}
-                        aria-invalid={has(expires) ? true : undefined}
-                        aria-describedby={describedBy(expires, false, has(expires))}
-                      />
-                    </Field>
-                  </div>
-                </fieldset>
-              );
-            })}
-            <h3>{t.declarationTitle}</h3>
-            <p id="declaration-text">{t.declarationText}</p>
-            <div className="check" data-invalid={has('declaration') ? 'true' : undefined}>
-              <input
-                id="declaration"
-                name="declaration"
-                type="checkbox"
-                value="yes"
-                required
-                aria-invalid={has('declaration') ? true : undefined}
-                aria-describedby={
-                  has('declaration') ? 'declaration-text declaration-error' : 'declaration-text'
-                }
-              />
-              <label htmlFor="declaration">{t.declarationCheck}</label>
-            </div>
-            {has('declaration') ? (
-              <p className="field-error" id="declaration-error">
-                {t.errors.declaration}
-              </p>
-            ) : null}
+            <EvidenceFields
+              locale={locale}
+              t={t}
+              requirements={v.requirements}
+              previous={latest?.evidence ?? []}
+              countries={open}
+              defaultCountry={v.organisation.countryCode}
+              invalid={invalid}
+            />
+            <DeclarationField t={t} invalid={invalid} />
             <button className="button button-primary" type="submit" id="submit-verification">
               {amendment ? t.submitAmend : t.submit}
             </button>
@@ -471,6 +387,47 @@ export default async function VerificationPage({ params, searchParams }: Props) 
         </section>
       ) : null}
 
+      {v.mayApply.ship === 'capability' ? (
+        <section className="section" aria-labelledby="shipper-title">
+          <h2 id="shipper-title">{t.shipperApplyTitle}</h2>
+          <p>{t.shipperApplyLead}</p>
+          <form
+            className="form card"
+            id={`shipper-form-${v.organisation.id}`}
+            action={submitVerificationAction}
+            noValidate
+          >
+            <input type="hidden" name="locale" value={locale} />
+            <input type="hidden" name="organisationId" value={v.organisation.id} />
+            <input type="hidden" name="version" value={v.organisation.version} />
+            <input type="hidden" name="retryKey" value={retryKey} />
+            <input type="hidden" name="kind" value="capability" />
+            <input type="hidden" name="capability" value="ship" />
+            <h3>{t.evidenceTitle}</h3>
+            <p>{t.evidenceLead}</p>
+            <EvidenceFields
+              locale={locale}
+              t={t}
+              requirements={v.requirementsFor.ship}
+              previous={v.applications.find((item) => item.capability === 'ship')?.evidence ?? []}
+              countries={open}
+              defaultCountry={v.organisation.countryCode}
+              invalid={invalid}
+            />
+            <DeclarationField t={t} invalid={invalid} />
+            <button className="button button-primary" type="submit" id="submit-shipper">
+              {t.submit}
+            </button>
+          </form>
+        </section>
+      ) : null}
+
+      <p>
+        <a className="button" id="open-carrier" href={`/${locale}/organisations/${id}/carrier`}>
+          {t.carrierLink}
+        </a>
+      </p>
+
       <section className="section" aria-labelledby="versions-title">
         <h2 id="versions-title">{t.versionsTitle}</h2>
         {v.applications.length === 0 ? <p id="no-versions">{t.noVersions}</p> : null}
@@ -483,8 +440,20 @@ export default async function VerificationPage({ params, searchParams }: Props) 
             >
               <h3>
                 {fill(t.version, { n: application.versionNo })}:{' '}
-                {application.kind === 'amendment' ? t.kindAmendment : t.kindInitial}
+                {application.kind === 'amendment'
+                  ? t.kindAmendment
+                  : application.capability === 'carry_as_company'
+                    ? t.kindCarrier
+                    : application.kind === 'capability'
+                      ? t.kindShipper
+                      : t.kindInitial}
               </h3>
+              {application.revalidates ? (
+                <p className="field-hint" data-revalidates={application.revalidates.join(' ')}>
+                  {t.revalidates}:{' '}
+                  {application.revalidates.map((cap) => t.capabilityName[cap]).join(', ')}
+                </p>
+              ) : null}
               <p className="chip">{t.status[application.status]}</p>
               <dl className="facts">
                 <div>

@@ -52,11 +52,20 @@ export interface QueueEntry {
   applicationId: string;
   organisationId: string;
   versionNo: number;
-  kind: 'initial' | 'amendment';
+  kind: 'initial' | 'capability' | 'amendment';
   status: 'submitted' | 'claim_review';
   legalName: string;
   countryCode: string;
   submittedAt: string;
+  capability: Capability;
+  revalidates: Capability[] | null;
+}
+export type Capability = 'ship' | 'carry_as_company';
+/** Declared by the applicant: matching criteria for discovery only, never verified. */
+export interface DeclaredService {
+  kind: 'declared_matching_criteria';
+  countries: string[];
+  equipmentTypes: string[];
 }
 export interface ReviewEvidence {
   documentType: string;
@@ -68,7 +77,10 @@ export interface ReviewEvidence {
 export interface ReviewVersion {
   id: string;
   versionNo: number;
-  kind: 'initial' | 'amendment';
+  kind: 'initial' | 'capability' | 'amendment';
+  capability: Capability;
+  revalidates: Capability[] | null;
+  service: DeclaredService | null;
   status:
     'submitted' | 'claim_review' | 'withdrawn' | 'verified' | 'changes_requested' | 'rejected';
   legalName: string;
@@ -105,6 +117,15 @@ export interface ReviewDetail {
       grantedAt: string;
       grantedByCaller: boolean;
     } | null;
+    capabilities: {
+      capability: Capability;
+      status: 'granted' | 'revoked';
+      basis: string;
+      grantedAt: string;
+      effective: boolean;
+      grantedByCaller: boolean;
+      service: DeclaredService | null;
+    }[];
   };
   requirements: { documentType: string; name: string; required: boolean }[];
   earlier: ReviewVersion[];

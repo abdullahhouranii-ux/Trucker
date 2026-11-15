@@ -320,6 +320,7 @@ export async function revokeVerificationAction(form: FormData): Promise<void> {
     {
       token,
       body: {
+        capability: text(form, 'capability'),
         reason: text(form, 'reason'),
         note: note === '' ? null : note,
         noConflict: text(form, 'noConflict') === 'yes',

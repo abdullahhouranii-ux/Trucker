@@ -130,6 +130,13 @@ export default async function OrganisationPage({ params, searchParams }: Props) 
         >
           {m.verify.link}
         </a>
+        <a
+          className="button"
+          id="open-carrier-page"
+          href={`/${locale}/organisations/${organisation.id}/carrier`}
+        >
+          {t.carrierLink}
+        </a>
       </div>
       <div className="notice" role="note" id="organisation-status">
         <h2>

@@ -208,7 +208,11 @@ export type ApplicationStatus =
 export interface VerificationApplication {
   id: string;
   versionNo: number;
-  kind: 'initial' | 'amendment';
+  kind: 'initial' | 'capability' | 'amendment';
+  capability: Capability;
+  /** For an amendment: the capabilities it revalidates on the proposed identity. */
+  revalidates: Capability[] | null;
+  service: DeclaredService | null;
   status: ApplicationStatus;
   legalName: string;
   countryCode: string;
@@ -243,6 +247,42 @@ export interface VerificationOverview {
   } | null;
   maySubmit: 'initial' | 'amendment' | null;
   mayPublish: boolean;
+  mayDiscover: boolean;
+  requirementsFor: Record<Capability, VerificationRequirement[]>;
+  capabilities: CapabilityState[];
+  mayApply: Record<Capability, 'initial' | 'capability' | 'service_change' | null>;
+}
+
+export type Capability = 'ship' | 'carry_as_company';
+/** Declared by the carrier and decided by staff: matching criteria for discovery only. Not
+ * verified vehicles, availability or permission to accept work. */
+export interface DeclaredService {
+  kind: 'declared_matching_criteria';
+  countries: string[];
+  equipmentTypes: string[];
+}
+export interface CapabilityState {
+  capability: Capability;
+  status: 'granted' | 'revoked';
+  basis: 'demonstration';
+  effective: boolean;
+  grantedAt: string;
+  revokedAt: string | null;
+  revokeReason: string | null;
+  revokeNote: string | null;
+  service: DeclaredService | null;
+}
+/** One shipment a carrier may discover: its identifier and the carrier projection. */
+export interface DiscoveryItem {
+  id: string;
+  shipment: CarrierView;
+  changedSinceStart: boolean;
+}
+export interface DiscoveryPage {
+  items: DiscoveryItem[];
+  next: string | null;
+  startedAt: string;
+  service: DeclaredService;
 }
 
 /** A fictional catalogue entry (cargo category or equipment type). */

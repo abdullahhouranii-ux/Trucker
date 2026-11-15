@@ -3,6 +3,7 @@ import { api } from '../../../../../web/src/server/api.ts';
 import { ConsoleHeader, Unavailable, utc } from '../../../components/console-header.tsx';
 import {
   APPLICATION_STATUS,
+  CAPABILITY,
   DECISIONS,
   ORGANISATION_STATUS,
   REASONS,
@@ -191,8 +192,36 @@ export default async function ApplicationPage({ params, searchParams }: Props) {
             <h2 id="submitted-title">
               {application.kind === 'amendment'
                 ? `Proposed change of legal identity, version ${application.versionNo}`
-                : `Submitted for verification, version ${application.versionNo}`}
+                : `${CAPABILITY[application.capability]} capability, version ${application.versionNo}`}
             </h2>
+            {application.kind === 'amendment' ? (
+              <p className="notice" role="note" id="revalidation-note">
+                Approving this changes the legal identity and revalidates every capability the
+                organisation holds on it:{' '}
+                {(application.revalidates ?? []).map((cap) => CAPABILITY[cap]).join(' and ')}. The
+                evidence must answer each of them. It cannot be approved for one and not another:
+                request changes or reject it instead, and the approved identity stays in force.
+              </p>
+            ) : null}
+            {application.service ? (
+              <div id="declared-service">
+                <h3>Declared service (matching criteria only)</h3>
+                <p>
+                  What the carrier says it offers. It decides which shipments it may discover. It is
+                  not a verified vehicle, availability or permission to accept work.
+                </p>
+                <dl className="card facts">
+                  <div>
+                    <dt>Countries</dt>
+                    <dd>{application.service.countries.join(', ')}</dd>
+                  </div>
+                  <div>
+                    <dt>Equipment types</dt>
+                    <dd>{application.service.equipmentTypes.join(', ')}</dd>
+                  </div>
+                </dl>
+              </div>
+            ) : null}
             <dl className="card facts" id="application-facts">
               <div>
                 <dt>Legal name</dt>
@@ -269,17 +298,36 @@ export default async function ApplicationPage({ params, searchParams }: Props) {
                 <dd>{utc(organisation.createdAt)}</dd>
               </div>
             </dl>
-            {organisation.status === 'verified' && admin ? (
-              <div className="form-inline">
-                <a
-                  className="button"
-                  id="withdraw-link"
-                  href={`/verification/withdraw?organisation=${organisation.id}`}
+            <h3>Capabilities</h3>
+            {organisation.capabilities.length === 0 ? <p id="no-capabilities">None yet.</p> : null}
+            <ul className="evidence" id="capabilities">
+              {organisation.capabilities.map((held) => (
+                <li
+                  key={held.capability}
+                  data-capability={held.capability}
+                  data-status={held.status}
                 >
-                  Withdraw this organisation’s verification
-                </a>
-              </div>
-            ) : null}
+                  {CAPABILITY[held.capability]}:{' '}
+                  {held.status === 'granted' ? 'granted' : 'withdrawn'}
+                  {held.status === 'granted' && !held.effective
+                    ? ' (not usable: it does not rest on the present legal identity)'
+                    : ''}
+                  , {utc(held.grantedAt)}
+                  {held.status === 'granted' && organisation.status === 'verified' && admin ? (
+                    <>
+                      {' '}
+                      <a
+                        className="button"
+                        data-withdraw={held.capability}
+                        href={`/verification/withdraw?organisation=${organisation.id}&capability=${held.capability}`}
+                      >
+                        Withdraw the {CAPABILITY[held.capability]?.toLowerCase()} capability
+                      </a>
+                    </>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
           </section>
 
           {competing && open ? (
