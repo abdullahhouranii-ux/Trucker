@@ -145,6 +145,7 @@ export interface ShipmentPublication {
   /** In the pick-up place's time zone. */
   quotationDeadline: WindowEnd;
   publishedVersion: number | null;
+  publicationCycle: string | null;
   publishedAt: string | null;
   withdrawnAt: string | null;
   expiredAt: string | null;

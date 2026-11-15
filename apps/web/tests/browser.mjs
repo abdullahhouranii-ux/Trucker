@@ -46,8 +46,9 @@ const REVOCATIONS = [
   ['POST', /^\/organisations\/[^/]+\/shipments\/[^/]+\/discard$/],
   // Submitting an application for verification.
   ['POST', /^\/organisations\/[^/]+\/verification\/applications$/],
-  // Publishing a shipment.
+  // Publishing and withdrawing a shipment.
   ['POST', /^\/organisations\/[^/]+\/shipments\/[^/]+\/publish$/],
+  ['POST', /^\/organisations\/[^/]+\/shipments\/[^/]+\/withdraw$/],
 ];
 function startRelay() {
   const server = http.createServer((request, response) => {
@@ -2231,50 +2232,52 @@ async function main() {
     // fictional zones (XA is UTC+4, XB is UTC+3).
     const zoned = (hours, offsetHours) =>
       new Date(Date.now() + (hours + offsetHours) * 3_600_000).toISOString().slice(0, 16);
-    const pubShipment = (
-      await (
-        await fetch(`${apiOrigin}/organisations/${verifyOrg}/shipments`, {
-          method: 'POST',
-          headers: {
-            authorization: `Bearer ${urToken}`,
-            'content-type': 'application/json',
-            'idempotency-key': `publish-${stamp}-draft`,
-          },
-          body: JSON.stringify({
-            shipperReference: `PUB-${stamp}`,
-            cargoDescription: 'Ceramic tiles in crates (fictional)',
-            grossWeightKg: '12000',
-            pieces: '24',
-            packaging: 'Wooden crates',
-            pickup: {
-              address: 'Warehouse 9, Private Street',
-              countryCode: 'XA',
-              timeZone: 'Etc/GMT-4',
-              accessNotes: 'Gate code 5512',
-              from: { local: zoned(48, 4) },
-              until: { local: zoned(50, 4) },
+    const makeShipment = async (name) =>
+      (
+        await (
+          await fetch(`${apiOrigin}/organisations/${verifyOrg}/shipments`, {
+            method: 'POST',
+            headers: {
+              authorization: `Bearer ${urToken}`,
+              'content-type': 'application/json',
+              'idempotency-key': `${name}-${stamp}-draft`,
             },
-            delivery: {
-              address: 'Depot 3, Hidden Road',
-              countryCode: 'XB',
-              timeZone: 'Etc/GMT-3',
-              from: { local: zoned(54, 3) },
-              until: { local: zoned(58, 3) },
-            },
-          }),
-        })
-      ).json()
-    ).shipment.id;
-    const shipmentPath = (locale) =>
-      `/${locale}/organisations/${verifyOrg}/shipments/${pubShipment}`;
+            body: JSON.stringify({
+              shipperReference: `${name.toUpperCase()}-${stamp}`,
+              cargoDescription: 'Ceramic tiles in crates (fictional)',
+              grossWeightKg: '12000',
+              pieces: '24',
+              packaging: 'Wooden crates',
+              pickup: {
+                address: 'Warehouse 9, Private Street',
+                countryCode: 'XA',
+                timeZone: 'Etc/GMT-4',
+                accessNotes: 'Gate code 5512',
+                from: { local: zoned(48, 4) },
+                until: { local: zoned(50, 4) },
+              },
+              delivery: {
+                address: 'Depot 3, Hidden Road',
+                countryCode: 'XB',
+                timeZone: 'Etc/GMT-3',
+                from: { local: zoned(54, 3) },
+                until: { local: zoned(58, 3) },
+              },
+            }),
+          })
+        ).json()
+      ).shipment.id;
+    const pubShipment = await makeShipment('pub');
+    const shipmentPath = (locale, shipment = pubShipment) =>
+      `/${locale}/organisations/${verifyOrg}/shipments/${shipment}`;
     const stateShown = () =>
       page.evaluate(() => document.querySelector('#shipment-status')?.dataset.state ?? null);
-    const pubCount = async (action) =>
+    const pubCount = async (action, shipment = pubShipment) =>
       Number(
         (
           await owner.query(
             'SELECT count(*) AS n FROM trucker.audit_entry WHERE record_id = $1 AND action = $2',
-            [pubShipment, action],
+            [shipment, action],
           )
         ).rows[0].n,
       );
@@ -2377,6 +2380,83 @@ async function main() {
           2 &&
         (await pubCount('shipment.version_created')) === 1,
       `a material change led to ${page.url()}`,
+    );
+
+    // Withdrawal: the server withdraws the shipment and the answer is lost. Not reported as
+    // done; the retry shows it withdrawn, and sending the same request again confirms it
+    // without a second transition or history entry.
+    const wdShipment = await makeShipment('wd');
+    const wdApi = (path, init = {}) =>
+      fetch(`${apiOrigin}/organisations/${verifyOrg}/shipments/${wdShipment}${path}`, {
+        ...init,
+        headers: {
+          authorization: `Bearer ${urToken}`,
+          'content-type': 'application/json',
+          ...(init.headers ?? {}),
+        },
+      }).then(async (reply) => ({ status: reply.status, body: await reply.json() }));
+    const wdDraft = (await wdApi('')).body.shipment;
+    const wdPublished = await wdApi('/publish', {
+      method: 'POST',
+      headers: { 'idempotency-key': `wd-${stamp}-publish` },
+      body: JSON.stringify({
+        version: wdDraft.version,
+        cargoCategory: 'general_dry',
+        equipmentType: 'box',
+        dangerousGoods: false,
+        pickupArea: 'North industrial area',
+        deliveryArea: 'Port district',
+        quotationDeadline: { local: zoned(24, 4) },
+      }),
+    });
+    const wdState = async () =>
+      (
+        await owner.query(
+          'SELECT status, version, withdrawn_at FROM trucker.shipment_draft WHERE id = $1',
+          [wdShipment],
+        )
+      ).rows[0];
+    const beforeWithdrawal = await wdState();
+    await open(shipmentPath('en', wdShipment), 390);
+    relay.lost.length = 0;
+    relay.mode = 'lose';
+    await submit('#withdraw-shipment');
+    relay.mode = 'pass';
+    const lostWithdrawalUrl = page.url();
+    const afterLoss = await wdState();
+    check(
+      'lost answer',
+      wdPublished.status === 200 &&
+        relay.lost[0] ===
+          `POST /organisations/${verifyOrg}/shipments/${wdShipment}/withdraw -> 200` &&
+        lostWithdrawalUrl.includes('error=withdraw_unconfirmed') &&
+        !lostWithdrawalUrl.includes('pubDone=') &&
+        (await text('#shipment-confirmation')) === null &&
+        afterLoss.status === 'withdrawn' &&
+        afterLoss.version === beforeWithdrawal.version + 1,
+      `a lost withdrawal answer led to ${lostWithdrawalUrl}: ${relay.lost}, server ${afterLoss.status}`,
+    );
+    relay.lost.length = 0;
+    await submit('#retry-shipments');
+    const withdrawKey = new URL(lostWithdrawalUrl).searchParams.get('withdrawRetry');
+    const resent = await wdApi('/withdraw', {
+      method: 'POST',
+      headers: { 'idempotency-key': withdrawKey ?? 'missing-key' },
+      body: JSON.stringify({ version: beforeWithdrawal.version }),
+    });
+    const afterWdRetry = await wdState();
+    check(
+      'lost answer',
+      (await stateShown()) === 'withdrawn' &&
+        (await page.$('#withdraw-form')) === null &&
+        Boolean(withdrawKey) &&
+        resent.status === 200 &&
+        resent.body.outcome === 'already_withdrawn' &&
+        afterWdRetry.version === afterLoss.version &&
+        afterWdRetry.withdrawn_at.getTime() === afterLoss.withdrawn_at.getTime() &&
+        (await pubCount('shipment.withdrawn', wdShipment)) === 1 &&
+        relay.lost.length === 0,
+      `after a lost withdrawal the page shows ${await stateShown()}, the same request again answered ${resent.status} ${resent.body.outcome}, with ${await pubCount('shipment.withdrawn', wdShipment)} withdrawals`,
     );
 
     // Suspended when the verification is withdrawn by staff (test accounts, migration role).

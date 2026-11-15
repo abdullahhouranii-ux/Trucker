@@ -413,6 +413,7 @@ interface Shipment {
   pickup: { address: string | null };
   publication: {
     publishedVersion: number | null;
+    publicationCycle: string | null;
     suspendedFor: string[];
     quotationDeadline: { at: string | null };
     copiedFrom: string | null;
@@ -1043,7 +1044,19 @@ test('a shipment past its deadline is expired at every read, before anything is 
   assert.equal(record.rows[0]!.occurred_at.toISOString(), new Date(deadline).toISOString());
   assert.equal(record.rows[0]!.actor_person_id, null);
   assert.equal((await get(person, org, shipment.id)).status, 'expired');
-  // Even written by hand, a second expiry record is refused by the database.
+  // Even written by hand, a second expiry record for the same cycle is refused by the
+  // database, and an expiry record must name its cycle.
+  await refused(
+    () =>
+      owner.query(
+        `INSERT INTO trucker.audit_entry
+           (occurred_at, organisation_id, action, record_type, record_id, publication_cycle, after_values)
+         SELECT now(), $1, 'shipment.expired', 'shipment_draft', $2, d.publication_cycle, '{}'
+         FROM trucker.shipment_draft d WHERE d.id = $2`,
+        [org, shipment.id],
+      ),
+    /duplicate key/,
+  );
   await refused(
     () =>
       owner.query(
@@ -1051,8 +1064,101 @@ test('a shipment past its deadline is expired at every read, before anything is 
          VALUES (now(), $1, 'shipment.expired', 'shipment_draft', $2, '{}')`,
         [org, shipment.id],
       ),
-    /duplicate key/,
+    /audit_entry_expiry_cycle/,
   );
+});
+
+test('expiry is recorded once per publication cycle: publish, expire, republish, expire again keeps one expiry for each cycle', async () => {
+  const shipper = await verifiedShipper();
+  let person = shipper.person;
+  const org = shipper.org;
+  const first = await published(person, org, { quotationDeadline: { local: local(0.25) } });
+  const cycleOne = first.publication.publicationCycle;
+  assert.ok(cycleOne);
+  // A material change within the cycle keeps its identifier.
+  const changed = await act(person, org, first.id, 'published-changes', {
+    ...content({ grossWeightKg: '7' }),
+    publication: details({ quotationDeadline: { local: local(0.25) } }),
+    version: first.version,
+  });
+  assert.equal(changed.status, 200, changed.text);
+  const afterChange = changed.body.shipment as Shipment;
+  assert.equal(afterChange.publication.publishedVersion, 2);
+  assert.equal(afterChange.publication.publicationCycle, cycleOne);
+
+  // Each read below may be the one that records the expiry. Repeated and concurrent reads
+  // and lists all answer without a server error and record nothing twice.
+  const readMany = async (who: Person) => {
+    const replies = await Promise.all([
+      ...Array.from({ length: 6 }, () =>
+        call('GET', shipments(org, `/${first.id}`), { token: who.token }),
+      ),
+      call('GET', shipments(org, '?status=expired'), { token: who.token }),
+      call('GET', shipments(org, '?status=all'), { token: who.token }),
+      call('GET', shipments(org, `/${first.id}/publication`), { token: who.token }),
+    ]);
+    for (const reply of replies) assert.equal(reply.status, 200, reply.text);
+    for (let i = 0; i < 3; i += 1) assert.equal((await get(who, org, first.id)).status, 'expired');
+  };
+
+  await advance(16 * 60);
+  person = await again(person);
+  await readMany(person);
+  const expiredOnce = await get(person, org, first.id);
+  assert.equal(expiredOnce.publication.publicationCycle, cycleOne);
+
+  const republished = await act(person, org, first.id, 'republish', {
+    quotationDeadline: { local: local(0.25) },
+    version: expiredOnce.version,
+  });
+  assert.equal(republished.status, 200, republished.text);
+  const cycleTwo = (republished.body.shipment as Shipment).publication.publicationCycle;
+  assert.ok(cycleTwo);
+  assert.notEqual(cycleTwo, cycleOne);
+
+  await advance(16 * 60);
+  person = await again(person);
+  await readMany(person);
+  const expiredTwice = await get(person, org, first.id);
+  assert.equal(expiredTwice.status, 'expired');
+  assert.equal(expiredTwice.publication.publicationCycle, cycleTwo);
+
+  const byCycle = await owner.query<{ publication_cycle: string; n: number }>(
+    `SELECT publication_cycle::text, count(*)::int AS n FROM trucker.audit_entry
+     WHERE record_id = $1 AND action = 'shipment.expired' GROUP BY publication_cycle`,
+    [first.id],
+  );
+  assert.deepEqual(Object.fromEntries(byCycle.rows.map((row) => [row.publication_cycle, row.n])), {
+    [cycleOne]: 1,
+    [cycleTwo]: 1,
+  });
+  // Versions and history name the cycle they belong to.
+  const versions = await owner.query<{ kind: string; publication_cycle: string }>(
+    `SELECT kind, publication_cycle::text FROM trucker.shipment_publication_version
+     WHERE shipment_id = $1 ORDER BY version_no`,
+    [first.id],
+  );
+  assert.deepEqual(
+    versions.rows.map((row) => [row.kind, row.publication_cycle]),
+    [
+      ['published', cycleOne],
+      ['changed', cycleOne],
+      ['republished', cycleTwo],
+    ],
+  );
+  const history = await owner.query<{ action: string; publication_cycle: string | null }>(
+    `SELECT action, publication_cycle::text FROM trucker.audit_entry
+     WHERE record_id = $1 AND action LIKE 'shipment.%' AND action <> 'shipment.created'
+     ORDER BY occurred_at, action`,
+    [first.id],
+  );
+  for (const row of history.rows) {
+    if (row.action === 'shipment.updated') continue;
+    assert.ok(row.publication_cycle, `${row.action} names its cycle`);
+  }
+  // A third read after the second expiry still adds nothing.
+  await readMany(person);
+  assert.equal(await entries(first.id, 'shipment.expired'), 2);
 });
 
 test('a request that waited behind a lock while the deadline passed finds the shipment expired and changes nothing', async () => {

@@ -116,6 +116,10 @@ ALTER TABLE trucker.shipment_draft
   ADD COLUMN withdrawn_at timestamptz,
   ADD COLUMN expired_at timestamptz,
   ADD COLUMN copied_from uuid REFERENCES trucker.shipment_draft (id),
+  -- The publication cycle: a new identifier at publication and at each republication, kept
+  -- unchanged by changes within the cycle. Expiry is recorded once per cycle.
+  ADD COLUMN publication_cycle uuid,
+  ADD CONSTRAINT shipment_draft_cycle CHECK ((status IN ('draft', 'discarded')) = (publication_cycle IS NULL)),
   ADD CONSTRAINT shipment_draft_deadline_resolved CHECK (
     (deadline_at IS NULL AND deadline_offset_minutes IS NULL)
     OR (deadline_at IS NOT NULL AND deadline_offset_minutes IS NOT NULL AND deadline_local IS NOT NULL)),
@@ -136,6 +140,7 @@ CREATE TABLE trucker.shipment_publication_version (
   organisation_id uuid NOT NULL REFERENCES trucker.organisation (id),
   version_no integer NOT NULL CHECK (version_no >= 1),
   kind text NOT NULL CHECK (kind IN ('published', 'changed', 'republished')),
+  publication_cycle uuid NOT NULL,
   carrier_values jsonb NOT NULL,
   created_at timestamptz NOT NULL,
   created_by uuid NOT NULL REFERENCES trucker.person (id),
@@ -172,8 +177,11 @@ ALTER TABLE trucker.shipment_retry_key
   ADD CONSTRAINT shipment_retry_key_operation_check CHECK (operation IN (
     'create', 'update', 'discard', 'publish', 'change', 'withdraw', 'republish', 'copy'));
 
--- History. Expiry and suspension are done by nobody: their entries carry no actor.
+-- History. Expiry and suspension are done by nobody: their entries carry no actor. Entries
+-- about a published shipment carry the publication cycle they belong to; an expiry must.
 ALTER TABLE trucker.audit_entry
+  ADD COLUMN publication_cycle uuid,
+  ADD CONSTRAINT audit_entry_expiry_cycle CHECK (action <> 'shipment.expired' OR publication_cycle IS NOT NULL),
   DROP CONSTRAINT audit_entry_one_actor,
   ADD CONSTRAINT audit_entry_one_actor CHECK (
     (actor_person_id IS NULL) <> (actor_staff_id IS NULL)
@@ -187,8 +195,9 @@ ALTER TABLE trucker.audit_entry
     'shipment.republished', 'shipment.copied', 'shipment.suspended', 'shipment.suspension_ended',
     'verification.submitted', 'verification.withdrawn', 'verification.claim_raised',
     'verification.decided', 'verification.revoked'));
--- One expiry per shipment, whatever happens: the database itself holds the "exactly once".
-CREATE UNIQUE INDEX audit_entry_one_expiry ON trucker.audit_entry (record_id)
+-- One expiry per shipment and publication cycle, whatever happens: the database itself holds
+-- the "exactly once". A republished shipment starts a new cycle and can expire again.
+CREATE UNIQUE INDEX audit_entry_one_expiry ON trucker.audit_entry (record_id, publication_cycle)
   WHERE action = 'shipment.expired';
 
 -- ---------------------------------------------------------------------------------------------
@@ -444,8 +453,10 @@ BEGIN
     SET status = 'expired', expired_at = s.deadline_at, version = d.version + 1, updated_at = p_at
     WHERE d.id = s.id RETURNING * INTO after_row;
     INSERT INTO trucker.audit_entry
-      (occurred_at, organisation_id, action, record_type, record_id, request_id, before_values, after_values)
+      (occurred_at, organisation_id, action, record_type, record_id, request_id, publication_cycle,
+       before_values, after_values)
     VALUES (s.deadline_at, s.organisation_id, 'shipment.expired', 'shipment_draft', s.id, request,
+            s.publication_cycle,
             jsonb_build_object('status', 'published', 'publishedVersion', s.published_version),
             jsonb_build_object('status', 'expired', 'recordedAt', p_at, 'endedSuspensions', ended));
     RETURN;
@@ -460,8 +471,10 @@ BEGIN
       INSERT INTO trucker.shipment_suspension (shipment_id, organisation_id, cause, started_at)
       VALUES (s.id, s.organisation_id, v_cause, p_at);
       INSERT INTO trucker.audit_entry
-        (occurred_at, organisation_id, action, record_type, record_id, request_id, before_values, after_values)
-      VALUES (p_at, s.organisation_id, 'shipment.suspended', 'shipment_draft', s.id, request, NULL,
+        (occurred_at, organisation_id, action, record_type, record_id, request_id, publication_cycle,
+         before_values, after_values)
+      VALUES (p_at, s.organisation_id, 'shipment.suspended', 'shipment_draft', s.id, request,
+              s.publication_cycle, NULL,
               jsonb_build_object('cause', v_cause, 'openCauses',
                 (SELECT jsonb_agg(x.cause ORDER BY x.cause) FROM trucker.shipment_suspension x
                  WHERE x.shipment_id = s.id AND x.ended_at IS NULL)));
@@ -469,8 +482,10 @@ BEGIN
       UPDATE trucker.shipment_suspension x SET ended_at = p_at, ended_by = 'recheck'
       WHERE x.shipment_id = s.id AND x.cause = v_cause AND x.ended_at IS NULL;
       INSERT INTO trucker.audit_entry
-        (occurred_at, organisation_id, action, record_type, record_id, request_id, before_values, after_values)
+        (occurred_at, organisation_id, action, record_type, record_id, request_id, publication_cycle,
+         before_values, after_values)
       VALUES (p_at, s.organisation_id, 'shipment.suspension_ended', 'shipment_draft', s.id, request,
+              s.publication_cycle,
               jsonb_build_object('cause', v_cause),
               jsonb_build_object('openCauses',
                 coalesce((SELECT jsonb_agg(x.cause ORDER BY x.cause) FROM trucker.shipment_suspension x
@@ -671,18 +686,20 @@ BEGIN
     deadline_local = d.deadline_local, deadline_offset_minutes = d.deadline_offset_minutes,
     deadline_at = d.deadline_at,
     status = 'published', published_version = 1, published_at = entered.at,
+    publication_cycle = gen_random_uuid(),
     version = x.version + 1, updated_at = entered.at
   WHERE x.id = p_shipment RETURNING * INTO d;
   INSERT INTO trucker.shipment_publication_version
-    (shipment_id, organisation_id, version_no, kind, carrier_values, created_at, created_by)
-  VALUES (d.id, entered.org, 1, 'published', trucker.shipment_material_values(d), entered.at, entered.actor);
+    (shipment_id, organisation_id, version_no, kind, publication_cycle, carrier_values, created_at, created_by)
+  VALUES (d.id, entered.org, 1, 'published', d.publication_cycle, trucker.shipment_material_values(d),
+          entered.at, entered.actor);
   INSERT INTO trucker.shipment_retry_key (person_id, key, operation, request_hash, draft_id, resulting_version, created_at)
   VALUES (entered.actor, p_key, 'publish', hash, d.id, d.version, entered.at);
   INSERT INTO trucker.audit_entry
     (occurred_at, actor_person_id, organisation_id, action, record_type, record_id, request_id,
-     before_values, after_values)
+     publication_cycle, before_values, after_values)
   VALUES (entered.at, entered.actor, entered.org, 'shipment.published', 'shipment_draft', d.id,
-          nullif(current_setting('trucker.request_id', true), ''),
+          nullif(current_setting('trucker.request_id', true), ''), d.publication_cycle,
           jsonb_build_object('status', 'draft'),
           jsonb_build_object('status', 'published', 'publishedVersion', 1,
                              'carrierValues', trucker.shipment_material_values(d)));
@@ -808,18 +825,19 @@ BEGIN
   WHERE x.id = p_shipment RETURNING * INTO d;
   IF material THEN
     INSERT INTO trucker.shipment_publication_version
-      (shipment_id, organisation_id, version_no, kind, carrier_values, created_at, created_by)
-    VALUES (d.id, entered.org, d.published_version, 'changed', trucker.shipment_material_values(d),
+      (shipment_id, organisation_id, version_no, kind, publication_cycle, carrier_values, created_at, created_by)
+    VALUES (d.id, entered.org, d.published_version, 'changed', d.publication_cycle,
+            trucker.shipment_material_values(d),
             entered.at, entered.actor);
   END IF;
   INSERT INTO trucker.shipment_retry_key (person_id, key, operation, request_hash, draft_id, resulting_version, created_at)
   VALUES (entered.actor, p_key, 'change', hash, d.id, d.version, entered.at);
   INSERT INTO trucker.audit_entry
     (occurred_at, actor_person_id, organisation_id, action, record_type, record_id, request_id,
-     before_values, after_values)
+     publication_cycle, before_values, after_values)
   VALUES (entered.at, entered.actor, entered.org,
           CASE WHEN material THEN 'shipment.version_created' ELSE 'shipment.updated' END,
-          'shipment_draft', d.id, nullif(current_setting('trucker.request_id', true), ''),
+          'shipment_draft', d.id, nullif(current_setting('trucker.request_id', true), ''), d.publication_cycle,
           trucker.shipment_values(before_row), trucker.shipment_values(d));
   -- A place may have moved onto or off a closed route.
   PERFORM trucker.shipment_settle(d.id, entered.at);
@@ -887,9 +905,9 @@ BEGIN
   VALUES (entered.actor, p_key, 'withdraw', hash, d.id, d.version, entered.at);
   INSERT INTO trucker.audit_entry
     (occurred_at, actor_person_id, organisation_id, action, record_type, record_id, request_id,
-     before_values, after_values)
+     publication_cycle, before_values, after_values)
   VALUES (entered.at, entered.actor, entered.org, 'shipment.withdrawn', 'shipment_draft', d.id,
-          nullif(current_setting('trucker.request_id', true), ''),
+          nullif(current_setting('trucker.request_id', true), ''), d.publication_cycle,
           jsonb_build_object('status', 'published', 'publishedVersion', d.published_version),
           jsonb_build_object('status', 'withdrawn', 'endedSuspensions', ended));
   status := 'withdrawn';
@@ -915,6 +933,7 @@ DECLARE
   d trucker.shipment_draft;
   r record;
   problems jsonb;
+  before_cycle uuid;
   hash text := trucker.content_hash(coalesce(p_deadline, 'null'::jsonb) || jsonb_build_object('_v', p_expected_version));
 BEGIN
   IF p_shipment IS NULL OR p_deadline IS NULL OR jsonb_typeof(p_deadline) <> 'object' THEN
@@ -968,24 +987,27 @@ BEGIN
     detail := jsonb_build_object('limit', g.published_shipment_limit);
     RETURN;
   END IF;
+  before_cycle := d.publication_cycle;
   UPDATE trucker.shipment_draft x SET
     deadline_local = d.deadline_local, deadline_offset_minutes = d.deadline_offset_minutes,
     deadline_at = d.deadline_at, status = 'published', expired_at = NULL,
     published_version = x.published_version + 1, published_at = entered.at,
+    publication_cycle = gen_random_uuid(),
     version = x.version + 1, updated_at = entered.at
   WHERE x.id = p_shipment RETURNING * INTO d;
   INSERT INTO trucker.shipment_publication_version
-    (shipment_id, organisation_id, version_no, kind, carrier_values, created_at, created_by)
-  VALUES (d.id, entered.org, d.published_version, 'republished', trucker.shipment_material_values(d),
+    (shipment_id, organisation_id, version_no, kind, publication_cycle, carrier_values, created_at, created_by)
+  VALUES (d.id, entered.org, d.published_version, 'republished', d.publication_cycle,
+          trucker.shipment_material_values(d),
           entered.at, entered.actor);
   INSERT INTO trucker.shipment_retry_key (person_id, key, operation, request_hash, draft_id, resulting_version, created_at)
   VALUES (entered.actor, p_key, 'republish', hash, d.id, d.version, entered.at);
   INSERT INTO trucker.audit_entry
     (occurred_at, actor_person_id, organisation_id, action, record_type, record_id, request_id,
-     before_values, after_values)
+     publication_cycle, before_values, after_values)
   VALUES (entered.at, entered.actor, entered.org, 'shipment.republished', 'shipment_draft', d.id,
-          nullif(current_setting('trucker.request_id', true), ''),
-          jsonb_build_object('status', 'expired'),
+          nullif(current_setting('trucker.request_id', true), ''), d.publication_cycle,
+          jsonb_build_object('status', 'expired', 'previousCycle', before_cycle),
           jsonb_build_object('status', 'published', 'publishedVersion', d.published_version,
                              'carrierValues', trucker.shipment_material_values(d)));
   status := 'republished';

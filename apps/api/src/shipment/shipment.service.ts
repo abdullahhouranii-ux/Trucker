@@ -95,6 +95,8 @@ export interface PublicationView {
   readonly deliveryArea: string | null;
   readonly quotationDeadline: WindowEndView;
   readonly publishedVersion: number | null;
+  /** Stable within one publication cycle; new at publication and at each republication. */
+  readonly publicationCycle: string | null;
   readonly publishedAt: string | null;
   readonly withdrawnAt: string | null;
   readonly expiredAt: string | null;
@@ -215,6 +217,7 @@ interface DraftRow {
   withdrawn_at: Date | null;
   expired_at: Date | null;
   copied_from: string | null;
+  publication_cycle: string | null;
   suspended_for: ('verification' | 'route')[];
 }
 
@@ -238,6 +241,7 @@ const DRAFT = `
          d.cargo_category, d.equipment_type, d.dangerous_goods, d.pickup_area, d.delivery_area,
          to_char(d.deadline_local, ${LOCAL}) AS deadline_local, d.deadline_offset_minutes, d.deadline_at,
          d.published_version, d.published_at, d.withdrawn_at, d.expired_at, d.copied_from,
+         d.publication_cycle,
          coalesce((SELECT array_agg(s.cause ORDER BY s.cause) FROM trucker.shipment_suspension s
                    WHERE s.shipment_id = d.id AND s.ended_at IS NULL), '{}') AS suspended_for,
          trucker.route_check(d.pickup_country, d.delivery_country, $2) AS route,
@@ -319,6 +323,7 @@ const view = (row: DraftRow): ShipmentView => ({
       row.choices.quotationDeadline ?? null,
     ),
     publishedVersion: row.published_version,
+    publicationCycle: row.publication_cycle,
     publishedAt: row.published_at ? row.published_at.toISOString() : null,
     withdrawnAt: row.withdrawn_at ? row.withdrawn_at.toISOString() : null,
     expiredAt: row.expired_at ? row.expired_at.toISOString() : null,
