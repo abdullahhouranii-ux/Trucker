@@ -897,6 +897,10 @@ interface View extends Booking {
     pickup: { address: string; accessNotes: string };
     delivery: { address: string; accessNotes: string };
   } | null;
+  vehicleChanges: {
+    at: string;
+    changes: { role: string; from: Member | null; to: Member | null }[];
+  }[];
 }
 interface Candidates {
   vehicles: { id: string; kind: string; state: string; requiresTrailer: boolean }[];
@@ -1208,6 +1212,8 @@ test('ASG-1, ASG-3: a partial set confirms nothing; a complete, eligible, reserv
   }
   assert.equal((await reservationsOf(booking.id)).length, 2);
 
+  // Assignments before confirmation are not vehicle changes.
+  assert.deepEqual(forShipper.booking.vehicleChanges, []);
   // Confirmed is not ready for dispatch: the driver has not acknowledged.
   assert.deepEqual((await viewOf(carrier, booking.id)).dispatch, {
     ready: false,
@@ -1528,6 +1534,30 @@ test('reassignment follows the substitution rules: like-for-like takes effect at
     [['released', 'reassigned']],
   );
   assert.equal(await held(spare.id), 1);
+  // N-1: the swap is in the shipper's history and on its page, with the registrations only.
+  const plate = (vehicle: Vehicle) => ({
+    registrationCountry: 'XA',
+    registrationNumber: vehicle.registrationNumber,
+  });
+  const swapped = [{ role: 'truck', from: plate(truck), to: plate(spare) }];
+  const swapAt = clock().getTime();
+  for (const party of [shipper, carrier])
+    assert.deepEqual(
+      (await viewOf(party, booking.id)).vehicleChanges.map((item) => [ms(item.at), item.changes]),
+      [[swapAt, swapped]],
+    );
+  const swapRecords = (
+    await owner.query<{ organisation_id: string; after_values: unknown; before_values: unknown }>(
+      `SELECT organisation_id, after_values, before_values FROM trucker.audit_entry
+       WHERE record_id = $1 AND action = 'booking.vehicles_changed'`,
+      [booking.id],
+    )
+  ).rows;
+  assert.deepEqual(swapRecords, [
+    { organisation_id: shipper.org, after_values: { changes: swapped }, before_values: null },
+  ]);
+  for (const hidden of [truck.id, spare.id, carrier.person.personId])
+    assert.ok(!JSON.stringify(swapRecords).includes(hidden), `the record names ${hidden}`);
   // A change of driver: the same, and the driver who left sees nothing.
   view = await assigned(carrier, booking.id, { driverId: two.affiliation }, 'assigned');
   assert.equal(view.assignmentVersion, 3);
@@ -1535,6 +1565,8 @@ test('reassignment follows the substitution rules: like-for-like takes effect at
   assert.equal((await acknowledge(one.driver, booking.id, 3)).status, 404);
   assert.equal((await acknowledge(two.driver, booking.id, 3)).status, 200);
   assert.equal((await viewOf(carrier, booking.id)).dispatch.ready, true);
+  // A change of driver adds no vehicle change.
+  assert.equal((await viewOf(shipper, booking.id)).vehicleChanges.length, 1);
 
   // Materially different: a tractor unit with a trailer in place of the rigid truck. It is a
   // proposal. The current set stays, and the substitute is held while the shipper decides.
@@ -1665,6 +1697,8 @@ test('reassignment follows the substitution rules: like-for-like takes effect at
   );
   const accepted = await decideSubstitution(shipper, third.substitution!.id, 1, 'accept');
   assert.deepEqual([accepted.status, accepted.body.outcome], [200, 'accepted'], accepted.text);
+  // A substitution the shipper accepted is its own decision, not a vehicle change made for it.
+  assert.equal((await viewOf(shipper, booking.id)).vehicleChanges.length, 1);
   view = await viewOf(carrier, booking.id);
   assert.deepEqual(
     [

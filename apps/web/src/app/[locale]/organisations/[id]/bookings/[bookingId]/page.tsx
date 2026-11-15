@@ -265,6 +265,24 @@ export default async function BookingPage({ params, searchParams }: Props) {
         ) : (
           <p id="resources-hidden">{a.resourcesHidden}</p>
         )}
+        {booking.vehicleChanges && booking.vehicleChanges.length > 0 ? (
+          <>
+            <h3 id="vehicle-changes-title">{a.changesTitle}</h3>
+            <p className="field-hint">{a.changesNote}</p>
+            <ol className="evidence" id="vehicle-changes" aria-labelledby="vehicle-changes-title">
+              {booking.vehicleChanges.flatMap((entry, index) =>
+                entry.changes.map((change) => (
+                  <li key={`${index}-${change.role}`} data-change={change.role}>
+                    <InstantText at={entry.at} />: {a.roles[change.role]}{' '}
+                    {change.from ? plate(change.from) : a.none}
+                    {' → '}
+                    {change.to ? plate(change.to) : a.none}
+                  </li>
+                )),
+              )}
+            </ol>
+          </>
+        ) : null}
       </section>
 
       {booking.substitution ? (

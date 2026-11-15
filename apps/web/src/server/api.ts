@@ -570,6 +570,15 @@ export interface Booking {
     chargeBasis: 'none_recorded';
   } | null;
   confirmedAt: string | null;
+  /** Vehicles the carrier replaced after confirmation with ones of the same category. */
+  vehicleChanges?: {
+    at: string;
+    changes: {
+      role: 'truck' | 'trailer';
+      from: AssignedVehicle | null;
+      to: AssignedVehicle | null;
+    }[];
+  }[];
   overdue: boolean;
   waitDecision: { decidedAt: string } | null;
   assignmentVersion: number;

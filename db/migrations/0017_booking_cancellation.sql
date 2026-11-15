@@ -172,7 +172,8 @@ ALTER TABLE trucker.audit_entry
     'fleet.suspended', 'fleet.suspension_ended',
     'booking.created', 'booking.assignment_changed', 'booking.confirmed', 'booking.wait_decided',
     'substitution.proposed', 'substitution.accepted', 'substitution.declined', 'substitution.withdrawn',
-    'substitution.checks_failed', 'assignment.acknowledged', 'booking.cancelled'));
+    'substitution.checks_failed', 'assignment.acknowledged', 'booking.cancelled',
+    'booking.vehicles_changed'));
 
 CREATE OR REPLACE FUNCTION trucker.set_booking_assignment(
   p_booking uuid, p_expected_version integer, p_truck uuid, p_trailer uuid, p_affiliation uuid,
@@ -195,6 +196,7 @@ DECLARE
   v_failure jsonb;
   v_differences jsonb;
   v_blocker text;
+  v_changes jsonb;
   item record;
 BEGIN
   IF p_booking IS NULL OR p_expected_version IS NULL OR p_expected_version < 0 THEN
@@ -326,6 +328,24 @@ BEGIN
         jsonb_build_object('version', v_set, 'truck', cur.truck, 'trailer', cur.trailer, 'driver', cur.affiliation),
         jsonb_build_object('version', v_new_set, 'truck', p_truck, 'trailer', p_trailer, 'driver', p_affiliation,
                            'confirms', NOT v_confirmed AND v_complete));
+      -- After confirmation a vehicle replaced by one of the same category takes effect at once
+      -- (N-1). The shipper's history records it, with the registrations only: the same facts the
+      -- shipper is shown of the vehicles. A change of driver is not recorded here.
+      IF v_confirmed THEN
+        SELECT coalesce(jsonb_agg(jsonb_build_object(
+                 'role', m.role,
+                 'from', trucker.assignment_vehicle_values(m.held, 'shipper'),
+                 'to', trucker.assignment_vehicle_values(m.wanted, 'shipper')) ORDER BY m.n), '[]'::jsonb)
+        INTO v_changes
+        FROM (VALUES (1, 'truck', cur.truck, p_truck), (2, 'trailer', cur.trailer, p_trailer))
+          AS m (n, role, held, wanted)
+        WHERE m.held IS DISTINCT FROM m.wanted;
+        IF jsonb_array_length(v_changes) > 0 THEN
+          PERFORM trucker.assignment_audit(
+            v_at, entered.actor, b.shipper_organisation_id, 'booking.vehicles_changed', 'booking', b.id,
+            NULL, jsonb_build_object('changes', v_changes));
+        END IF;
+      END IF;
       status := 'assigned';
       IF NOT v_confirmed AND v_complete THEN
         -- Every required resource is assigned, eligible for the whole interval and reserved.
@@ -581,6 +601,17 @@ BEGIN
 END
 $$;
 
+-- The vehicles the carrier replaced after confirmation without needing the shipper's
+-- acceptance (same category), oldest first, as both parties are shown them.
+CREATE FUNCTION trucker.vehicle_changes(p_booking uuid) RETURNS jsonb
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, trucker, pg_temp AS $$
+  SELECT coalesce(jsonb_agg(jsonb_build_object('at', e.occurred_at, 'changes', e.after_values -> 'changes')
+                            ORDER BY e.occurred_at, e.id), '[]'::jsonb)
+  FROM trucker.audit_entry e
+  WHERE e.record_id = p_booking AND e.action = 'booking.vehicles_changed'
+$$;
+REVOKE ALL ON FUNCTION trucker.vehicle_changes(uuid) FROM PUBLIC, trucker_app;
+
 CREATE OR REPLACE FUNCTION trucker.booking_view(b trucker.booking, p_audience text, p_at timestamptz) RETURNS jsonb
 LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, trucker, pg_temp AS $$
 #variable_conflict use_column
@@ -601,6 +632,7 @@ BEGIN
       coalesce((SELECT x.set_no FROM trucker.booking_assignment_state x WHERE x.booking_id=b.id),0),
       'dispatch',jsonb_build_object('ready',false,'blockers',jsonb_build_array(jsonb_build_object('code','booking_cancelled'))),
       'needsReassignment',false,'atRisk',false,'acknowledgedAt',NULL,'resources',NULL,'substitution',NULL,'site',NULL,
+      'vehicleChanges',trucker.vehicle_changes(b.id),
       'cancellation',trucker.cancellation_values(b.id,p_audience));
   END IF;
   SELECT * INTO c FROM trucker.booking_confirmation x WHERE x.booking_id = b.id;
@@ -630,6 +662,7 @@ BEGIN
     'resources', CASE WHEN p_audience <> 'shipper' OR c.booking_id IS NOT NULL
                       THEN trucker.assignment_set_values(cur.truck, cur.trailer, cur.affiliation, p_audience) END,
     'substitution', CASE WHEN s.id IS NOT NULL THEN trucker.substitution_values(s, p_audience) END,
+    'vehicleChanges', trucker.vehicle_changes(b.id),
     'site', CASE WHEN p_audience <> 'shipper' AND c.booking_id IS NOT NULL THEN c.site_details END);
 END
 $$;

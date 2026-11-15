@@ -65,3 +65,7 @@ Evidence after the corrections, on Linux with PostgreSQL 16.15:
 | Console browser checks | All passed (243) |
 
 Not reviewed here: Windows-specific behaviour, Docker, physical phones, screen readers, and native Arabic and Urdu reading.
+
+## Addition after approval (15 November 2026, 22:24): N-1
+
+After confirmation, a vehicle replaced by one of the same category takes effect at once (slice 15). It is now also recorded in the shipper's history (`booking.vehicles_changed`, registrations only) and listed on the booking page for both parties. A change of driver, and a substitution the shipper accepted, are not listed there. Built in migration 0017 (`set_booking_assignment`, `vehicle_changes`, `booking_view`). Five deliberate defects were each caught by the assignment tests: the record not written, identifiers leaked, the record written to the carrier's history, a record before confirmation, a driver change counted.

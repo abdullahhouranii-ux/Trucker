@@ -1024,6 +1024,8 @@
     },
     "resourcesTitle": "Resources",
     "resourcesHidden": "The vehicles and the driver are shown once the booking is confirmed.",
+    "changesTitle": "Vehicles replaced after confirmation",
+    "changesNote": "The carrier replaced these with vehicles of the same category. That does not need your acceptance, and the price does not change.",
     "none": "Not assigned",
     "acknowledged": "The driver acknowledged this assignment.",
     "notAcknowledged": "The driver has not acknowledged this assignment.",
