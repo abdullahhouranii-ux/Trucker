@@ -21,7 +21,7 @@ Status values: **Open** (nothing done), **Partial** (some of it is built or chec
 | R1-P1 | Release 1 scope as above confirmed in writing | Partial | Stated by Abdullah on 15 November 2026 (full journey, superseding the quotation-only pilot); record it in docs/specs with D-numbers |
 | R1-P2 | Invitation mechanism: how a pilot organisation is admitted (allow-list, invitation code, staff enabling) | Open | Not built. Registration is closed in production. Needs a decision, then a slice |
 | R1-P3 | Pilot size: number of shippers, carriers and staff, and duration | Open | Decision |
-| R1-P4 | Exit criteria: what the pilot must show before acceptance and booking are built | Open | Decision |
+| R1-P4 | Exit criteria: what the pilot must show before it is opened more widely | Open | Decision (D-012) |
 | R1-P5 | Screens state plainly what each step commits to: a quotation is not a booking, a booking is not a payment, and Trucker does not hold transport money | Partial | Quotation screens state it (slice 12); later slices must keep it accurate; confirm in the final audit |
 
 ## 1A. Journey readiness (functional)
