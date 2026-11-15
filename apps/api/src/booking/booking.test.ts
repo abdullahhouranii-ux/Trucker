@@ -793,7 +793,12 @@ test('accepting a quotation creates one booking with exact snapshots of the vers
     );
   }
   // Nothing was assigned, reserved or confirmed.
-  assert.equal(await count('booking', `status <> 'awaiting_resources'`), 0);
+  // The row stores no state: nothing on it can say "confirmed".
+  const stored = await owner.query(
+    `SELECT 1 FROM information_schema.columns
+     WHERE table_schema = 'trucker' AND table_name = 'booking' AND column_name = 'status'`,
+  );
+  assert.equal(stored.rowCount, 0);
 });
 
 test('the fee is exact: half-up at the minor unit, from the settings at the moment of acceptance, and the database refuses any other figure', async () => {
@@ -1001,6 +1006,206 @@ test('acceptance is checked again at its own moment: a stale version, an expired
     const reply = await accept(shipper.person, shipper.org, made.id, 1);
     assert.deepEqual([reply.status, reply.body.code], [409, 'quotation_not_open']);
     await none(shipment.id);
+  }
+});
+
+test('a booking names an immutable, demonstration-only version of the terms, and that register cannot be changed or taken to production', async () => {
+  const { shipper, shipment, carrier } = await market();
+  const made = await quoted(carrier.person, carrier.org, shipment.id);
+  const terms = (
+    await owner.query<{ code: string; version_no: number; content_hash: string; body: string }>(
+      'SELECT code, version_no, content_hash, body FROM trucker.booking_terms',
+    )
+  ).rows;
+  assert.equal(terms.length, 1);
+  assert.match(terms[0]!.body, /^Demonstration booking terms, for development and testing only/);
+  const expected = {
+    code: 'booking',
+    version: 1,
+    demonstration: true,
+    contentHash: terms[0]!.content_hash,
+  };
+  // Shown before accepting, and fixed on the booking.
+  const preview = (await overviewOf(shipper.person, shipper.org, shipment.id)).acceptance[0]!;
+  assert.deepEqual((preview as unknown as { terms: unknown }).terms, expected);
+  const reply = await accept(shipper.person, shipper.org, made.id, 1);
+  assert.equal(reply.status, 200, reply.text);
+  const booking = reply.body.booking as Booking & { terms: unknown };
+  assert.deepEqual(booking.terms, expected);
+  const seenByCarrier = (await bookingsOf(carrier.person, carrier.org))[0] as Booking & {
+    terms: unknown;
+  };
+  assert.deepEqual(seenByCarrier.terms, expected);
+  // A version is never changed or removed, by anyone; a booking cannot name another version.
+  await refused(
+    () => owner.query(`UPDATE trucker.booking_terms SET body = 'Other text'`),
+    /cannot be changed or removed/,
+  );
+  await refused(() => owner.query('DELETE FROM trucker.booking_terms'), /cannot be changed/);
+  await refused(() => owner.query('TRUNCATE trucker.booking_terms CASCADE'), /cannot be changed/);
+  await refused(
+    () => owner.query('UPDATE trucker.booking SET terms_version = 2 WHERE id = $1', [booking.id]),
+    /cannot be changed or removed/,
+  );
+  // Only demonstration terms can exist, with a hash of their own content.
+  const insert = (demonstration: boolean, hash: string) =>
+    owner.query(
+      `INSERT INTO trucker.booking_terms (code, version_no, demonstration, body, content_hash, created_at)
+       VALUES ('booking', 2, $1, 'Later text', $2, now())`,
+      [demonstration, hash],
+    );
+  const hashOf = (
+    await owner.query<{ h: string }>(
+      `SELECT encode(sha256(convert_to('booking:2:Later text', 'UTF8')), 'hex') AS h`,
+    )
+  ).rows[0]!.h;
+  await refused(() => insert(false, hashOf), /booking_terms_demonstration_only/);
+  // An unmarked or production database accepts no terms at all, so acceptance there is closed.
+  const scratch = await createTestDatabase();
+  const bare = new pg.Pool({ connectionString: scratch.url });
+  try {
+    await migrateUp(bare, defaultMigrationsDir());
+    assert.equal((await bare.query('SELECT 1 FROM trucker.booking_terms')).rowCount, 0);
+    const add = () =>
+      bare.query(
+        `INSERT INTO trucker.booking_terms (code, version_no, demonstration, body, content_hash, created_at)
+         VALUES ('booking', 1, true, 'Text', encode(sha256(convert_to('booking:1:Text', 'UTF8')), 'hex'), now())`,
+      );
+    await refused(add, /allowed only in a database marked local-development or test/);
+    await bare.query(`UPDATE trucker.environment SET kind = 'production', marked_at = now()`);
+    await refused(add, /allowed only in a database marked local-development or test/);
+    assert.equal(
+      (await bare.query<{ t: string | null }>('SELECT (trucker.booking_terms_current()).code AS t'))
+        .rows[0]!.t,
+      null,
+    );
+  } finally {
+    await bare.end();
+    await scratch.drop();
+  }
+  await refused(() => insert(true, 'not-the-hash'), /booking_terms_hash/);
+  // A database holding demonstration terms cannot be marked as production. Other guards refuse
+  // this too, so they are set aside inside a transaction that is rolled back.
+  const client = await owner.connect();
+  try {
+    await client.query('BEGIN');
+    for (const name of [
+      'environment_guard',
+      'environment_guard_catalogue',
+      'environment_guard_quotation_registers',
+      'environment_guard_fleet_registers',
+    ])
+      await client.query(`ALTER TABLE trucker.environment DISABLE TRIGGER ${name}`);
+    await refused(
+      () => client.query(`UPDATE trucker.environment SET kind = 'production'`),
+      /holds demonstration booking terms and cannot be marked production/,
+    );
+  } finally {
+    await client.query('ROLLBACK');
+    client.release();
+  }
+  // The API role cannot read or write the register.
+  await asApiRole({}, async (client) => {
+    await refused(() => client.query('SELECT * FROM trucker.booking_terms'), /permission denied/);
+  });
+});
+
+test("a refused acceptance is recorded in the asking shipper's history only: the reason and version numbers, nothing of the carrier, and nothing for a caller who may not see the quotation", async () => {
+  const refusals = async (quotation: string) =>
+    (
+      await owner.query<{
+        organisation_id: string;
+        actor_person_id: string;
+        after_values: Record<string, unknown>;
+        before_values: unknown;
+      }>(
+        `SELECT organisation_id, actor_person_id, after_values, before_values FROM trucker.audit_entry
+         WHERE record_id = $1 AND action = 'acceptance.refused' ORDER BY occurred_at, id`,
+        [quotation],
+      )
+    ).rows;
+  const { shipper, shipment, carrier } = await market();
+  const other = await verifiedCarrier();
+  const made = await quoted(carrier.person, carrier.org, shipment.id);
+  const theirs = await quoted(other.person, other.org, shipment.id, quoteBody({ amount: '1300' }));
+  // People who may not see the quotation: refused as for a missing record, and nothing is written.
+  const outsider = await newPerson();
+  for (const [person, org] of [
+    [carrier.person, carrier.org],
+    [other.person, other.org],
+    [outsider, shipper.org],
+  ] as const) {
+    const reply = await accept(person, org, made.id, 1);
+    assert.equal(reply.status, 404, reply.text);
+  }
+  assert.equal(
+    await count('audit_entry', `action = 'acceptance.refused' AND record_id = $1`, [made.id]),
+    0,
+  );
+  // A stale version: recorded with the version asked for and the current one.
+  const revised = await carrierAct(carrier.person, carrier.org, made.id, 'revisions', {
+    ...quoteBody({ amount: '1400' }),
+    version: 1,
+  });
+  assert.equal(revised.status, 200, revised.text);
+  const stale = await accept(shipper.person, shipper.org, made.id, 1);
+  assert.deepEqual([stale.status, stale.body.code], [409, 'quotation_changed']);
+  // A retry key used for a different request.
+  const retry = key();
+  const first = await accept(shipper.person, shipper.org, theirs.id, 1, retry);
+  assert.equal(first.status, 200, first.text);
+  const reused = await accept(shipper.person, shipper.org, made.id, 2, retry);
+  assert.deepEqual([reused.status, reused.body.code], [409, 'retry_key_conflict']);
+  // The shipment is awarded: a later acceptance of another quotation is refused.
+  const late = await accept(shipper.person, shipper.org, made.id, 2);
+  assert.deepEqual([late.status, late.body.code], [409, 'shipment_already_awarded']);
+  const rows = await refusals(made.id);
+  assert.deepEqual(
+    // The test clock stands still, so the order is not asserted.
+    rows
+      .map((row) => row.after_values)
+      .sort((x, y) => String(x.reason).localeCompare(String(y.reason))),
+    [
+      { reason: 'already_awarded', expectedVersion: 2 },
+      { reason: 'conflict', expectedVersion: 1, currentVersion: 2 },
+      { reason: 'key_conflict', expectedVersion: 2 },
+    ],
+  );
+  for (const row of rows) {
+    assert.equal(row.organisation_id, shipper.org);
+    assert.equal(row.actor_person_id, shipper.person.personId);
+    assert.equal(row.before_values, null);
+  }
+  // Nothing of it is in either carrier's history, which is all a carrier can read.
+  for (const org of [carrier.org, other.org])
+    assert.equal(
+      await count('audit_entry', `organisation_id = $1 AND action = 'acceptance.refused'`, [org]),
+      0,
+    );
+  const session = await again(carrier.person);
+  await asApiRole(
+    { tokenHash: hashToken(session.token), organisationId: carrier.org },
+    async (client) => {
+      const seen = await client.query(
+        `SELECT 1 FROM trucker.audit_entry WHERE action = 'acceptance.refused'`,
+      );
+      assert.equal(seen.rowCount, 0);
+      // The same request does read the carrier's own history.
+      const own = await client.query('SELECT 1 FROM trucker.audit_entry');
+      assert.ok((own.rowCount ?? 0) > 0);
+    },
+  );
+  // A refusal for a reason about the carrier says no more than the shipper is told.
+  {
+    const next = await market();
+    const quotation = await quoted(next.carrier.person, next.carrier.org, next.shipment.id);
+    assert.equal((await revokeCapability(next.carrier.org, 'carry_as_company')).status, 200);
+    const reply = await accept(next.shipper.person, next.shipper.org, quotation.id, 1);
+    assert.deepEqual([reply.status, reply.body.code], [409, 'quotation_carrier_not_eligible']);
+    assert.deepEqual(
+      (await refusals(quotation.id)).map((row) => [row.organisation_id, row.after_values]),
+      [[next.shipper.org, { reason: 'carrier_not_eligible', expectedVersion: 1 }]],
+    );
   }
 });
 

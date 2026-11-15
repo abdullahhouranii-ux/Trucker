@@ -38,6 +38,67 @@ ALTER TABLE trucker.security_setting
     CHECK (reservation_completion_minutes BETWEEN 0 AND 10080);
 
 -- ---------------------------------------------------------------------------------------------
+-- The terms a booking is made under: an immutable, versioned register. A booking names the
+-- exact version and its content hash. The only version that can exist is a demonstration text
+-- for development: it is not legal text, has not been reviewed and binds nobody. Approved terms
+-- arrive as a later, reviewed migration; until then the register refuses anything else, and a
+-- database holding demonstration terms cannot be marked as anything but development or test.
+-- ---------------------------------------------------------------------------------------------
+CREATE TABLE trucker.booking_terms (
+  code text NOT NULL CHECK (code ~ '^[a-z][a-z0-9_]{1,39}$'),
+  version_no integer NOT NULL CHECK (version_no >= 1),
+  demonstration boolean NOT NULL,
+  body text NOT NULL CHECK (length(btrim(body)) BETWEEN 1 AND 20000),
+  content_hash text NOT NULL,
+  created_at timestamptz NOT NULL,
+  PRIMARY KEY (code, version_no),
+  CONSTRAINT booking_terms_hash CHECK (
+    content_hash = encode(sha256(convert_to(code || ':' || version_no || ':' || body, 'UTF8')), 'hex')),
+  -- No approved terms exist. Removing this is part of the reviewed migration that adds them.
+  CONSTRAINT booking_terms_demonstration_only CHECK (demonstration)
+);
+CREATE FUNCTION trucker.guard_booking_terms() RETURNS trigger
+LANGUAGE plpgsql SET search_path = pg_catalog, trucker, pg_temp AS $$
+BEGIN
+  RAISE EXCEPTION 'a version of the booking terms cannot be changed or removed' USING ERRCODE = 'check_violation';
+END
+$$;
+CREATE TRIGGER booking_terms_guard BEFORE UPDATE OR DELETE ON trucker.booking_terms
+  FOR EACH ROW EXECUTE FUNCTION trucker.guard_booking_terms();
+CREATE TRIGGER booking_terms_truncate_guard BEFORE TRUNCATE ON trucker.booking_terms
+  FOR EACH STATEMENT EXECUTE FUNCTION trucker.guard_booking_terms();
+-- The register ships empty, like every fictional register: the demonstration version is a
+-- development fixture, and only a database marked for development or test accepts it. With no
+-- version in the register, acceptance answers "closed".
+CREATE FUNCTION trucker.guard_booking_terms_insert() RETURNS trigger
+LANGUAGE plpgsql SET search_path = pg_catalog, trucker, pg_temp AS $$
+BEGIN
+  IF (SELECT e.kind FROM trucker.environment e) NOT IN ('local-development', 'test') THEN
+    RAISE EXCEPTION 'demonstration booking terms are allowed only in a database marked local-development or test'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END
+$$;
+CREATE TRIGGER booking_terms_insert_guard BEFORE INSERT ON trucker.booking_terms
+  FOR EACH ROW EXECUTE FUNCTION trucker.guard_booking_terms_insert();
+CREATE FUNCTION trucker.guard_environment_booking_terms() RETURNS trigger
+LANGUAGE plpgsql SET search_path = pg_catalog, trucker, pg_temp AS $$
+BEGIN
+  IF NEW.kind NOT IN ('local-development', 'test')
+     AND EXISTS (SELECT 1 FROM trucker.booking_terms t WHERE t.demonstration) THEN
+    RAISE EXCEPTION 'this database holds demonstration booking terms and cannot be marked %', NEW.kind
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END
+$$;
+CREATE TRIGGER environment_guard_booking_terms BEFORE UPDATE ON trucker.environment
+  FOR EACH ROW EXECUTE FUNCTION trucker.guard_environment_booking_terms();
+ALTER TABLE trucker.booking_terms ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON trucker.booking_terms FROM trucker_app, PUBLIC;
+
+-- ---------------------------------------------------------------------------------------------
 -- New states of existing records
 -- ---------------------------------------------------------------------------------------------
 ALTER TABLE trucker.shipment_draft
@@ -65,8 +126,8 @@ CREATE TABLE trucker.booking (
   quotation_version integer NOT NULL,
   shipper_organisation_id uuid NOT NULL REFERENCES trucker.organisation (id),
   carrier_organisation_id uuid NOT NULL REFERENCES trucker.organisation (id),
-  -- Only this state exists yet. "confirmed" arrives with assignment and reservation.
-  status text NOT NULL DEFAULT 'awaiting_resources' CHECK (status IN ('awaiting_resources')),
+  -- No state is stored here. A booking starts as "awaiting resources"; what it is afterwards
+  -- follows from the records of assignment and reservation, never from a word kept on this row.
   commercial_model text NOT NULL DEFAULT 'agent' CHECK (commercial_model IN ('agent')),
   -- Money: exact decimals in the shipment's one currency. Never converted, never a binary number.
   currency_code text NOT NULL,
@@ -77,6 +138,11 @@ CREATE TABLE trucker.booking (
   fee_rounding text NOT NULL DEFAULT 'half_up' CHECK (fee_rounding IN ('half_up')),
   fee_amount numeric NOT NULL CHECK (fee_amount >= 0),
   payment_due_days integer NOT NULL CHECK (payment_due_days BETWEEN 0 AND 365),
+  -- The terms version this booking was made under, with its content hash at that moment.
+  terms_code text NOT NULL,
+  terms_version integer NOT NULL,
+  terms_demonstration boolean NOT NULL,
+  terms_hash text NOT NULL,
   -- What was agreed, exactly as it stood: the quotation version and the shipment as carriers saw it.
   quotation_snapshot jsonb NOT NULL,
   inclusions jsonb NOT NULL,
@@ -97,6 +163,8 @@ CREATE TABLE trucker.booking (
   planned_end_at timestamptz NOT NULL,
   accepted_by uuid NOT NULL REFERENCES trucker.person (id),
   accepted_at timestamptz NOT NULL,
+  CONSTRAINT booking_terms_reference FOREIGN KEY (terms_code, terms_version)
+    REFERENCES trucker.booking_terms (code, version_no),
   CONSTRAINT booking_parties CHECK (shipper_organisation_id <> carrier_organisation_id),
   -- The fee is the stated share of the transport price, rounded half-up to the currency's minor unit.
   CONSTRAINT booking_fee_exact CHECK (
@@ -153,6 +221,7 @@ ALTER TABLE trucker.audit_entry
     'quotation.submitted', 'quotation.revised', 'quotation.reconfirmed', 'quotation.withdrawn',
     'quotation.rejected', 'quotation.expired', 'quotation.closed',
     'quotation.reconfirmation_required', 'quotation.accepted', 'quotation.not_selected',
+    'acceptance.refused',
     'vehicle.registered', 'vehicle.retired', 'vehicle.ownership_decided',
     'fleet_document.submitted', 'fleet_document.decided',
     'driver.invited', 'driver.invitation_cancelled', 'driver.invitation_declined',
@@ -177,6 +246,37 @@ CREATE FUNCTION trucker.booking_terms_available(p_allow_fixtures boolean) RETURN
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, trucker, pg_temp AS $$
   SELECT coalesce(p_allow_fixtures, false)
      AND (SELECT e.kind FROM trucker.environment e) IN ('local-development', 'test')
+$$;
+
+-- The terms version an acceptance now would be made under: the newest one.
+CREATE FUNCTION trucker.booking_terms_current() RETURNS trucker.booking_terms
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, trucker, pg_temp AS $$
+  SELECT t FROM trucker.booking_terms t WHERE t.code = 'booking' ORDER BY t.version_no DESC LIMIT 1
+$$;
+CREATE FUNCTION trucker.booking_terms_values(p_code text, p_version integer, p_demonstration boolean, p_hash text)
+RETURNS jsonb
+LANGUAGE sql IMMUTABLE SET search_path = pg_catalog, pg_temp AS $$
+  SELECT jsonb_build_object('code', p_code, 'version', p_version, 'demonstration', p_demonstration,
+                            'contentHash', p_hash)
+$$;
+
+-- A refused acceptance, recorded in the history of the shipper that asked, against the
+-- quotation it asked about. It is written only for a caller already known to be an
+-- administrator of the shipper that received the quotation, and holds only the reason and the
+-- version numbers: what that caller is told anyway. Nothing is written into the carrier's
+-- history, and nothing at all for a caller who may not see the quotation.
+CREATE FUNCTION trucker.acceptance_refused(
+  p_at timestamptz, p_actor uuid, p_shipper uuid, p_quotation uuid, p_reason text,
+  p_expected_version integer, p_current_version integer
+) RETURNS void
+LANGUAGE sql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, trucker, pg_temp AS $$
+  INSERT INTO trucker.audit_entry
+    (occurred_at, actor_person_id, organisation_id, action, record_type, record_id, request_id,
+     before_values, after_values)
+  VALUES (p_at, p_actor, p_shipper, 'acceptance.refused', 'quotation', p_quotation,
+          nullif(current_setting('trucker.request_id', true), ''), NULL,
+          jsonb_strip_nulls(jsonb_build_object(
+            'reason', p_reason, 'expectedVersion', p_expected_version, 'currentVersion', p_current_version)))
 $$;
 
 -- An amount written with exactly the currency's minor units: padded, never rounded.
@@ -222,6 +322,9 @@ BEGIN
   IF NOT trucker.booking_terms_available(p_allow_fixtures) THEN
     RETURN 'closed';
   END IF;
+  IF (trucker.booking_terms_current()).code IS NULL THEN
+    RETURN 'closed';
+  END IF;
   IF d.status = 'awarded' THEN
     RETURN 'already_awarded';
   END IF;
@@ -248,7 +351,7 @@ $$;
 CREATE FUNCTION trucker.booking_values(b trucker.booking) RETURNS jsonb
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, trucker, pg_temp AS $$
   SELECT jsonb_build_object(
-    'id', b.id, 'status', b.status, 'shipmentId', b.shipment_id, 'shipmentVersion', b.shipment_version,
+    'id', b.id, 'status', 'awaiting_resources', 'shipmentId', b.shipment_id, 'shipmentVersion', b.shipment_version,
     'quotationId', b.quotation_id, 'quotationVersion', b.quotation_version,
     'commercialModel', b.commercial_model,
     'shipper', (SELECT jsonb_build_object('id', o.id, 'legalName', o.legal_name, 'tradingName', o.trading_name)
@@ -265,6 +368,7 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, trucker, pg_t
     'carrierNet', trucker.amount_text(
       b.transport_amount - CASE WHEN b.fee_payer = 'carrier' THEN b.fee_amount ELSE 0 END, b.minor_units),
     'paymentDueDays', b.payment_due_days,
+    'terms', trucker.booking_terms_values(b.terms_code, b.terms_version, b.terms_demonstration, b.terms_hash),
     'quotation', b.quotation_snapshot, 'inclusions', b.inclusions, 'shipment', b.shipment_snapshot,
     'assignment', jsonb_build_object(
       'dueAt', b.assignment_due_at, 'hours', b.assignment_hours, 'leadHours', b.assignment_lead_hours),
@@ -284,6 +388,7 @@ DECLARE
   t record;
   v_minor integer;
   v_state text := trucker.acceptance_check(q, d, p_at, p_allow_fixtures);
+  v_terms trucker.booking_terms := trucker.booking_terms_current();
 BEGIN
   IF v_state = 'closed' THEN
     RETURN jsonb_build_object('quotationId', q.id, 'state', v_state);
@@ -300,12 +405,14 @@ BEGIN
     'shipperTotal', trucker.amount_text(
       v.amount + CASE WHEN t.fee_payer = 'shipper' THEN t.fee_amount ELSE 0 END, v_minor),
     'paymentDueDays', t.payment_due_days,
+    'terms', trucker.booking_terms_values(v_terms.code, v_terms.version_no, v_terms.demonstration, v_terms.content_hash),
     'assignmentDueAt', CASE WHEN v_state = 'ok' THEN t.assignment_due_at END);
 END
 $$;
 
 -- ---------------------------------------------------------------------------------------------
 -- Acceptance
+-- A refusal given to an administrator of the shipper is recorded in that shipper's history.
 --   status: accepted | repeated | conflict | key_conflict | unauthorized | not_found | closed
 --           | already_awarded | shipment_not_open | not_open | reconfirmation_needed
 --           | carrier_not_eligible | shipment_suspended | assignment_deadline_passed
@@ -331,6 +438,7 @@ DECLARE
   v_at timestamptz;
   v_minor integer;
   v_terms trucker.shipment_quotation_terms;
+  v_booking_terms trucker.booking_terms;
   other trucker.quotation;
   request text := nullif(current_setting('trucker.request_id', true), '');
   hash text := trucker.content_hash(jsonb_build_object('q', p_quotation, 'v', p_expected_version));
@@ -374,6 +482,7 @@ BEGIN
       detail := trucker.booking_values(b);
     ELSE
       status := 'key_conflict';
+      PERFORM trucker.acceptance_refused(v_at, actor, v_org, p_quotation, status, p_expected_version, NULL);
     END IF;
     RETURN;
   END IF;
@@ -381,13 +490,16 @@ BEGIN
   PERFORM trucker.quotation_expire_shipment(d.id, v_at);
   SELECT * INTO q FROM trucker.quotation x WHERE x.id = p_quotation;
   status := trucker.acceptance_check(q, d, v_at, p_allow_fixtures);
-  IF status <> 'ok' THEN
-    RETURN;
-  END IF;
-  IF q.current_version IS DISTINCT FROM p_expected_version THEN
+  IF status = 'ok' AND q.current_version IS DISTINCT FROM p_expected_version THEN
     status := 'conflict';
+  END IF;
+  IF status <> 'ok' THEN
+    -- Every refusal from here is recorded: who asked, when, and why nothing was accepted.
+    PERFORM trucker.acceptance_refused(v_at, actor, v_org, p_quotation, status, p_expected_version,
+                                       CASE WHEN status = 'conflict' THEN q.current_version END);
     RETURN;
   END IF;
+  v_booking_terms := trucker.booking_terms_current();
   SELECT * INTO v FROM trucker.quotation_version x WHERE x.quotation_id = q.id AND x.version_no = q.current_version;
   SELECT c.minor_units INTO v_minor FROM trucker.currency c WHERE c.code = v.currency_code;
   SELECT * INTO v_terms FROM trucker.shipment_quotation_terms x WHERE x.shipment_id = d.id;
@@ -396,14 +508,17 @@ BEGIN
   INSERT INTO trucker.booking
     (shipment_id, shipment_version, quotation_id, quotation_version, shipper_organisation_id,
      carrier_organisation_id, currency_code, minor_units, transport_amount, fee_payer, fee_basis_points,
-     fee_amount, payment_due_days, quotation_snapshot, inclusions, shipment_snapshot,
+     fee_amount, payment_due_days, terms_code, terms_version, terms_demonstration, terms_hash,
+     quotation_snapshot, inclusions, shipment_snapshot,
      pickup_from_at, pickup_until_at, delivery_from_at, delivery_until_at,
      assignment_hours, assignment_lead_hours, assignment_due_at,
      positioning_minutes, completion_minutes, planned_start_at, planned_end_at, accepted_by, accepted_at)
   VALUES
     (d.id, d.published_version, q.id, q.current_version, d.organisation_id,
      q.carrier_organisation_id, v.currency_code, v_minor, v.amount, t.fee_payer, t.fee_basis_points,
-     t.fee_amount, t.payment_due_days, trucker.quotation_version_values(v, d.pickup_time_zone),
+     t.fee_amount, t.payment_due_days, v_booking_terms.code, v_booking_terms.version_no,
+     v_booking_terms.demonstration, v_booking_terms.content_hash,
+     trucker.quotation_version_values(v, d.pickup_time_zone),
      coalesce((SELECT jsonb_agg(jsonb_build_object(
                  'code', i.code, 'included', (v.inclusions ->> i.code)::boolean,
                  'name', jsonb_build_object('en', i.name_en, 'ar', i.name_ar, 'ur', i.name_ur)) ORDER BY x.n)
@@ -442,10 +557,12 @@ BEGIN
      jsonb_build_object('status', 'published', 'publishedVersion', d.published_version),
      jsonb_build_object('status', 'awarded', 'booking', b.id)),
     (v_at, actor, d.organisation_id, 'booking.created', 'booking', b.id, request, NULL,
-     jsonb_build_object('status', b.status, 'quotation', q.id, 'quotationVersion', q.current_version,
+     jsonb_build_object('status', 'awaiting_resources', 'quotation', q.id, 'quotationVersion', q.current_version,
                         'transportAmount', trucker.amount_text(b.transport_amount, b.minor_units),
                         'feeAmount', trucker.amount_text(b.fee_amount, b.minor_units),
-                        'currency', b.currency_code, 'assignmentDueAt', b.assignment_due_at));
+                        'currency', b.currency_code, 'assignmentDueAt', b.assignment_due_at,
+                        'terms', trucker.booking_terms_values(
+                          b.terms_code, b.terms_version, b.terms_demonstration, b.terms_hash)));
   INSERT INTO trucker.booking_retry_key (person_id, key, operation, request_hash, record_id, created_at)
   VALUES (actor, p_key, 'accept', hash, b.id, v_at);
   status := 'accepted';

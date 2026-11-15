@@ -501,6 +501,12 @@ export interface BookingFee {
   /** Exact decimal text, never a binary number. */
   amount: string;
 }
+export interface BookingTerms {
+  code: string;
+  version: number;
+  demonstration: boolean;
+  contentHash: string;
+}
 export interface Booking {
   id: string;
   status: 'awaiting_resources';
@@ -515,6 +521,7 @@ export interface Booking {
   shipperTotal: string;
   carrierNet: string;
   paymentDueDays: number;
+  terms: BookingTerms;
   inclusions: { code: string; included: boolean; name: { en: string; ar: string; ur: string } }[];
   assignment: { dueAt: string; hours: number; leadHours: number };
   plannedReservation: { startAt: string; endAt: string };
@@ -540,6 +547,7 @@ export interface AcceptancePreview {
   fee?: BookingFee;
   shipperTotal?: string;
   paymentDueDays?: number;
+  terms?: BookingTerms;
   assignmentDueAt?: string | null;
 }
 export interface BookingOverview {

@@ -963,6 +963,8 @@
     "carrierNet": "The carrier receives",
     "taxNote": "No tax is calculated or shown here. How tax applies is not decided.",
     "payment": "The shipper pays the carrier by bank transfer within {n} days of accepting the proof of delivery. Trucker does not hold the transport money.",
+    "terms": "Terms: demonstration booking terms, version {n}",
+    "termsNote": "Demonstration terms for development only. They are not approved terms and bind nobody.",
     "assignmentDue": "The carrier assigns its resources by",
     "planned": "Planned time for the resources",
     "plannedNote": "A plan only: nothing is reserved yet.",

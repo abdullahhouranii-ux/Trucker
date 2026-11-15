@@ -1,6 +1,6 @@
 import type { Locale } from '../i18n/config.ts';
 import type { Messages } from '../i18n/messages.ts';
-import type { AcceptancePreview, Booking } from '../server/api.ts';
+import type { AcceptancePreview, Booking, BookingTerms } from '../server/api.ts';
 
 // A booking as both parties see it: the same figures for the shipper and the carrier. Amounts
 // arrive as exact decimal text and are shown as they are; nothing here calculates money.
@@ -74,6 +74,20 @@ export function MoneyFacts({
   );
 }
 
+/** Which terms version applies. Only demonstration terms exist. */
+function TermsLine({ t, terms }: { t: B; terms: BookingTerms }) {
+  return (
+    <p
+      data-terms={`${terms.code}-${terms.version}`}
+      data-demonstration={String(terms.demonstration)}
+    >
+      {t.terms.replace('{n}', String(terms.version))}
+      <br />
+      <span className="field-hint">{t.termsNote}</span>
+    </p>
+  );
+}
+
 export function BookingCard({ t, locale, booking }: { t: B; locale: Locale; booking: Booking }) {
   const name = (party: Booking['shipper']): string => party.tradingName ?? party.legalName;
   return (
@@ -113,6 +127,7 @@ export function BookingCard({ t, locale, booking }: { t: B; locale: Locale; book
         ))}
       </ul>
       <p>{t.payment.replace('{n}', String(booking.paymentDueDays))}</p>
+      <TermsLine t={t} terms={booking.terms} />
       <dl className="facts">
         <div>
           <dt>{t.assignmentDue}</dt>
@@ -161,6 +176,7 @@ export function AcceptanceFacts({ t, preview }: { t: B; preview: AcceptancePrevi
         shipperTotal={preview.shipperTotal ?? ''}
       />
       <p>{t.payment.replace('{n}', String(preview.paymentDueDays ?? 0))}</p>
+      {preview.terms ? <TermsLine t={t} terms={preview.terms} /> : null}
       {preview.assignmentDueAt ? (
         <p>
           {t.assignmentDue}: <InstantText at={preview.assignmentDueAt} />

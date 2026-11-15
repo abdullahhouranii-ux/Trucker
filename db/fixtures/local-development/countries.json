@@ -472,5 +472,13 @@
       "expiryConvention": "last_day_included",
       "expiryTimeZone": "Etc/GMT-3"
     }
+  ],
+  "_booking_terms_notice": "Demonstration booking terms for development only. Placeholder text: not a legal agreement, not reviewed by a lawyer, binding on nobody. A version is never edited; a change is a new version.",
+  "bookingTerms": [
+    {
+      "code": "booking",
+      "version": 1,
+      "body": "Demonstration booking terms, for development and testing only. This is placeholder text: it is not a legal agreement, has not been reviewed by a lawyer, and creates no rights or duties. A booking made under it is a test record. The real participant terms have not been written or approved, and will replace this text before any real booking is possible."
+    }
   ]
 }

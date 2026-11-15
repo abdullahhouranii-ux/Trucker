@@ -34,4 +34,6 @@ Assignment, reservation, occupancy and confirmation (slice 15); cancellation (16
 | BKG-8 | If the assignment deadline calculated at acceptance has passed, acceptance is refused as `assignment_deadline_passed`, the shipper is shown this before trying, and the database itself refuses a booking that would start overdue |
 | BKG-9 | No booking is confirmed, and no route assigns, reserves, confirms, cancels, invoices or pays |
 | BKG-10 | Outside a database marked local-development or test, acceptance answers "closed". The API role reaches bookings only through functions |
+| BKG-12 | A booking names an immutable version of the terms with a hash of its content. Only demonstration terms can exist, and only in a database marked for development or test |
+| BKG-13 | A refused acceptance is recorded in the asking shipper's history only, with the reason and version numbers. A caller who may not see the quotation leaves no record against it |
 | BKG-11 | Screens pass the existing browser checks in EN, AR and UR at phone widths with text doubled. A lost acceptance answer is checked: one booking, never reported as done unless confirmed |

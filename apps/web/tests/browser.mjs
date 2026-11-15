@@ -3225,10 +3225,14 @@ async function main() {
     check(
       'lost answer',
       made.length === 1 &&
-        made[0].status === 'awaiting_resources' &&
         (await page.$eval('#booking [data-booking]', (card) => card.dataset.status)) ===
           'awaiting_resources' &&
         ((await text('#booking')) ?? '').includes(enBook.statusNote) &&
+        ((await text('#booking')) ?? '').includes(enBook.termsNote) &&
+        (await page.$eval(
+          '#booking [data-terms]',
+          (p) => `${p.dataset.terms}/${p.dataset.demonstration}`,
+        )) === 'booking-1/true' &&
         (await page.$(`[data-accept="${bookQuotation}"]`)) === null &&
         (await page.$('[data-reject]')) === null &&
         (await page.$eval('#quotation-list [data-standing]', (p) => p.dataset.standing)) ===

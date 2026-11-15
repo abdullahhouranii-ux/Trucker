@@ -76,6 +76,8 @@ That outcome is an accident, not a rule. Writing the audit entry makes each requ
 | Fee, tax and inclusion rules for quotations | Not decided; no fee field or tax treatment exists. Explicit Release 1 decisions (RELEASE_1_READINESS.md) |
 | Retention of the quotation read log (`quotation_read_log`) | **Unresolved production requirement**, as for the carrier access log |
 | Commercial settings (fee payer and rate, payment days, assignment deadline, reservation buffers) | Development defaults only (CC-1 to CC-6). Acceptance answers "closed" outside a database marked local-development or test. Production values, and how production is opened, are separate release decisions |
+| Booking terms | Demonstration text only, loaded as a development fixture. It is not legal text and is not reviewed. Approved participant terms (X-3) arrive as a reviewed migration that also lifts the demonstration-only constraint; until then acceptance is closed wherever the register is empty |
+| Refusal records | Each refused acceptance by a shipper's administrator adds a row to that shipper's history. There is no limit on how many; a request-rate limit for signed-in participants is a production item |
 | Tax on the fee and presentation of the transport price | Not calculated and not stated anywhere. Accountant review (X-4) |
 | What a carrier sees after acceptance | The shipper's name only. Addresses, access notes and contacts are not released; the rule is decision AB-1 |
 | Fleet registers (document types, vehicle categories, licence classes) | Empty after migrations; fictional entries in development only. Outside a marked database every fleet command answers "closed". The real lists are release decisions with advisers |
