@@ -3546,6 +3546,14 @@ async function main() {
     for (const locale of locales) {
       await open(bookingPath(locale, verifyOrg), 390);
       await inspect(locale, 'substitution');
+      // The arrow points from the earlier value to the later one in the page's reading direction.
+      const categoryChange = (await text('[data-difference="truck-category"]')) ?? '';
+      const [forward, backward] = locale === 'en' ? ['→', '←'] : ['←', '→'];
+      check(
+        'assignment',
+        categoryChange.includes(forward) && !categoryChange.includes(backward),
+        `${locale}: the category change reads ${categoryChange}`,
+      );
     }
     await open(bookingPath('en', verifyOrg), 390);
     await submit('#decline-substitution');
