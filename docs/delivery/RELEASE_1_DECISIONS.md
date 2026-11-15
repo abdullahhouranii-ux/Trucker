@@ -42,6 +42,19 @@ No legal or tax rule is stated here. Every value that is not approved is a prote
 | Document expiry | Corrected in slice 13: the stated expiry date is preserved; each document type carries an explicit, configurable convention and time zone. Real conventions need country and document review before production |
 | Confirmation | A booking is not confirmed until every required, eligible resource is assigned and reserved. Assignment and dispatch checks stay separate. Slice 15 scope: ASSIGNMENT_SLICE_15_SCOPE.md |
 
+## 1B. Instructions of 15 November 2026 (14:23)
+
+| Subject | Status |
+|---|---|
+| Slice 15 and AB-1 to AB-5 | **Approved as recommended.** Built on `feat/assignment`; scope and conditions AC-1 to AC-8 in ASSIGNMENT_SLICE_15_SCOPE.md |
+| Staged release | Operational details only to authorised parties at the approved stage. Site contacts only when that feature and its privacy rules are approved; never invented. None is collected or shown |
+| Reassignment | Follows the substitution rules: hard requirements are not waived, the price cannot change, a materially different substitute needs the shipper's acceptance. The old assignment stays until its replacement commits. A driver change ends the earlier acknowledgement |
+| Confirmation and readiness | Historical confirmation is separate from current dispatch readiness. Lost eligibility blocks dispatch and requires reassignment; it never silently cancels |
+| Acknowledgement | Required before dispatch |
+| Before merging PR #20 | An immutable, versioned, demonstration-only terms reference on the booking, and refusals recorded without leaking another organisation's data. Both added to PR #20 |
+| Missed assignment deadline | The shipper's explicit decision to wait is recorded. Cancellation without charge is slice 16. Nothing automatic |
+| Choices made inside this scope | N-1 to N-6 in ASSIGNMENT_SLICE_15.md, for confirmation |
+
 ## 2. Exceptions to the proposed structures
 
 | ID | Exception | Effect on the build |

@@ -120,6 +120,7 @@ interface FixtureFile {
     code: string;
     kind: string;
     name: { en: string; ar: string; ur: string };
+    requiresTrailer?: boolean;
   }[];
   licenceClasses?: {
     country: string;
@@ -263,11 +264,12 @@ export async function loadCountryFixtures(
   }
   for (const [index, category] of (data.vehicleCategories ?? []).entries()) {
     await owner.query(
-      `INSERT INTO trucker.vehicle_category (code, kind, name_en, name_ar, name_ur, position)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO trucker.vehicle_category (code, kind, name_en, name_ar, name_ur, position, requires_trailer)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        ON CONFLICT (code) DO UPDATE
          SET kind = EXCLUDED.kind, name_en = EXCLUDED.name_en, name_ar = EXCLUDED.name_ar,
-             name_ur = EXCLUDED.name_ur, position = EXCLUDED.position`,
+             name_ur = EXCLUDED.name_ur, position = EXCLUDED.position,
+             requires_trailer = EXCLUDED.requires_trailer`,
       [
         category.code,
         category.kind,
@@ -275,6 +277,7 @@ export async function loadCountryFixtures(
         category.name.ar,
         category.name.ur,
         index + 1,
+        category.requiresTrailer ?? false,
       ],
     );
   }

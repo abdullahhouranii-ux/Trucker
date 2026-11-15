@@ -49,6 +49,19 @@ interface StaffBooking {
   paymentDueDays: number;
   assignment: { dueAt: string };
   acceptedAt: string;
+  confirmedAt: string | null;
+  overdue: boolean;
+  waitDecision: { decidedAt: string } | null;
+  needsReassignment: boolean;
+  atRisk: boolean;
+  acknowledgedAt: string | null;
+  dispatch: { ready: boolean; blockers: { code: string; role?: string; reason?: string }[] };
+  resources: {
+    truck: { registrationCountry: string; registrationNumber: string } | null;
+    trailer: { registrationCountry: string; registrationNumber: string } | null;
+    driver: { name: string } | null;
+  } | null;
+  substitution: { id: string } | null;
 }
 
 /** The quotations on the shipment, read-only. */
@@ -239,8 +252,10 @@ export default async function ShipmentPage({ params }: Props) {
               <p id="no-booking">No quotation has been accepted.</p>
             ) : (
               <p id="staff-booking" data-status={booked.data.booking.status}>
-                {booked.data.booking.status.replace(/_/g, ' ')}: not confirmed, nothing is assigned
-                or reserved. Carrier {booked.data.booking.carrier.legalName}, quotation version{' '}
+                {booked.data.booking.status === 'confirmed'
+                  ? `Confirmed ${utc(booked.data.booking.confirmedAt ?? '')}: every required resource was assigned and reserved. Confirmed is not dispatched.`
+                  : 'Awaiting resources: not confirmed.'}{' '}
+                Carrier {booked.data.booking.carrier.legalName}, quotation version{' '}
                 {booked.data.booking.quotationVersion}. Transport{' '}
                 {booked.data.booking.transportAmount} {booked.data.booking.currency}; fee{' '}
                 {booked.data.booking.fee.amount} {booked.data.booking.currency} (
@@ -252,6 +267,56 @@ export default async function ShipmentPage({ params }: Props) {
                 defaults, not approved for real use.
               </p>
             )}
+            {booked.ok && booked.data.booking ? (
+              <dl className="facts" id="staff-assignment">
+                <div>
+                  <dt>Assigned</dt>
+                  <dd>
+                    {(['truck', 'trailer'] as const)
+                      .map((kind) => booked.data.booking!.resources?.[kind])
+                      .filter((vehicle) => vehicle != null)
+                      .map(
+                        (vehicle) => `${vehicle.registrationCountry} ${vehicle.registrationNumber}`,
+                      )
+                      .concat(
+                        booked.data.booking.resources?.driver
+                          ? [booked.data.booking.resources.driver.name]
+                          : [],
+                      )
+                      .join(', ') || 'Nothing is assigned.'}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Dispatch now</dt>
+                  <dd data-ready={booked.data.booking.dispatch.ready ? 'yes' : 'no'}>
+                    {booked.data.booking.dispatch.ready
+                      ? 'Nothing blocks it. Dispatch itself is not built.'
+                      : booked.data.booking.dispatch.blockers
+                          .map((item) =>
+                            [item.code, item.role, item.reason]
+                              .filter(Boolean)
+                              .join(' ')
+                              .replace(/_/g, ' '),
+                          )
+                          .join('; ')}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Needs attention</dt>
+                  <dd>
+                    {[
+                      booked.data.booking.overdue ? 'assignment overdue' : '',
+                      booked.data.booking.waitDecision ? 'the shipper decided to wait' : '',
+                      booked.data.booking.needsReassignment ? 'needs reassignment' : '',
+                      booked.data.booking.atRisk ? 'at risk: a resource is overrunning' : '',
+                      booked.data.booking.substitution ? 'a substitution is proposed' : '',
+                    ]
+                      .filter(Boolean)
+                      .join('; ') || 'Nothing.'}
+                  </dd>
+                </div>
+              </dl>
+            ) : null}
           </section>
           <section className="section" aria-labelledby="access-title">
             <h2 id="access-title">Carrier access</h2>

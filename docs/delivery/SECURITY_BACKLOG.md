@@ -76,6 +76,9 @@ That outcome is an accident, not a rule. Writing the audit entry makes each requ
 | Fee, tax and inclusion rules for quotations | Not decided; no fee field or tax treatment exists. Explicit Release 1 decisions (RELEASE_1_READINESS.md) |
 | Retention of the quotation read log (`quotation_read_log`) | **Unresolved production requirement**, as for the carrier access log |
 | Commercial settings (fee payer and rate, payment days, assignment deadline, reservation buffers) | Development defaults only (CC-1 to CC-6). Acceptance answers "closed" outside a database marked local-development or test. Production values, and how production is opened, are separate release decisions |
+| Which truck categories need a trailer | A column of the fictional category register. The real rule needs the same review as the categories (X-5) |
+| Site contacts | Not collected and not shown. Access notes are free text written by the shipper and are released to the carrier at confirmation; a shipper can type a name or number into them. Whether that needs a warning or a rule is a privacy question for the feature that adds site contacts |
+| Substitution proposals | No cut-off before pick-up and no response period: a proposal stays open until decided or withdrawn. Both are operating parameters to approve |
 | Booking terms | Demonstration text only, loaded as a development fixture. It is not legal text and is not reviewed. Approved participant terms (X-3) arrive as a reviewed migration that also lifts the demonstration-only constraint; until then acceptance is closed wherever the register is empty |
 | Refusal records | Each refused acceptance by a shipper's administrator adds a row to that shipper's history. There is no limit on how many; a request-rate limit for signed-in participants is a production item |
 | Tax on the fee and presentation of the transport price | Not calculated and not stated anywhere. Accountant review (X-4) |

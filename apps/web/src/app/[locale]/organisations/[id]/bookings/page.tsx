@@ -7,7 +7,7 @@ import { api, type Booking } from '../../../../../server/api.ts';
 import { requirePerson } from '../../../../../server/session.ts';
 
 // The organisation's bookings, as shipper or as carrier, newest first. Both sides see the same
-// figures. A booking here is not confirmed: nothing is assigned or reserved yet.
+// figures. Each opens on its own page, where resources are assigned and decisions are made.
 
 type Props = { params: Promise<{ locale: string; id: string }> };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -41,7 +41,13 @@ export default async function BookingsPage({ params }: Props) {
         <ol className="organisation-list" id="booking-list">
           {reply.data.bookings.map((booking) => (
             <li key={booking.id}>
-              <BookingCard t={t} locale={locale} booking={booking} />
+              <BookingCard
+                t={t}
+                a={m.asg}
+                locale={locale}
+                booking={booking}
+                href={`/${locale}/organisations/${id}/bookings/${booking.id}`}
+              />
             </li>
           ))}
         </ol>

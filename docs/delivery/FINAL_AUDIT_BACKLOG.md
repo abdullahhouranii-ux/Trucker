@@ -66,6 +66,9 @@ No accessibility conformance is claimed for any page.
 | WD-29 | Booking times (assignment deadline, planned interval, accepted) are shown in UTC, not at the pick-up place | Slice 14, booking card | Correct; local time with the zone would read better |
 | WD-30 | The shipment list has no filter for awarded shipments; they appear under "all" | Slice 14, shipments page | Add the filter with the list's other states |
 | WD-31 | Inclusions on a booking are marked with ✓ and ✗ | Slice 14, booking card | Use the words "included" and "not included" |
+| WD-32 | In the assignment lists a resource that cannot be chosen shows its reason in brackets after its name, and is disabled | Slice 15, booking page | Works with a screen reader; a separate explanation under the list would read better |
+| WD-33 | A refusal reads "… Nothing was changed. Truck: reserved for another booking at this time" | Slice 15, booking page | Join into one sentence per language |
+| WD-34 | The console lists dispatch blockers as their codes with underscores removed | Slice 15, console | Use sentences |
 
 ## 4. Translation corrections (Arabic and Urdu)
 
@@ -91,6 +94,7 @@ All Arabic and Urdu text in the repository is a draft written without a native r
 | TR-16 | All quotation messages (`quo`) and the corrected `disc.noQuotations` | Slice 12 | High: "nothing is accepted or booked", "Trucker does not determine how tax applies" and the "not confirmed" messages must not shift |
 | TR-17 | Names of the fictional inclusions and the test currency | Slice 12, fixtures | Low: development data only |
 | TR-18 | All fleet and driver messages (`fleet`) | Slice 13 | High: "reserves and assigns nothing", "a claim until staff verify it" and "not its number" must not shift |
+| TR-21 | All assignment messages (`asg`) and the new booking state | Slice 15 | High: "confirmed does not mean dispatched", "the booking is not cancelled", "the price does not change" and "it cancels nothing and charges nothing" must not shift |
 | TR-20 | All booking messages (`book`), the new quotation standings and errors, and three corrected statements about acceptance | Slice 14 | High: "not confirmed", "development values", "no tax is calculated" and "Trucker does not hold the transport money" must not shift |
 | TR-19 | Names of the fictional vehicle categories, licence classes and document types | Slice 13, fixtures | Low: development data only |
 

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { notFound, redirect } from 'next/navigation';
+import { InstantText } from '../../../components/booking-view.tsx';
 import { DraftKeeper } from '../../../components/draft-keeper.tsx';
 import {
   DocumentFields,
@@ -10,7 +11,8 @@ import {
 import { ErrorSummary } from '../../../components/form.tsx';
 import { isLocale } from '../../../i18n/config.ts';
 import { getMessages } from '../../../i18n/messages.ts';
-import { api, type Country, type DriverSide } from '../../../server/api.ts';
+import { api, type Country, type DriverAssignment, type DriverSide } from '../../../server/api.ts';
+import { acknowledgeAssignmentAction } from '../../../server/assignment-actions.ts';
 import {
   leaveAffiliationAction,
   respondInvitationAction,
@@ -19,7 +21,8 @@ import {
 import { requirePerson } from '../../../server/session.ts';
 
 // The driver's own page, made for a phone: invitations sent to their number, the carrier they
-// drive for, and their documents. Nothing here assigns work.
+// drive for, their documents, and the assignments their carrier has given them, which they
+// acknowledge here. A driver is shown areas and times, never a price or an address.
 
 type Props = {
   params: Promise<{ locale: string }>;
@@ -42,8 +45,11 @@ export default async function DriverPage({ params, searchParams }: Props) {
     return RETRY_KEY.test(value) ? value : randomUUID();
   };
   const person = await requirePerson(locale);
-  const [reply, countries] = await Promise.all([
+  const [reply, assigned, countries] = await Promise.all([
     api<{ driver: DriverSide }>('GET', '/me/driver', { token: person.token }),
+    api<{ assignments: DriverAssignment[] }>('GET', '/me/driver/assignments', {
+      token: person.token,
+    }),
     api<{ countries: Country[] }>('GET', '/registration/countries', { token: person.token }),
   ]);
   if (!reply.ok && reply.status === 401) redirect(`/${locale}/sign-in?error=session_ended`);
@@ -67,8 +73,16 @@ export default async function DriverPage({ params, searchParams }: Props) {
     );
   const side = reply.data.driver;
   const { errors, summary } = fleetProblems(t, one('fError'));
+  const a = m.asg;
+  const assignmentError = one('aError');
+  if (assignmentError)
+    summary.push({
+      message: (a.errors as Record<string, string>)[assignmentError] ?? a.errors.invalid,
+    });
   const done = one('fDone');
-  const confirmation = done ? (t.done as Record<string, string>)[done] : undefined;
+  const confirmation = done
+    ? (t.done as Record<string, string>)[done]
+    : (a.done as Record<string, string>)[one('aDone')];
   const types = (side.registers.documentTypes ?? []).filter((type) => type.subject === 'driver');
   const nameOf = (carrier: { legalName: string; tradingName: string | null }): string =>
     carrier.tradingName ?? carrier.legalName;
@@ -111,6 +125,91 @@ export default async function DriverPage({ params, searchParams }: Props) {
           </div>
         ) : (
           <p id="no-carrier">{t.noCarrier}</p>
+        )}
+      </section>
+
+      <section className="section" aria-labelledby="assignments-title" id="assignments">
+        <h2 id="assignments-title">{a.driver.title}</h2>
+        {!assigned.ok ? (
+          <p id="assignments-unavailable">{a.errors.unavailable}</p>
+        ) : assigned.data.assignments.length === 0 ? (
+          <p id="no-assignments">{a.driver.none}</p>
+        ) : (
+          <ol className="organisation-list" id="assignment-list">
+            {assigned.data.assignments.map((item) => (
+              <li className="card" key={item.bookingId} data-assignment={item.bookingId}>
+                <dl className="facts">
+                  <div>
+                    <dt>{a.driver.carrier}</dt>
+                    <dd>
+                      <bdi>{nameOf(item.carrier)}</bdi>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>{a.driver.from}</dt>
+                    <dd>
+                      <bdi>{item.pickup.area}</bdi> ({item.pickup.countryCode})
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>{a.driver.pickupWindow}</dt>
+                    <dd>
+                      <InstantText at={item.pickup.from.at} /> –{' '}
+                      <InstantText at={item.pickup.until.at} />
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>{a.driver.to}</dt>
+                    <dd>
+                      <bdi>{item.delivery.area}</bdi> ({item.delivery.countryCode})
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>{a.driver.deliveryWindow}</dt>
+                    <dd>
+                      <InstantText at={item.delivery.from.at} /> –{' '}
+                      <InstantText at={item.delivery.until.at} />
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>{a.driver.cargo}</dt>
+                    <dd>
+                      <bdi>{item.cargo.description}</bdi>
+                    </dd>
+                  </div>
+                  {(['truck', 'trailer'] as const).map((kind) =>
+                    item[kind] ? (
+                      <div key={kind}>
+                        <dt>{a.roles[kind]}</dt>
+                        <dd>
+                          <bdi dir="ltr">
+                            {item[kind]!.registrationCountry} {item[kind]!.registrationNumber}
+                          </bdi>
+                        </dd>
+                      </div>
+                    ) : null,
+                  )}
+                </dl>
+                <p className="field-hint">{a.driver.note}</p>
+                {item.acknowledgedAt ? (
+                  <p data-acknowledged="yes">{a.driver.acknowledged}</p>
+                ) : (
+                  <form className="form-inline" action={acknowledgeAssignmentAction}>
+                    <input type="hidden" name="locale" value={locale} />
+                    <input type="hidden" name="bookingId" value={item.bookingId} />
+                    <input type="hidden" name="version" value={item.version} />
+                    <button
+                      className="button button-primary"
+                      type="submit"
+                      data-acknowledge={item.bookingId}
+                    >
+                      {a.driver.acknowledge}
+                    </button>
+                  </form>
+                )}
+              </li>
+            ))}
+          </ol>
         )}
       </section>
 

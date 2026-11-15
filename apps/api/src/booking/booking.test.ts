@@ -759,7 +759,17 @@ test('accepting a quotation creates one booking with exact snapshots of the vers
   const asCarrier = (await bookingsOf(carrier.person, carrier.org))[0]!;
   const asShipper = (await bookingsOf(shipper.person, shipper.org))[0]!;
   assert.deepEqual([asCarrier.role, asShipper.role], ['carrier', 'shipper']);
-  assert.deepEqual({ ...asCarrier, role: undefined }, { ...asShipper, role: undefined });
+  // What was agreed is the same for both. What each is shown of the resources differs by
+  // stage and by party, and is the subject of the assignment tests.
+  const agreed = (view: Booking): Record<string, unknown> =>
+    Object.fromEntries(
+      Object.keys(booking).map((name) => [
+        name,
+        (view as unknown as Record<string, unknown>)[name],
+      ]),
+    );
+  assert.deepEqual(agreed(asCarrier), agreed(asShipper));
+  assert.deepEqual(agreed(asCarrier), booking);
   assert.deepEqual(await bookingsOf(other.person, other.org), []);
   assert.equal((await mineOne(other.person, other.org, theirs.id)).standing, 'not_selected');
   assert.equal((await mineOne(carrier.person, carrier.org, mine.id)).standing, 'accepted');

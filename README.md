@@ -108,6 +108,16 @@ The booking is awaiting resources, not confirmed: nothing is assigned, reserved,
 The fee, payment period, assignment deadline and buffers are development defaults, and acceptance
 is closed outside a database marked for development. No tax is calculated or stated.
 
+## Assignment, reservation and confirmation
+
+The carrier assigns a truck, a driver and, where the truck pulls one, a trailer. Each holds a
+planned reservation; the database refuses overlaps. The booking is confirmed when the set is
+complete, eligible and reserved, and stays confirmed: whether it can be dispatched now is judged
+separately, and a resource that loses eligibility calls for reassignment
+(docs/delivery/ASSIGNMENT_SLICE_15.md). After confirmation a materially different substitute
+needs the shipper's acceptance. The driver acknowledges their assignment. Nothing is dispatched:
+occupancy, release and cancellation are later slices.
+
 Release 1 is planned as an invitation-only pilot of the whole journey, from shipment to operational
 closure, with manual recorded bank transfers: docs/delivery/RELEASE_1_READINESS.md,
 RELEASE_1_GAP_TO_LAUNCH.md and RELEASE_1_DECISIONS.md. No launch country or lane is chosen.
