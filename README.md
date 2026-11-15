@@ -91,8 +91,18 @@ shipper compares quotations and may reject one. Quotations expire at their valid
 shipment's deadline, and suspension does not pause that. Nothing is accepted, booked or paid, and
 no fee or tax treatment exists. Only a test currency and fictional inclusions exist.
 
-Release 1 is planned as an invitation-only shipment-and-quotation pilot; its readiness checklist
-is docs/delivery/RELEASE_1_READINESS.md. No launch country or lane is chosen.
+## Fleet and drivers
+
+A carrier company records trucks, trailers and drivers (docs/delivery/FLEET_SLICE_13.md). A
+registration is a claim of ownership until staff verify it; a driver joins by accepting an
+invitation in their own account and works with one carrier at a time; staff accept or reject each
+document. Eligibility is judged live over a time window. Ownership, operating control, document
+approval and availability are separate: nothing is reserved, assigned or booked. Document types,
+vehicle categories and licence classes are fictional test items.
+
+Release 1 is planned as an invitation-only pilot of the whole journey, from shipment to operational
+closure, with manual recorded bank transfers: docs/delivery/RELEASE_1_READINESS.md,
+RELEASE_1_GAP_TO_LAUNCH.md and RELEASE_1_DECISIONS.md. No launch country or lane is chosen.
 
 ## Product reference
 

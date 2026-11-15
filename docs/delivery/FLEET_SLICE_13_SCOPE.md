@@ -1,6 +1,6 @@
 # Trucker: fleet and drivers slice 13, scope and acceptance criteria
 
-Version 0.1, 15 November 2026. Status: **for approval. Nothing here is built.** First of the essential missing slices in RELEASE_1_GAP_TO_LAUNCH.md (step 13).
+Version 1.0, 15 November 2026. Status: **approved for development by Abdullah on 15 November 2026, with DB-4, DB-5 and FB-1 to FB-5, and the conditions in section 0.** Built on branch `feat/fleet` (record: FLEET_SLICE_13.md). First of the essential missing slices in RELEASE_1_GAP_TO_LAUNCH.md (step 13).
 
 Sources:
 - `docs/specs/STAGE_2_PART_1_IDENTITY_OWNERSHIP_PERMISSIONS.md`: section 3 (ownership, affiliation, authorisation, operating controller, stop causes) and J1.3 to J1.5;
@@ -8,6 +8,17 @@ Sources:
 - slices 9 and 11 (verification, the carrier capability).
 
 No document requirement, licence class or legal rule is chosen here. Wherever one is needed, it is a decision, and the build uses fictional values until it is made.
+
+## 0. Approval and conditions
+
+Approved for development: company carriers only, one active carrier affiliation per driver, driver-accepted invitations, fictional document and class registers, and the proposed development limits.
+
+| ID | Condition |
+|---|---|
+| FC-1 | Ownership claims, operating control, document approval and availability stay separate |
+| FC-2 | A first registration claim is not proof of ownership |
+| FC-3 | A conflicting claim reveals nothing to either carrier and does not automatically restrict the existing carrier. This replaces the "refused" answer first proposed in FB-4: the second claim is recorded, shown to staff only, and only one claim on a registration can be verified |
+| FC-4 | A carrier's access to a driver's documents ends with the affiliation, subject to approved retention |
 
 ## 1. What this slice is
 
@@ -50,7 +61,7 @@ The following are not in this slice:
 | ID | Criterion |
 |---|---|
 | FLT-1 | Only an administrator of an organisation with an effective carrier capability can register or change vehicles and invite drivers. Anyone else is refused exactly as for a missing record |
-| FLT-2 | A registration number can be claimed by only one active record per country, including under simultaneous requests |
+| FLT-2 | A carrier holds one active record per registration. Another carrier's claim on the same registration is recorded without disclosing the first, changes nothing for the existing carrier, and only one claim per registration can be verified, including under simultaneous decisions (FC-2, FC-3) |
 | FLT-3 | A driver's affiliation becomes active only through the driver's own acceptance. Under DB-5 a second active affiliation is refused, including under simultaneous requests |
 | FLT-4 | A vehicle or driver is eligible only while every required document is accepted and its expiry is after the end of the window asked about. Expiry one second inside the window makes it ineligible, judged by the database clock |
 | FLT-5 | An authorisation is required for a driver–vehicle pair, and the licence class must cover the vehicle category. Ending the affiliation ends eligibility at the next check |
@@ -71,12 +82,12 @@ The cross-release decisions are numbered DB-n in the gap plan. Those specific to
 | FB-1 | Document register per country and subject (truck, trailer, driver) | Empty in production and fictional in development, as for evidence requirements. The real list is yours, with advisers (X-5) |
 | FB-2 | How a driver joins | The driver registers with a mobile number like any person (slice 4), then accepts the carrier's invitation. No accounts are created on the driver's behalf | 
 | FB-3 | Vehicle categories and licence classes | A register per country, mapping each licence class to the vehicle categories it covers. Fictional in development; the real mapping is yours, with advisers |
-| FB-4 | A registration number already claimed by another carrier | Refused and flagged to staff, with no automatic change. The full ownership-claim process (Part 1, 3.8) is deferred until after Release 1 |
+| FB-4 | A registration number already claimed by another carrier | As approved with FC-3: recorded as a claim, shown to staff only, with no automatic change and nothing disclosed. The full ownership-claim process (Part 1, 3.8) is deferred until after Release 1 |
 | FB-5 | Development limits (protected settings, development defaults only) | Vehicles per carrier 200, drivers per carrier 200, document versions per document 5 |
 
 ## 6. Carried forward, unchanged
 
-- PRs #15, #16 and #17 stay unmerged until explicitly authorised.
+- PRs #15 to #18 stay unmerged until a focused dependency review and explicit authorisation.
 - Test accounts and fictional data only.
 - Wording and translation corrections go to the final-audit backlog.
 - Production gates in `SECURITY_BACKLOG.md` remain open.

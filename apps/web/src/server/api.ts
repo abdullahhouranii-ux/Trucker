@@ -399,3 +399,93 @@ export interface ShipmentQuotations {
   inclusionsAvailable: boolean;
   quotations: Quotation[];
 }
+
+// Fleet and drivers (slice 13) ----------------------------------------------------------------
+export type FleetEligibility =
+  | 'eligible'
+  | 'not_found'
+  | 'carrier_not_eligible'
+  | 'ownership_not_verified'
+  | 'not_operating_controller'
+  | 'suspended'
+  | 'document_missing'
+  | 'document_expired'
+  | 'document_expires_in_window'
+  | 'equipment_mismatch'
+  | 'not_affiliated'
+  | 'vehicle_not_found'
+  | 'not_authorised'
+  | 'licence_class_not_covering';
+export interface FleetDocument {
+  id: string;
+  type: string;
+  country: string;
+  status: 'submitted' | 'accepted' | 'rejected';
+  expiryDate: string;
+  licenceClasses: string[];
+  submittedAt: string;
+  reason?: string;
+  /** Present only for the document's own holder: a carrier never sees a driver's numbers. */
+  documentNumber?: string;
+  issuingCountry?: string;
+}
+export interface FleetVehicle {
+  id: string;
+  kind: 'truck' | 'trailer';
+  category: string;
+  equipmentType: string;
+  registrationCountry: string;
+  registrationNumber: string;
+  status: 'active' | 'retired';
+  ownership: 'claimed' | 'verified' | 'rejected';
+  version: number;
+  eligibility: FleetEligibility;
+  documents: FleetDocument[];
+}
+export interface FleetDriver {
+  id: string;
+  status: 'invited' | 'active' | 'declined' | 'cancelled' | 'ended';
+  phone: string;
+  version: number;
+  name?: string;
+  eligibility?: FleetEligibility;
+  documents?: FleetDocument[];
+  authorisations?: { id: string; vehicleId?: string }[];
+}
+type Named = { en: string; ar: string; ur: string };
+export interface FleetRegisters {
+  categories?: { code: string; kind: 'truck' | 'trailer'; name: Named }[];
+  documentTypes?: {
+    country: string;
+    subject: 'truck' | 'trailer' | 'driver';
+    code: string;
+    required: boolean;
+    carriesLicence: boolean;
+    name: Named;
+  }[];
+  licenceClasses?: { country: string; code: string; name: Named }[];
+}
+export interface Fleet {
+  open: boolean;
+  vehicles: FleetVehicle[];
+  drivers: FleetDriver[];
+  registers: FleetRegisters;
+}
+export interface DriverSide {
+  open: boolean;
+  invitations: {
+    id: string;
+    version: number;
+    invitedAt: string;
+    carrier: { legalName: string; tradingName: string | null };
+  }[];
+  affiliation: {
+    id: string;
+    version: number;
+    country: string;
+    eligibility: FleetEligibility;
+    carrier: { legalName: string; tradingName: string | null };
+  } | null;
+  documents: FleetDocument[];
+  registers: FleetRegisters;
+}

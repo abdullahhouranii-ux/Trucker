@@ -1188,6 +1188,67 @@ async function main() {
       `the shipment page is ${two.page.url()}`,
     );
     await two.inspect('published shipment');
+    // Fleet: an ownership claim waits for a decision. The claim is put in place directly (the
+    // carrier's own screens are checked in the web application's checks).
+    const claimId = (
+      await db.query(
+        `INSERT INTO trucker.vehicle
+           (organisation_id, kind, category_code, equipment_type, registration_country,
+            registration_number, created_by, created_at, updated_at)
+         SELECT $1, 'truck', 'fictional_rigid_truck', 'box', 'XA', 'CONSOLE1', m.person_id, now(), now()
+         FROM trucker.membership m WHERE m.organisation_id = $1 LIMIT 1
+         RETURNING id`,
+        [applicantOrg],
+      )
+    ).rows[0].id;
+    await two.open('/fleet');
+    check(
+      'fleet',
+      (await two.page.$(`#claims [data-claim="${claimId}"]`)) !== null &&
+        (await two.text('#documents-empty')) !== null &&
+        (await two.page.$('#suspension-form')) === null,
+      'the claim is not listed for the reviewer',
+    );
+    await two.inspect('fleet');
+    // Without the declaration of independence nothing is decided.
+    await two.page.select(`#decision-${claimId}`, 'verified:ownership_evidence_accepted');
+    await two.submit(`[data-decide="${claimId}"] button`);
+    const ownershipOf = async () =>
+      (await db.query('SELECT ownership FROM trucker.vehicle WHERE id = $1', [claimId])).rows[0]
+        .ownership;
+    check(
+      'fleet',
+      two.page.url().includes('error=conflict_not_declared') &&
+        (await two.text('#fleet-error')) !== null &&
+        (await ownershipOf()) === 'claimed',
+      `deciding without the declaration led to ${two.page.url()}`,
+    );
+    await two.page.select(`#decision-${claimId}`, 'verified:ownership_evidence_accepted');
+    await two.page.click(`#noConflict-${claimId}`);
+    await two.submit(`[data-decide="${claimId}"] button`);
+    check(
+      'fleet',
+      two.page.url().includes('done=decided') &&
+        (await ownershipOf()) === 'verified' &&
+        (await two.text('#claims-empty')) !== null,
+      `verifying the claim led to ${two.page.url()}`,
+    );
+    // An administrator sees the page and the suspension form.
+    await one.open('/fleet');
+    check(
+      'fleet',
+      (await one.text('#forbidden')) === null && (await one.page.$('#suspension-form')) !== null,
+      'an administrator cannot read the fleet page',
+    );
+    await one.page.type('#suspension-id', claimId);
+    await one.submit('#record-suspension');
+    check(
+      'fleet',
+      one.page.url().includes('done=suspension_changed') &&
+        (await one.page.$(`#suspensions [data-suspension="${claimId}"]`)) !== null,
+      `suspending led to ${one.page.url()}`,
+    );
+    await one.inspect('fleet suspended');
     // An administrator who is not a reviewer reads them too.
     await one.open('/shipments');
     check(

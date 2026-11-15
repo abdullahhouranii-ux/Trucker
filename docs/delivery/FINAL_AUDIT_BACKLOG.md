@@ -59,6 +59,10 @@ No accessibility conformance is claimed for any page.
 | WD-22 | The shipper's comparison labels the earliest pick-up "Earliest pick-up you can meet", the carrier's wording | Slice 12, shipper quotations page | Should read as the carrier's earliest pick-up |
 | WD-23 | The shipper's comparison shows each inclusion as a row of the facts list, so three inclusions make a long card on phones | Slice 12, shipper quotations page | Readable; consider a compact table once the real register is known |
 | WD-24 | The empty amount reuses the "Enter the amount with digits and a point" message rather than a "required" message | Slice 12, quotation form | Correct but indirect |
+| WD-25 | After a lost answer the vehicle form is shown filled in again although the vehicle was registered | Slice 13, fleet page | Sending it again answers "already in your fleet"; clearer to empty the form once the list shows the vehicle |
+| WD-26 | The console names fleet records by raw codes ("fictional rigid truck") and asks for an identifier to suspend | Slice 13, console fleet page | Readable for staff; names and a button per record would be better |
+| WD-27 | A driver's status line and the eligibility line repeat each other ("Working with you", "Eligible now") and the reason for ineligibility is one short sentence | Slice 13, fleet and driver pages | Correct; could say which document is missing |
+| WD-28 | "Expires" is followed by the date with no separator in right-to-left text | Slice 13, document lists | Readable; check with native readers |
 
 ## 4. Translation corrections (Arabic and Urdu)
 
@@ -83,6 +87,8 @@ All Arabic and Urdu text in the repository is a draft written without a native r
 | TR-15 | The fictional haulage licence requirement name | Slice 11, fixtures | Low: development data only |
 | TR-16 | All quotation messages (`quo`) and the corrected `disc.noQuotations` | Slice 12 | High: "nothing is accepted or booked", "Trucker does not determine how tax applies" and the "not confirmed" messages must not shift |
 | TR-17 | Names of the fictional inclusions and the test currency | Slice 12, fixtures | Low: development data only |
+| TR-18 | All fleet and driver messages (`fleet`) | Slice 13 | High: "reserves and assigns nothing", "a claim until staff verify it" and "not its number" must not shift |
+| TR-19 | Names of the fictional vehicle categories, licence classes and document types | Slice 13, fixtures | Low: development data only |
 
 ## 5. How this list is used
 

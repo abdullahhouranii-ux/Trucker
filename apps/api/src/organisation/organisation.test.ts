@@ -319,6 +319,16 @@ test('every table has row security: a policy, or no right at all for the API', a
   // this test fails.
   const closed = [
     'carrier_access_log',
+    'driver_affiliation',
+    'driver_authorisation',
+    'fleet_document',
+    'fleet_document_type',
+    'fleet_retry_key',
+    'fleet_suspension',
+    'licence_class',
+    'licence_class_category',
+    'vehicle',
+    'vehicle_category',
     'country_currency',
     'currency',
     'quotation',

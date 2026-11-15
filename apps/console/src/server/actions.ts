@@ -331,3 +331,71 @@ export async function revokeVerificationAction(form: FormData): Promise<void> {
   if (reply.status === 401) await sessionEnded();
   redirect(`${back}&error=${reviewRefusal(reply)}`);
 }
+
+// ---------------------------------------------------------------------------------------------
+// Fleet: ownership claims, documents, suspensions
+// ---------------------------------------------------------------------------------------------
+const FLEET_REFUSALS = [
+  'staff_privilege_required',
+  'ownership_conflict',
+  'fleet_record_changed',
+  'fleet_decision_not_open',
+  'validation_failed',
+  'not_found',
+];
+const fleetRefusal = (reply: Extract<ApiReply<unknown>, { ok: false }>): string => {
+  if (unknown(reply)) return 'unconfirmed';
+  if (reply.code === 'reviewer_not_independent') {
+    const reason = reply.details.reason;
+    return typeof reason === 'string' && /^[a-z_]{1,40}$/.test(reason) ? reason : 'connected';
+  }
+  return FLEET_REFUSALS.includes(reply.code) ? reply.code : 'refused';
+};
+
+/** Decides an ownership claim or a document. One choice carries the decision and its reason. */
+export async function decideFleetAction(form: FormData): Promise<void> {
+  const token = await signedIn();
+  const id = text(form, 'id');
+  const subject = text(form, 'subject') === 'document' ? 'document' : 'ownership';
+  if (!UUID.test(id)) redirect('/fleet?error=not_found');
+  const [decision = '', reason = ''] = text(form, 'decision').split(':');
+  if (!decision || !reason) redirect('/fleet?error=decision_missing');
+  const reply = await api<{ outcome: string }>(
+    'POST',
+    subject === 'document'
+      ? `/staff/fleet/documents/${id}/decision`
+      : `/staff/fleet/vehicles/${id}/ownership`,
+    {
+      token,
+      body: {
+        version: Number(text(form, 'version')),
+        decision,
+        reason,
+        noConflict: text(form, 'noConflict') === 'yes',
+      },
+    },
+  );
+  if (reply.ok) redirect(`/fleet?done=${reply.data.outcome}`);
+  if (reply.status === 401) await sessionEnded();
+  redirect(`/fleet?error=${fleetRefusal(reply)}`);
+}
+
+/** Suspends a vehicle or a driver, or ends the suspension. Administrators only. */
+export async function suspendFleetAction(form: FormData): Promise<void> {
+  const token = await signedIn();
+  const id = text(form, 'id').trim();
+  if (!UUID.test(id)) redirect('/fleet?error=not_found');
+  const suspended = text(form, 'suspended') === 'yes';
+  const reply = await api<{ outcome: string }>('POST', '/staff/fleet/suspensions', {
+    token,
+    body: {
+      subject: text(form, 'subject') === 'driver' ? 'driver' : 'vehicle',
+      id,
+      suspended,
+      reason: suspended ? text(form, 'reason') : null,
+    },
+  });
+  if (reply.ok) redirect(`/fleet?done=suspension_${reply.data.outcome}`);
+  if (reply.status === 401) await sessionEnded();
+  redirect(`/fleet?error=${fleetRefusal(reply)}`);
+}
