@@ -233,7 +233,7 @@ async function main() {
     const shots = {
       application: 'console-application-390',
       withdraw: 'console-withdraw-390',
-      'lost decision': 'console-lost-decision-390',
+      'published shipment': 'console-published-shipment-390',
     };
 
     /** Helpers bound to one page, so that two staff members can be signed in at once. */
@@ -1118,6 +1118,84 @@ async function main() {
       `the organisation is ${afterVerify.organisation.status}`,
     );
 
+    // Published shipments, read-only: the applicant publishes, the reviewer reads.
+    const zoned = (hours, offsetHours) =>
+      new Date(Date.now() + (hours + offsetHours) * 3_600_000).toISOString().slice(0, 16);
+    const madeDraft = await participant('POST', `/organisations/${applicantOrg}/shipments`, {
+      token: applicant,
+      key: newKey(),
+      body: {
+        shipperReference: 'CONSOLE-PUB-1',
+        cargoDescription: 'Boxed tiles (fictional)',
+        grossWeightKg: '9000',
+        pickup: {
+          address: 'Warehouse 1 (fictional)',
+          countryCode: 'XA',
+          timeZone: 'Etc/GMT-4',
+          from: { local: zoned(48, 4) },
+          until: { local: zoned(50, 4) },
+        },
+        delivery: {
+          address: 'Depot 2 (fictional)',
+          countryCode: 'XB',
+          timeZone: 'Etc/GMT-3',
+          from: { local: zoned(54, 3) },
+          until: { local: zoned(58, 3) },
+        },
+      },
+    });
+    const publishedShipment = madeDraft.body.shipment?.id;
+    const publishedReply = await participant(
+      'POST',
+      `/organisations/${applicantOrg}/shipments/${publishedShipment}/publish`,
+      {
+        token: applicant,
+        key: newKey(),
+        body: {
+          version: madeDraft.body.shipment?.version,
+          cargoCategory: 'general_dry',
+          equipmentType: 'box',
+          dangerousGoods: false,
+          pickupArea: 'North area (fictional)',
+          deliveryArea: 'Port area (fictional)',
+          quotationDeadline: { local: zoned(24, 4) },
+        },
+      },
+    );
+    check(
+      'shipments',
+      publishedReply.status === 200,
+      `publishing answered ${publishedReply.status}`,
+    );
+    await two.open('/shipments');
+    check(
+      'shipments',
+      (await two.page.evaluate(
+        (id) => document.querySelector(`#shipments [data-shipment="${id}"]`)?.dataset.state,
+        publishedShipment,
+      )) === 'published',
+      'the published shipment is not listed for the reviewer',
+    );
+    await two.inspect('published shipments');
+    await two.submit(`#shipments [data-shipment="${publishedShipment}"] a`);
+    check(
+      'shipments',
+      two.page.url() === `${origin}/shipments/${publishedShipment}` &&
+        ((await two.text('#carrier-view')) ?? '').includes('verified_shipper') &&
+        !((await two.text('#carrier-view')) ?? '').includes('Warehouse 1') &&
+        ((await two.text('#shipment-record')) ?? '').includes('Warehouse 1') &&
+        (await two.page.$('form')) === null,
+      `the shipment page is ${two.page.url()}`,
+    );
+    await two.inspect('published shipment');
+    // An administrator who is not a reviewer reads them too.
+    await one.open('/shipments');
+    check(
+      'shipments',
+      (await one.text('#forbidden')) === null,
+      'an administrator cannot read published shipments',
+    );
+
     // Withdrawing the verification. The first administrator's own declaration was never
     // recorded, and "not declared" is not "independent": refused.
     const withdraw = async (who, reason = 'verified_in_error') => {
@@ -1177,6 +1255,14 @@ async function main() {
         afterWithdraw.applications.length === 2,
       `withdrawing led to ${page.url()} and the organisation is ${afterWithdraw.organisation.status}`,
     );
+    // The published shipment is suspended by the withdrawal, in the same transaction.
+    await one.open(`/shipments/${publishedShipment}`);
+    check(
+      'shipments',
+      (await page.evaluate(() => document.querySelector('#shipment-state')?.dataset.state)) ===
+        'suspended' && ((await one.text('#suspensions')) ?? '').includes('open'),
+      'the shipment is not shown suspended after the verification was withdrawn',
+    );
     await withdraw(one);
     check(
       'verification',
@@ -1198,6 +1284,8 @@ async function main() {
 
         'staff.verification_revoke refused',
         'staff.verification_revoke done',
+        'staff.shipment_list done',
+        'staff.shipment_view done',
       ].every((entry) => reviewAudit.includes(entry)),
       `the audit list lacks verification entries: ${[...new Set(reviewAudit)].join(', ')}`,
     );

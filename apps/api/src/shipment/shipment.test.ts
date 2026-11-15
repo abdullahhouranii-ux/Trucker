@@ -1046,7 +1046,7 @@ test('pages stay stable while drafts are changed, discarded and added', async ()
     assert.equal(reply.status, 422, bad);
     assert.deepEqual((reply.body.details as { fields: string[] }).fields, ['after']);
   }
-  const badStatus = await call(api, 'GET', shipments(org, '?status=published'), {
+  const badStatus = await call(api, 'GET', shipments(org, '?status=awarded'), {
     token: person.token,
   });
   assert.equal(badStatus.status, 422);
@@ -1594,13 +1594,11 @@ test('create, change and discard each leave one entry, with who, when, the reque
 // ---------------------------------------------------------------------------------------------
 // What this slice must not contain (SH-8)
 // ---------------------------------------------------------------------------------------------
-test('there is no route to publish, quote, book or pay, and no such word in the shipment code', async () => {
+test('there is no route to quote, book or pay, and no such word in the shipment code', async () => {
   const { person, org } = await newShipper();
   const draft = await created(person, org);
   for (const [method, action] of [
-    ['POST', 'publish'],
     ['POST', 'publication'],
-    ['POST', 'withdraw'],
     ['POST', 'quotations'],
     ['GET', 'quotations'],
     ['POST', 'offers'],
@@ -1623,7 +1621,7 @@ test('there is no route to publish, quote, book or pay, and no such word in the 
     );
     assert.equal(reply.status, 404, `${method} ${action}`);
   }
-  // A status other than draft or discarded cannot be reached or written.
+  // A status that belongs to a later slice cannot be written.
   const row = await owner.query<{ status: string }>(
     'SELECT status FROM trucker.shipment_draft WHERE id = $1',
     [draft.id],
@@ -1631,9 +1629,7 @@ test('there is no route to publish, quote, book or pay, and no such word in the 
   assert.equal(row.rows[0]!.status, 'draft');
   await refused(
     () =>
-      owner.query(`UPDATE trucker.shipment_draft SET status = 'published' WHERE id = $1`, [
-        draft.id,
-      ]),
+      owner.query(`UPDATE trucker.shipment_draft SET status = 'awarded' WHERE id = $1`, [draft.id]),
     /violates check constraint/,
   );
   // The routes that exist are exactly these.
@@ -1644,28 +1640,38 @@ test('there is no route to publish, quote, book or pay, and no such word in the 
     (match) => `${match[1]} ${match[2]}`,
   );
   assert.deepEqual(routes.sort(), [
+    'Get shipment-catalogues',
     'Get shipment-places',
     'Get shipments',
     'Get shipments/:id',
     'Get shipments/:id/history',
+    'Get shipments/:id/publication',
     'Patch shipments/:id',
     'Post shipments',
+    'Post shipments/:id/copy',
     'Post shipments/:id/discard',
+    'Post shipments/:id/publish',
+    'Post shipments/:id/published-changes',
+    'Post shipments/:id/republish',
+    'Post shipments/:id/withdraw',
   ]);
-  // No field, column or message about price, payment, quotation or booking.
+  // No field, column or message about price, payment, quotations or booking. Publication is
+  // this slice's; the quotation deadline is its one mention of quotations (PB-3).
   const root = path.resolve(here, '../../../..');
   const files = [
     ...readdirSync(source)
       .filter((name) => !name.endsWith('.test.ts'))
       .map((name) => path.join(source, name)),
     path.join(root, 'db/migrations/0005_shipment_drafts.sql'),
+    path.join(root, 'db/migrations/0008_shipment_publication.sql'),
   ];
   for (const file of files) {
     const code = readFileSync(file, 'utf8')
       // Comments say what the slice does not do; only what is not a comment is searched.
       .replace(/\/\*[\s\S]*?\*\//g, '')
       .replace(/^\s*(\/\/|--).*$/gm, '')
-      .replace(/COMMENT ON [^;]*;/g, '');
+      .replace(/COMMENT ON [^;]*;/g, '')
+      .replace(/quotation_?deadline/gi, '');
     for (const word of [
       'price',
       'amount',
@@ -1675,8 +1681,6 @@ test('there is no route to publish, quote, book or pay, and no such word in the 
       'quotation',
       'quote',
       'booking',
-      'publish',
-      'carrier',
       'declared_value',
     ])
       assert.ok(!code.toLowerCase().includes(word), `${path.basename(file)} mentions "${word}"`);

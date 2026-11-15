@@ -134,9 +134,28 @@ export interface RouteCheck {
     country?: string;
   }[];
 }
+export type ShipmentState =
+  'draft' | 'discarded' | 'published' | 'suspended' | 'withdrawn' | 'expired';
+export interface ShipmentPublication {
+  cargoCategory: string | null;
+  equipmentType: string | null;
+  dangerousGoods: boolean | null;
+  pickupArea: string | null;
+  deliveryArea: string | null;
+  /** In the pick-up place's time zone. */
+  quotationDeadline: WindowEnd;
+  publishedVersion: number | null;
+  publicationCycle: string | null;
+  publishedAt: string | null;
+  withdrawnAt: string | null;
+  expiredAt: string | null;
+  suspendedFor: ('verification' | 'route')[];
+  copiedFrom: string | null;
+}
 export interface Shipment {
   id: string;
-  status: 'draft' | 'discarded';
+  /** The state now: a published shipment with an open suspension is `suspended`. */
+  status: ShipmentState;
   version: number;
   shipperReference: string | null;
   cargoDescription: string | null;
@@ -151,10 +170,11 @@ export interface Shipment {
   createdAt: string;
   updatedAt: string;
   discardedAt: string | null;
+  publication: ShipmentPublication;
 }
 export interface ShipmentSummary {
   id: string;
-  status: 'draft' | 'discarded';
+  status: ShipmentState;
   version: number;
   shipperReference: string | null;
   cargoDescription: string | null;
@@ -162,6 +182,8 @@ export interface ShipmentSummary {
   deliveryCountry: string | null;
   createdAt: string;
   updatedAt: string;
+  publishedVersion: number | null;
+  quotationDeadlineAt: string | null;
 }
 /** A country a place can be in, with the time zones configured for it. */
 export interface PlaceOption extends Country {
@@ -221,4 +243,54 @@ export interface VerificationOverview {
   } | null;
   maySubmit: 'initial' | 'amendment' | null;
   mayPublish: boolean;
+}
+
+/** A fictional catalogue entry (cargo category or equipment type). */
+export interface CatalogueEntry {
+  code: string;
+  name: { en: string; ar: string; ur: string };
+}
+export interface Catalogues {
+  cargoCategories: CatalogueEntry[];
+  equipmentTypes: CatalogueEntry[];
+}
+/** What carriers would see. Shown to the shipper as a preview only: no carrier can read it. */
+export interface CarrierView {
+  lane: { origin: string; destination: string; transit: string[] };
+  pickup: CarrierPlace;
+  delivery: CarrierPlace;
+  cargo: {
+    category: string;
+    description: string | null;
+    grossWeightKg: string | null;
+    pieces: number | null;
+    packaging: string | null;
+  };
+  equipment: { type: string; notes: string | null };
+  dangerousGoods: boolean;
+  quotationDeadline: { local: string; offsetMinutes: number; at: string; timeZone: string };
+  shipper: 'verified_shipper';
+  publishedVersion: number;
+  state: ShipmentState;
+}
+export interface CarrierPlace {
+  countryCode: string;
+  area: string;
+  timeZone: string;
+  from: { local: string; offsetMinutes: number; at: string };
+  until: { local: string; offsetMinutes: number; at: string };
+}
+export interface PublicationRecord {
+  versions: {
+    versionNo: number;
+    kind: 'published' | 'changed' | 'republished';
+    createdAt: string;
+  }[];
+  suspensions: {
+    cause: 'verification' | 'route';
+    startedAt: string;
+    endedAt: string | null;
+    endedBy: string | null;
+  }[];
+  carrierView: CarrierView | null;
 }

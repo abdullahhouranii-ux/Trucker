@@ -207,7 +207,9 @@ const count = async (table: string, where: string, values: unknown[]): Promise<n
 
 /** Functions the API's role may run. Anything else in the schema must be closed to it. */
 const CALLABLE = [
+  'change_published_shipment(p_shipment uuid, p_expected_version integer, p_key text, p_content jsonb, p_allow_fixtures boolean)',
   'complete_registration(p_token_hash text, p_display_name text, p_contact_email text, p_terms_version text, p_terms_language text, p_request_id text)',
+  'copy_shipment(p_shipment uuid, p_key text)',
   'create_organisation(p_legal_name text, p_trading_name text, p_country_code text, p_registration_number text, p_address text, p_contact_name text, p_allow_fixtures boolean)',
   'create_shipment_draft(p_key text, p_content jsonb, p_allow_fixtures boolean)',
   'discard_shipment_draft(p_draft uuid, p_expected_version integer, p_key text)',
@@ -220,6 +222,9 @@ const CALLABLE = [
   'offset_choices(p_draft uuid)',
   'organisation_may_publish()',
   'organisation_selected()',
+  'publish_shipment(p_shipment uuid, p_expected_version integer, p_key text, p_details jsonb, p_allow_fixtures boolean)',
+  'refresh_shipments(p_shipment uuid)',
+  'republish_shipment(p_shipment uuid, p_expected_version integer, p_key text, p_deadline jsonb, p_allow_fixtures boolean)',
   'request_organisation()',
   'request_person()',
   'revoke_my_other_sessions(p_token_hash text, p_request_id text)',
@@ -227,6 +232,7 @@ const CALLABLE = [
   'route_check(p_origin text, p_destination text, p_allow_fixtures boolean)',
   'security_settings_reviewed()',
   'session_check(p_token_hash text, p_request_id text)',
+  'shipment_carrier_view(p_shipment uuid)',
   'sign_in_request_code(p_phone text, p_request_key text, p_pepper text, p_reveal boolean)',
   'sign_in_verify_code(p_challenge uuid, p_code text, p_request_key text, p_pepper text, p_session uuid, p_token_hash text, p_request_id text)',
   'staff_audit_list(p_token_hash text, p_after text)',
@@ -242,6 +248,8 @@ const CALLABLE = [
   'staff_set_participant_link(p_token_hash text, p_staff uuid, p_link text, p_phone text, p_request_id text)',
   'staff_set_privilege(p_token_hash text, p_staff uuid, p_privilege text, p_granted boolean, p_request_id text)',
   'staff_set_status(p_token_hash text, p_staff uuid, p_status text, p_request_id text)',
+  'staff_shipment_list(p_token_hash text, p_request_id text)',
+  'staff_shipment_view(p_token_hash text, p_shipment uuid, p_request_id text)',
   'staff_sign_in_password(p_email text, p_password text, p_pepper text, p_ticket_hash text, p_request_id text)',
   'staff_sign_in_verify(p_ticket_hash text, p_code text, p_pepper text, p_session uuid, p_token_hash text, p_request_id text)',
   'staff_sign_out(p_token_hash text, p_request_id text)',
@@ -251,6 +259,7 @@ const CALLABLE = [
   'staff_verification_view(p_token_hash text, p_application uuid, p_request_id text)',
   'submit_verification(p_key text, p_expected_version integer, p_content jsonb, p_allow_fixtures boolean)',
   'update_shipment_draft(p_draft uuid, p_expected_version integer, p_key text, p_content jsonb, p_allow_fixtures boolean)',
+  'withdraw_shipment(p_shipment uuid, p_expected_version integer, p_key text)',
   'withdraw_verification(p_application uuid, p_key text)',
 ];
 
@@ -333,9 +342,11 @@ test('the privilege catalogue shows no right for the API role or PUBLIC on the c
   // Exactly these tables are reachable at all, and none of them holds identity data.
   assert.deepEqual([...byTable.keys()].sort(), [
     'audit_entry',
+    'cargo_category',
     'country',
     'country_time_zone',
     'environment',
+    'equipment_type',
     'evidence_requirement',
     'lane',
     'lane_transit',
@@ -344,6 +355,8 @@ test('the privilege catalogue shows no right for the API role or PUBLIC on the c
     'organisation_capability',
     'retry_key',
     'shipment_draft',
+    'shipment_publication_version',
+    'shipment_suspension',
     'verification_application',
     'verification_evidence',
   ]);

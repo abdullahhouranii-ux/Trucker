@@ -311,6 +311,8 @@ test('every table has row security: a policy, or no right at all for the API', a
     'lane',
     'lane_transit',
     'evidence_requirement',
+    'cargo_category',
+    'equipment_type',
   ]);
   // Tables the API's role has no right on at all. Row security with no policy is their second
   // barrier. A new table is on neither list, so it must carry row security and a policy, or
@@ -370,6 +372,8 @@ test('every table has row security: a policy, or no right at all for the API', a
       'organisation_capability',
       'retry_key',
       'shipment_draft',
+      'shipment_publication_version',
+      'shipment_suspension',
       'verification_application',
       'verification_evidence',
     ],

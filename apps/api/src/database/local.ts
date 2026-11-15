@@ -104,6 +104,13 @@ interface FixtureFile {
     required: boolean;
     name: { en: string; ar: string; ur: string };
   }[];
+  /** Fictional catalogues: not a statement of what may be carried anywhere. */
+  cargoCategories?: {
+    code: string;
+    excluded: boolean;
+    name: { en: string; ar: string; ur: string };
+  }[];
+  equipmentTypes?: { code: string; name: { en: string; ar: string; ur: string } }[];
 }
 
 /**
@@ -174,6 +181,33 @@ export async function loadCountryFixtures(
         requirement.required,
         index + 1,
       ],
+    );
+  }
+  for (const [index, category] of (data.cargoCategories ?? []).entries()) {
+    await owner.query(
+      `INSERT INTO trucker.cargo_category (code, name_en, name_ar, name_ur, excluded, position)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (code) DO UPDATE
+         SET name_en = EXCLUDED.name_en, name_ar = EXCLUDED.name_ar, name_ur = EXCLUDED.name_ur,
+             excluded = EXCLUDED.excluded, position = EXCLUDED.position`,
+      [
+        category.code,
+        category.name.en,
+        category.name.ar,
+        category.name.ur,
+        category.excluded,
+        index + 1,
+      ],
+    );
+  }
+  for (const [index, type] of (data.equipmentTypes ?? []).entries()) {
+    await owner.query(
+      `INSERT INTO trucker.equipment_type (code, name_en, name_ar, name_ur, position)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (code) DO UPDATE
+         SET name_en = EXCLUDED.name_en, name_ar = EXCLUDED.name_ar, name_ur = EXCLUDED.name_ur,
+             position = EXCLUDED.position`,
+      [type.code, type.name.en, type.name.ar, type.name.ur, index + 1],
     );
   }
   return data.countries.map((country) => country.code);

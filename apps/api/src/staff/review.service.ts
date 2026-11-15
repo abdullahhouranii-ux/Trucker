@@ -182,4 +182,31 @@ export class ReviewService {
     if (row.status === 'repeated') return { outcome: 'already_revoked' };
     throw new ApiError(409, 'organisation_not_verified', 'This organisation is not verified.');
   }
+
+  // ------------------------------------------------------------------------------------------
+  // Published shipments, read-only, for reviewers and staff administrators. Each look is
+  // recorded; what is due (an expiry, a suspension) is recorded first.
+  // ------------------------------------------------------------------------------------------
+  async shipments(caller: StaffCaller): Promise<Record<string, unknown>[]> {
+    const result = await this.pool.query<{ status: string; detail: Record<string, unknown>[] }>(
+      'SELECT status, detail FROM trucker.staff_shipment_list($1, $2)',
+      [caller.tokenHash, caller.requestId ?? null],
+    );
+    const row = result.rows[0]!;
+    if (row.status === 'forbidden') throw forbidden();
+    if (row.status !== 'ok') throw unauthorized();
+    return row.detail;
+  }
+
+  async shipment(caller: StaffCaller, id: string): Promise<Record<string, unknown>> {
+    const result = await this.pool.query<{ status: string; detail: Record<string, unknown> }>(
+      'SELECT status, detail FROM trucker.staff_shipment_view($1, $2, $3)',
+      [caller.tokenHash, id, caller.requestId ?? null],
+    );
+    const row = result.rows[0]!;
+    if (row.status === 'forbidden') throw forbidden();
+    if (row.status === 'not_found') throw notFound();
+    if (row.status !== 'ok') throw unauthorized();
+    return row.detail;
+  }
 }

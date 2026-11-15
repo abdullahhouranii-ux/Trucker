@@ -124,5 +124,61 @@
         "ur": "کمپنی رجسٹریشن سرٹیفکیٹ (فرضی)"
       }
     }
+  ],
+  "_catalogues_notice": "FICTIONAL cargo categories and equipment types. Not a statement of what may be carried anywhere (D-006 is undecided). Loaded only into a database marked local-development or test.",
+  "cargoCategories": [
+    {
+      "code": "general_dry",
+      "excluded": false,
+      "name": {
+        "en": "General dry goods (fictional category)",
+        "ar": "بضائع جافة عامة (فئة تجريبية)",
+        "ur": "عام خشک سامان (آزمائشی زمرہ)"
+      }
+    },
+    {
+      "code": "palletised",
+      "excluded": false,
+      "name": {
+        "en": "Palletised goods (fictional category)",
+        "ar": "بضائع على منصات (فئة تجريبية)",
+        "ur": "پیلٹ پر سامان (آزمائشی زمرہ)"
+      }
+    },
+    {
+      "code": "restricted_demo",
+      "excluded": true,
+      "name": {
+        "en": "Restricted goods (fictional category, not accepted)",
+        "ar": "بضائع مقيدة (فئة تجريبية، غير مقبولة)",
+        "ur": "محدود سامان (آزمائشی زمرہ، قبول نہیں)"
+      }
+    }
+  ],
+  "equipmentTypes": [
+    {
+      "code": "flatbed",
+      "name": {
+        "en": "Flatbed (fictional type)",
+        "ar": "مقطورة مسطحة (نوع تجريبي)",
+        "ur": "فلیٹ بیڈ (آزمائشی قسم)"
+      }
+    },
+    {
+      "code": "curtain_side",
+      "name": {
+        "en": "Curtain-side (fictional type)",
+        "ar": "مقطورة بستائر جانبية (نوع تجريبي)",
+        "ur": "پردے والی سائیڈ (آزمائشی قسم)"
+      }
+    },
+    {
+      "code": "box",
+      "name": {
+        "en": "Box body (fictional type)",
+        "ar": "صندوق مغلق (نوع تجريبي)",
+        "ur": "بند باڈی (آزمائشی قسم)"
+      }
+    }
   ]
 }

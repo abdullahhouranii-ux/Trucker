@@ -28,7 +28,8 @@ export default async function ShipmentsPage({ params, searchParams }: Props) {
   const m = getMessages(locale);
   const t = m.ship;
   const search = await searchParams;
-  const status = search.status === 'discarded' ? 'discarded' : 'draft';
+  const LISTS = ['draft', 'published', 'expired', 'withdrawn', 'discarded'] as const;
+  const status: (typeof LISTS)[number] = LISTS.find((name) => name === search.status) ?? 'draft';
   const after = typeof search.after === 'string' && UUID.test(search.after) ? search.after : null;
   const { problems } = shipmentProblems(
     typeof search.error === 'string' ? search.error : undefined,
@@ -36,7 +37,7 @@ export default async function ShipmentsPage({ params, searchParams }: Props) {
     m.auth.errors.unavailable,
   );
   const here = `/${locale}/organisations/${id}/shipments`;
-  const filter = status === 'discarded' ? '?status=discarded' : '';
+  const filter = status === 'draft' ? '' : `?status=${status}`;
 
   const found = await requirePerson(locale);
   const base = `/organisations/${id}`;
@@ -105,6 +106,21 @@ export default async function ShipmentsPage({ params, searchParams }: Props) {
         >
           {t.filterOpen}
         </a>
+        {(['published', 'expired', 'withdrawn'] as const).map((name) => (
+          <a
+            key={name}
+            className="button"
+            id={`filter-${name}`}
+            href={`${here}?status=${name}`}
+            aria-current={status === name ? 'page' : undefined}
+          >
+            {name === 'published'
+              ? m.pub.filterPublished
+              : name === 'expired'
+                ? m.pub.filterExpired
+                : m.pub.filterWithdrawn}
+          </a>
+        ))}
         <a
           className="button"
           id="filter-discarded"
@@ -116,7 +132,9 @@ export default async function ShipmentsPage({ params, searchParams }: Props) {
       </nav>
       <p className="form-note">{t.orderNote}</p>
       {shipments.length === 0 ? (
-        <p id="no-shipments">{status === 'discarded' ? t.noneDiscarded : t.none}</p>
+        <p id="no-shipments">
+          {status === 'discarded' ? t.noneDiscarded : status === 'draft' ? t.none : m.pub.noneHere}
+        </p>
       ) : null}
       <ul className="organisation-list" id="shipment-list">
         {shipments.map((shipment) => {
@@ -132,8 +150,12 @@ export default async function ShipmentsPage({ params, searchParams }: Props) {
                   t.untitled
                 )}
               </h2>
-              <p className="chip chip-draft">
-                {shipment.status === 'draft' ? t.statusDraft : t.statusDiscarded}
+              <p className="chip chip-draft" data-state={shipment.status}>
+                {shipment.status === 'draft'
+                  ? t.statusDraft
+                  : shipment.status === 'discarded'
+                    ? t.statusDiscarded
+                    : m.pub.status[shipment.status]}
               </p>
               {shipment.shipperReference && shipment.cargoDescription ? (
                 <p>
@@ -166,7 +188,7 @@ export default async function ShipmentsPage({ params, searchParams }: Props) {
           <a
             className="button"
             id="older-shipments"
-            href={`${here}?${status === 'discarded' ? 'status=discarded&' : ''}after=${nextAfter}`}
+            href={`${here}?${status === 'draft' ? '' : `status=${status}&`}after=${nextAfter}`}
           >
             {t.nextPage}
           </a>

@@ -4,6 +4,15 @@ import { DraftKeeper } from '../../../../../../components/draft-keeper.tsx';
 import { ErrorSummary } from '../../../../../../components/form.tsx';
 import { Ltr } from '../../../../../../components/ltr.tsx';
 import {
+  isPublicationCode,
+  PublicationFields,
+  publicationProblems,
+} from '../../../../../../components/publication-form.tsx';
+import {
+  CarrierPreview,
+  PublicationFacts,
+} from '../../../../../../components/publication-view.tsx';
+import {
   offsetText,
   ShipmentFields,
   shipmentProblems,
@@ -13,14 +22,20 @@ import { isLocale } from '../../../../../../i18n/config.ts';
 import { getMessages } from '../../../../../../i18n/messages.ts';
 import {
   api,
+  type Catalogues,
   type PlaceOption,
+  type PublicationRecord,
   type Shipment,
   type ShipmentPlace,
   type WindowEnd,
 } from '../../../../../../server/api.ts';
 import {
+  copyShipmentAction,
   discardShipmentAction,
+  publishShipmentAction,
+  republishShipmentAction,
   updateShipmentAction,
+  withdrawShipmentAction,
 } from '../../../../../../server/shipment-actions.ts';
 import { requirePerson } from '../../../../../../server/session.ts';
 
@@ -46,7 +61,21 @@ export default async function ShipmentPage({ params, searchParams }: Props) {
   };
   const error = one('error');
   const done = one('done');
-  const found = shipmentProblems(error, t, m.auth.errors.unavailable);
+  const pubDone = one('pubDone');
+  // Codes about publication go to the publication form; the rest to the draft's own fields.
+  const parts = (error ?? '').split(',').filter(Boolean);
+  // A page-level code the draft already knows (a conflict, say) stays with the draft.
+  const pubParts = parts.filter(
+    (part) => isPublicationCode(part, m.pub) && !(part in m.ship.errors),
+  );
+  const found = shipmentProblems(
+    parts.filter((part) => !pubParts.includes(part)).join(','),
+    t,
+    m.auth.errors.unavailable,
+  );
+  const limit = one('limit');
+  const pubFound = publicationProblems(pubParts, m.pub, limit ? { limit } : {});
+  const allProblems = [...found.problems, ...pubFound.problems];
   const key = (name: string): string => {
     const value = one(name);
     return value && RETRY_KEY.test(value) ? value : randomUUID();
@@ -56,14 +85,21 @@ export default async function ShipmentPage({ params, searchParams }: Props) {
 
   // The keys of an attempt whose outcome is not known stay with the page, so that trying
   // again after the connection returns asks for the same change, not for a second one.
-  const kept = ['retry', 'discardRetry']
+  const kept = [
+    'retry',
+    'discardRetry',
+    'publishRetry',
+    'withdrawRetry',
+    'republishRetry',
+    'copyRetry',
+  ]
     .filter((name) => RETRY_KEY.test(one(name) ?? ''))
     .map((name) => `${name}=${one(name)}`);
   const retryHref = kept.length > 0 ? `${here}?${kept.join('&')}` : here;
 
   const person = await requirePerson(locale);
   const base = `/organisations/${id}`;
-  const [draft, places] =
+  const [draft, places, catalogueReply, publicationReply] =
     person.state === 'signed-in'
       ? await Promise.all([
           api<{ shipment: Shipment }>('GET', `${base}/shipments/${shipmentId}`, {
@@ -72,20 +108,28 @@ export default async function ShipmentPage({ params, searchParams }: Props) {
           api<{ countries: PlaceOption[] }>('GET', `${base}/shipment-places`, {
             token: person.token,
           }),
+          api<Catalogues>('GET', `${base}/shipment-catalogues`, { token: person.token }),
+          api<{ publication: PublicationRecord }>(
+            'GET',
+            `${base}/shipments/${shipmentId}/publication`,
+            { token: person.token },
+          ),
         ])
-      : [undefined, undefined];
-  for (const reply of [draft, places]) {
+      : [undefined, undefined, undefined, undefined];
+  for (const reply of [draft, places, catalogueReply, publicationReply]) {
     if (reply && !reply.ok && reply.status === 401)
       redirect(`/${locale}/sign-in?error=session_ended`);
     // Not a draft of the caller's organisation, or none at all: the same page either way.
     if (reply && !reply.ok && reply.status === 404) notFound();
   }
-  if (!draft?.ok || !places?.ok) {
+  if (!draft?.ok || !places?.ok || !catalogueReply?.ok || !publicationReply?.ok) {
     return (
       <ShipmentUnavailable
         m={m}
-        reply={[draft, places].find((reply) => reply && !reply.ok)}
-        problems={found.problems}
+        reply={[draft, places, catalogueReply, publicationReply].find(
+          (reply) => reply && !reply.ok,
+        )}
+        problems={allProblems}
         retryHref={retryHref}
         backHref={`/${locale}/organisations/${id}`}
       />
@@ -93,6 +137,12 @@ export default async function ShipmentPage({ params, searchParams }: Props) {
   }
   const shipment = draft.data.shipment;
   const open = shipment.status === 'draft';
+  const state = shipment.status;
+  const live = state === 'published' || state === 'suspended';
+  const catalogues = catalogueReply.data;
+  const record = publicationReply.data.publication;
+  const pubConfirmation =
+    pubDone && pubDone in m.pub.done ? m.pub.done[pubDone as keyof typeof m.pub.done] : undefined;
   // A country or zone the draft already has stays selectable even if it is no longer offered.
   const choices: PlaceOption[] = places.data.countries.map((country) => ({
     ...country,
@@ -206,18 +256,46 @@ export default async function ShipmentPage({ params, searchParams }: Props) {
           t.untitled
         )}
       </h1>
-      <ErrorSummary title={m.auth.errors.summary} problems={found.problems} />
-      {confirmation && found.problems.length === 0 ? (
+      <ErrorSummary title={m.auth.errors.summary} problems={allProblems} />
+      {(confirmation ?? pubConfirmation) && allProblems.length === 0 ? (
         <p className="notice notice-success" role="status" id="shipment-confirmation">
-          {confirmation}
+          {confirmation ?? pubConfirmation}
         </p>
       ) : null}
-      <div className="notice" role="note" id="shipment-status">
+      <div className="notice" role="note" id="shipment-status" data-state={state}>
         <h2>
-          {t.statusLabel}: {open ? t.statusDraft : t.statusDiscarded}
+          {t.statusLabel}:{' '}
+          {state === 'draft'
+            ? t.statusDraft
+            : state === 'discarded'
+              ? t.statusDiscarded
+              : m.pub.status[state]}
         </h2>
-        <p>{open ? t.draftNotice : t.discardedNotice}</p>
+        {state === 'draft' || state === 'discarded' ? (
+          <p>{open ? t.draftNotice : t.discardedNotice}</p>
+        ) : (
+          <p>{m.pub.notice[state].replace('{n}', String(shipment.publication.publishedVersion))}</p>
+        )}
+        {state === 'suspended' ? (
+          <ul id="suspension-causes">
+            {shipment.publication.suspendedFor.map((cause) => (
+              <li key={cause} data-cause={cause}>
+                {m.pub.causes[cause]}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        {live ? <p className="form-note">{m.pub.noCarrierYet}</p> : null}
       </div>
+      {shipment.publication.publishedVersion !== null ? (
+        <PublicationFacts
+          locale={locale}
+          t={m.pub}
+          shipment={shipment}
+          record={record}
+          catalogues={catalogues}
+        />
+      ) : null}
       {conflict ? (
         <div className="notice notice-warning" role="note" id="shipment-conflict">
           <h2>{t.conflictTitle}</h2>
@@ -350,6 +428,34 @@ export default async function ShipmentPage({ params, searchParams }: Props) {
         </section>
       ) : null}
       {open ? (
+        <section className="section" aria-labelledby="publish-title">
+          <h2 id="publish-title">{m.pub.sectionTitle}</h2>
+          <p>{m.pub.publishLead}</p>
+          {catalogues.cargoCategories.length > 0 ? (
+            <p className="notice notice-development" role="note" id="catalogue-notice">
+              {m.pub.fictionalNotice}
+            </p>
+          ) : null}
+          <form className="form card" id="publish-form" action={publishShipmentAction} noValidate>
+            <input type="hidden" name="locale" value={locale} />
+            <input type="hidden" name="organisationId" value={id} />
+            <input type="hidden" name="shipmentId" value={shipment.id} />
+            <input type="hidden" name="version" value={shipment.version} />
+            <input type="hidden" name="retryKey" value={key('publishRetry')} />
+            <PublicationFields
+              locale={locale}
+              t={m.pub}
+              catalogues={catalogues}
+              current={shipment}
+              problems={pubFound}
+            />
+            <button className="button button-primary" type="submit" id="publish-shipment">
+              {m.pub.submitPublish}
+            </button>
+          </form>
+        </section>
+      ) : null}
+      {open ? (
         <section className="section" aria-labelledby="discard-title">
           <h2 id="discard-title">{t.discard}</h2>
           <form className="form card" id="discard-form" action={discardShipmentAction}>
@@ -364,6 +470,94 @@ export default async function ShipmentPage({ params, searchParams }: Props) {
             </button>
           </form>
         </section>
+      ) : null}
+      {record.carrierView ? (
+        <CarrierPreview
+          locale={locale}
+          t={m.pub}
+          view={record.carrierView}
+          countryName={countryName}
+          catalogues={catalogues}
+        />
+      ) : null}
+      {live ? (
+        <section className="section" aria-labelledby="change-title">
+          <h2 id="change-title">{m.pub.changeTitle}</h2>
+          <p>{m.pub.changeLead}</p>
+          <div className="form-inline">
+            <a className="button" id="change-published" href={`${here}/change`}>
+              {m.pub.changeLink}
+            </a>
+          </div>
+        </section>
+      ) : null}
+      {live ? (
+        <section className="section" aria-labelledby="withdraw-title">
+          <h2 id="withdraw-title">{m.pub.withdrawTitle}</h2>
+          <form className="form card" id="withdraw-form" action={withdrawShipmentAction}>
+            <input type="hidden" name="locale" value={locale} />
+            <input type="hidden" name="organisationId" value={id} />
+            <input type="hidden" name="shipmentId" value={shipment.id} />
+            <input type="hidden" name="version" value={shipment.version} />
+            <input type="hidden" name="retryKey" value={key('withdrawRetry')} />
+            <p>{m.pub.withdrawNote}</p>
+            <button className="button button-danger" type="submit" id="withdraw-shipment">
+              {m.pub.withdraw}
+            </button>
+          </form>
+        </section>
+      ) : null}
+      {state === 'expired' ? (
+        <section className="section" aria-labelledby="republish-title">
+          <h2 id="republish-title">{m.pub.republishTitle}</h2>
+          <p>{m.pub.republishLead}</p>
+          <form
+            className="form card"
+            id="republish-form"
+            action={republishShipmentAction}
+            noValidate
+          >
+            <input type="hidden" name="locale" value={locale} />
+            <input type="hidden" name="organisationId" value={id} />
+            <input type="hidden" name="shipmentId" value={shipment.id} />
+            <input type="hidden" name="version" value={shipment.version} />
+            <input type="hidden" name="retryKey" value={key('republishRetry')} />
+            <PublicationFields
+              locale={locale}
+              t={m.pub}
+              catalogues={catalogues}
+              current={shipment}
+              problems={pubFound}
+              deadlineOnly
+            />
+            <button className="button button-primary" type="submit" id="republish-shipment">
+              {m.pub.submitRepublish}
+            </button>
+          </form>
+        </section>
+      ) : null}
+      {state === 'expired' || state === 'withdrawn' ? (
+        <section className="section" aria-labelledby="copy-title">
+          <h2 id="copy-title">{m.pub.copyTitle}</h2>
+          <form className="form card" id="copy-form" action={copyShipmentAction}>
+            <input type="hidden" name="locale" value={locale} />
+            <input type="hidden" name="organisationId" value={id} />
+            <input type="hidden" name="shipmentId" value={shipment.id} />
+            <input type="hidden" name="retryKey" value={key('copyRetry')} />
+            <p>{m.pub.copyNote}</p>
+            <button className="button" type="submit" id="copy-shipment">
+              {m.pub.copy}
+            </button>
+          </form>
+        </section>
+      ) : null}
+      {open ? (
+        <DraftKeeper
+          key={`publish-${shipment.version}-${Boolean(pubConfirmation)}`}
+          formId="publish-form"
+          scope={`v${shipment.version}`}
+          clear={Boolean(pubConfirmation)}
+        />
       ) : null}
       {done === 'created' ? <DraftKeeper formId={`shipment-new-form-${id}`} clear /> : null}
       {open ? (

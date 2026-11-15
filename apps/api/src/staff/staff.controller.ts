@@ -276,6 +276,21 @@ export class StaffController {
   // ------------------------------------------------------------------------------------------
   // Verification. The reviewer privilege is checked by the database in each call.
   // ------------------------------------------------------------------------------------------
+  @Get('shipments')
+  async shipmentList(
+    @Req() request: IncomingRequest,
+  ): Promise<{ shipments: Record<string, unknown>[] }> {
+    return { shipments: await this.review.shipments(await this.caller(request)) };
+  }
+
+  @Get('shipments/:id')
+  async shipmentView(
+    @Param('id') id: string,
+    @Req() request: IncomingRequest,
+  ): Promise<Record<string, unknown>> {
+    return this.review.shipment(await this.caller(request), identifier(id));
+  }
+
   @Get('verification')
   async verificationQueue(
     @Req() request: IncomingRequest,

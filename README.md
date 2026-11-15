@@ -66,6 +66,14 @@ countries loaded by `npm run dev:fixtures`, and no document is uploaded or check
 verification given on them never allows publication in a production database. Open security
 work is listed in docs/delivery/SECURITY_BACKLOG.md.
 
+## Shipment publication
+
+A verified shipper organisation publishes a complete draft with a quotation deadline, changes it
+(material changes are new versions), withdraws it or sees it expire
+(docs/delivery/SHIPMENT_PUBLICATION_SLICE_10.md). No carrier can read anything yet: what carriers
+would see is a preview for the shipper only. Cargo categories and equipment types are fictional
+and exist only in development and test databases, so nothing is publishable in production.
+
 ## Product reference
 
 The intended product context is the TruckLink Plan B freight platform: shipper,
