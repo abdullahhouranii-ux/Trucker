@@ -55,6 +55,8 @@ const REVOCATIONS = [
   // Registering a vehicle and inviting a driver.
   ['POST', /^\/organisations\/[^/]+\/fleet\/vehicles$/],
   ['POST', /^\/organisations\/[^/]+\/fleet\/drivers$/],
+  // Accepting a quotation.
+  ['POST', /^\/organisations\/[^/]+\/quotations\/[^/]+\/accept$/],
 ];
 function startRelay() {
   const server = http.createServer((request, response) => {
@@ -651,11 +653,10 @@ async function main() {
     mkdirSync(outDir, { recursive: true });
     // At most five pictures, for design review only.
     const shots = {
-      'ar:fleet': 'fleet-ar-390',
-      'ur:fleet errors': 'fleet-errors-ur-390',
-      'en:vehicle': 'vehicle-en-390',
-      'ar:driver invitation': 'driver-invitation-ar-390',
-      'ur:driver': 'driver-ur-390',
+      'en:acceptance': 'acceptance-en-390',
+      'ar:acceptance': 'acceptance-ar-390',
+      'ur:booking': 'booking-ur-390',
+      'en:bookings': 'bookings-en-390',
     };
     // Fictional numbers: country code 999 is not assigned. Unique per run.
     const stamp = String(Date.now()).slice(-7);
@@ -3124,6 +3125,160 @@ async function main() {
         (await fleetRows('driver_authorisation', `organisation_id = $1 AND status = 'active'`))
           .length === 0,
       `ending the affiliation led to ${page.url()}`,
+    );
+
+    // ------------------------------------------------------------------------------------
+    // Acceptance and booking: what accepting fixes, a lost answer, one booking, both parties
+    // ------------------------------------------------------------------------------------
+    // A second shipment, published and quoted through the API, so that the shipment above
+    // stays open for the checks that follow. The same person administers both organisations.
+    const post = async (route, body, name) => {
+      const response = await fetch(apiOrigin + route, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${urToken}`,
+          'content-type': 'application/json',
+          'idempotency-key': `book-${stamp}-${name}-key`,
+        },
+        body: JSON.stringify(body),
+      });
+      return { status: response.status, body: await response.json() };
+    };
+    const bookShipment = await makeShipment('book');
+    const bookPublished = await post(
+      `/organisations/${verifyOrg}/shipments/${bookShipment}/publish`,
+      {
+        version: 1,
+        cargoCategory: 'general_dry',
+        equipmentType: 'curtain_side',
+        dangerousGoods: false,
+        pickupArea: 'North industrial area',
+        deliveryArea: 'Port district',
+        quotationDeadline: { local: zoned(24, 4) },
+      },
+      'publish',
+    );
+    const bookTerms = await post(
+      `/organisations/${verifyOrg}/shipments/${bookShipment}/quotation-terms`,
+      { version: 0, currency: 'XTS' },
+      'terms',
+    );
+    const bookQuote = await post(
+      `/organisations/${carrierOrg}/discovery/shipments/${bookShipment}/quotations`,
+      {
+        amount: '1250.50',
+        inclusions: { fictional_item_1: true, fictional_item_2: false, fictional_item_3: true },
+        validUntil: { local: zoned(6, 4) },
+        earliestPickup: { local: zoned(49, 4) },
+      },
+      'quote',
+    );
+    const bookQuotation = bookQuote.body.quotation?.id;
+    const bookQuotes = (locale) =>
+      `/${locale}/organisations/${verifyOrg}/shipments/${bookShipment}/quotations`;
+    const bookings = async () =>
+      (await owner.query('SELECT * FROM trucker.booking WHERE shipment_id = $1', [bookShipment]))
+        .rows;
+    const enBook = messagesFor('en').book;
+    for (const locale of locales) {
+      await open(bookQuotes(locale), 390);
+      await inspect(locale, 'acceptance');
+    }
+    await open(bookQuotes('en'), 390);
+    const money = () =>
+      page.evaluate(() =>
+        Object.fromEntries(
+          [...document.querySelectorAll('[data-acceptance="ok"] [data-money]')].map((dd) => [
+            dd.dataset.money,
+            dd.textContent.trim(),
+          ]),
+        ),
+      );
+    const shown = await money();
+    check(
+      'booking',
+      [bookPublished.status, bookTerms.status, bookQuote.status].join() === '200,200,201' &&
+        shown.transport === '1250.50 XTS' &&
+        (shown.fee ?? '').startsWith('37.52 XTS') &&
+        shown.total === '1288.02 XTS' &&
+        (await text('#no-commitment')) === messagesFor('en').quo.noCommitmentShipper &&
+        (await page.$('#booking')) === null,
+      `before accepting (${bookPublished.status}, ${bookTerms.status}, ${bookQuote.status}) the page showed ${JSON.stringify(shown)}`,
+    );
+    // Accepted; the server records it and the answer is lost. Not reported as done; the page
+    // then shows the one booking, and accepting again is not offered.
+    relay.lost.length = 0;
+    relay.mode = 'lose';
+    await submit(`[data-accept="${bookQuotation}"]`);
+    relay.mode = 'pass';
+    check(
+      'lost answer',
+      relay.lost[0] ===
+        `POST /organisations/${verifyOrg}/quotations/${bookQuotation}/accept -> 200` &&
+        page.url().includes('qError=accept_unconfirmed') &&
+        (await text('#quotation-confirmation')) === null,
+      `a lost acceptance answer led to ${page.url()}: ${relay.lost}`,
+    );
+    relay.lost.length = 0;
+    await open(bookQuotes('en'), 390);
+    const made = await bookings();
+    check(
+      'lost answer',
+      made.length === 1 &&
+        made[0].status === 'awaiting_resources' &&
+        (await page.$eval('#booking [data-booking]', (card) => card.dataset.status)) ===
+          'awaiting_resources' &&
+        ((await text('#booking')) ?? '').includes(enBook.statusNote) &&
+        (await page.$(`[data-accept="${bookQuotation}"]`)) === null &&
+        (await page.$('[data-reject]')) === null &&
+        (await page.$eval('#quotation-list [data-standing]', (p) => p.dataset.standing)) ===
+          'accepted',
+      `after a lost acceptance there are ${made.length} bookings`,
+    );
+    for (const locale of locales) {
+      await open(bookQuotes(locale), 390);
+      await inspect(locale, 'booking');
+    }
+    // The shipment itself shows that it is awarded.
+    await open(shipmentPath('en', bookShipment), 390);
+    check(
+      'booking',
+      (await stateShown()) === 'awarded' &&
+        (await page.$('#withdraw-shipment')) === null &&
+        (await page.$('#publish-shipment')) === null,
+      `the awarded shipment page shows ${await stateShown()}`,
+    );
+    await inspect('en', 'awarded shipment');
+    // Both parties' booking lists show the same booking with the same figures.
+    const figures = async (org) => {
+      await open(`/en/organisations/${org}/bookings`, 390);
+      return page.evaluate(() =>
+        [...document.querySelectorAll('#booking-list [data-money]')]
+          .map((dd) => `${dd.dataset.money}=${dd.textContent.trim()}`)
+          .join(';'),
+      );
+    };
+    const asShipper = await figures(verifyOrg);
+    for (const locale of locales) {
+      await open(`/${locale}/organisations/${verifyOrg}/bookings`, 390);
+      await inspect(locale, 'bookings');
+    }
+    const asCarrier = await figures(carrierOrg);
+    check(
+      'booking',
+      asShipper === asCarrier &&
+        asShipper.includes('transport=1250.50 XTS') &&
+        asShipper.includes('net=1250.50 XTS') &&
+        asShipper.includes('total=1288.02 XTS'),
+      `the shipper saw ${asShipper} and the carrier ${asCarrier}`,
+    );
+    // The carrier's own quotation list leads to the booking, not to the closed shipment.
+    await open(`/en/organisations/${carrierOrg}/quotations`, 390);
+    await submit(`[data-booking-link="${bookQuotation}"]`);
+    check(
+      'booking',
+      page.url() === `${origin}/en/organisations/${carrierOrg}/bookings`,
+      `the accepted quotation's link led to ${page.url()}`,
     );
 
     // Suspended when the verification is withdrawn by staff (test accounts, migration role).

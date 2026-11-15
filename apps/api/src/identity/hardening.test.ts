@@ -207,6 +207,8 @@ const count = async (table: string, where: string, values: unknown[]): Promise<n
 
 /** Functions the API's role may run. Anything else in the schema must be closed to it. */
 const CALLABLE = [
+  'accept_quotation(p_quotation uuid, p_expected_version integer, p_key text, p_allow_fixtures boolean)',
+  'booking_overview(p_shipment uuid, p_allow_fixtures boolean)',
   'change_published_shipment(p_shipment uuid, p_expected_version integer, p_key text, p_content jsonb, p_allow_fixtures boolean)',
   'complete_registration(p_token_hash text, p_display_name text, p_contact_email text, p_terms_version text, p_terms_language text, p_request_id text)',
   'copy_shipment(p_shipment uuid, p_key text)',
@@ -229,6 +231,7 @@ const CALLABLE = [
   'my_quotations(p_allow_fixtures boolean)',
   'my_sessions(p_token_hash text)',
   'offset_choices(p_draft uuid)',
+  'organisation_bookings()',
   'organisation_may_publish()',
   'organisation_selected()',
   'publish_shipment(p_shipment uuid, p_expected_version integer, p_key text, p_details jsonb, p_allow_fixtures boolean)',
@@ -272,6 +275,7 @@ const CALLABLE = [
   'staff_set_participant_link(p_token_hash text, p_staff uuid, p_link text, p_phone text, p_request_id text)',
   'staff_set_privilege(p_token_hash text, p_staff uuid, p_privilege text, p_granted boolean, p_request_id text)',
   'staff_set_status(p_token_hash text, p_staff uuid, p_status text, p_request_id text)',
+  'staff_shipment_booking(p_token_hash text, p_shipment uuid, p_request_id text)',
   'staff_shipment_list(p_token_hash text, p_request_id text)',
   'staff_shipment_quotations(p_token_hash text, p_shipment uuid, p_request_id text)',
   'staff_shipment_view(p_token_hash text, p_shipment uuid, p_request_id text)',

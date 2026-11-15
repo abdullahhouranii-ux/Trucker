@@ -37,6 +37,20 @@ interface AccessEntry {
   requestId: string | null;
 }
 
+/** The shipment's booking, read-only. Amounts are exact decimal text. */
+interface StaffBooking {
+  id: string;
+  status: string;
+  quotationVersion: number;
+  carrier: { legalName: string };
+  currency: string;
+  transportAmount: string;
+  fee: { payer: string; basisPoints: number; amount: string };
+  paymentDueDays: number;
+  assignment: { dueAt: string };
+  acceptedAt: string;
+}
+
 /** The quotations on the shipment, read-only. */
 interface StaffQuotations {
   terms: { currency: string; inclusions: { code: string }[]; locked: boolean } | null;
@@ -84,12 +98,15 @@ export default async function ShipmentPage({ params }: Props) {
       </>
     );
   }
-  const [one, access, quotes] = await Promise.all([
+  const [one, access, quotes, booked] = await Promise.all([
     api<Detail>('GET', `/staff/shipments/${id}`, { token: found.token }),
     api<{ entries: AccessEntry[] }>('GET', `/staff/shipments/${id}/carrier-access`, {
       token: found.token,
     }),
     api<StaffQuotations>('GET', `/staff/shipments/${id}/quotations`, { token: found.token }),
+    api<{ booking: StaffBooking | null }>('GET', `/staff/shipments/${id}/booking`, {
+      token: found.token,
+    }),
   ]);
   if (!one.ok && one.status === 401) redirect('/sign-in?error=session_ended');
   if (!one.ok && one.status === 404) notFound();
@@ -174,8 +191,8 @@ export default async function ShipmentPage({ params }: Props) {
           <section className="section" aria-labelledby="quotations-title">
             <h2 id="quotations-title">Quotations</h2>
             <p>
-              Read-only. Nothing is accepted or booked in this version. Inclusions are fictional
-              test items.
+              Read-only. Inclusions are fictional test items. An accepted quotation has a booking,
+              shown below.
             </p>
             {quotes.ok ? (
               <>
@@ -209,6 +226,30 @@ export default async function ShipmentPage({ params }: Props) {
             ) : (
               <p className="notice notice-error" role="alert" id="quotations-unavailable">
                 The quotations could not be read. Reload the page.
+              </p>
+            )}
+          </section>
+          <section className="section" aria-labelledby="booking-title">
+            <h2 id="booking-title">Booking</h2>
+            {!booked.ok ? (
+              <p className="notice notice-error" role="alert" id="booking-unavailable">
+                The booking could not be read. Reload the page.
+              </p>
+            ) : booked.data.booking === null ? (
+              <p id="no-booking">No quotation has been accepted.</p>
+            ) : (
+              <p id="staff-booking" data-status={booked.data.booking.status}>
+                {booked.data.booking.status.replace(/_/g, ' ')}: not confirmed, nothing is assigned
+                or reserved. Carrier {booked.data.booking.carrier.legalName}, quotation version{' '}
+                {booked.data.booking.quotationVersion}. Transport{' '}
+                {booked.data.booking.transportAmount} {booked.data.booking.currency}; fee{' '}
+                {booked.data.booking.fee.amount} {booked.data.booking.currency} (
+                {booked.data.booking.fee.basisPoints / 100}%, paid by the{' '}
+                {booked.data.booking.fee.payer}); payment due {booked.data.booking.paymentDueDays}{' '}
+                days after proof of delivery is accepted. Resources to be assigned by{' '}
+                {utc(booked.data.booking.assignment.dueAt)}. Accepted{' '}
+                {utc(booked.data.booking.acceptedAt)}. The commercial values are development
+                defaults, not approved for real use.
               </p>
             )}
           </section>

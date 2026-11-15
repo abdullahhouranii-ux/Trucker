@@ -1334,6 +1334,13 @@ async function main() {
         (await page.$$('#quotations-title ~ * form')).length === 0,
       'the shipment page does not show its quotations read-only',
     );
+    check(
+      'shipments',
+      (await page.$('#booking-title')) !== null &&
+        (await page.$('#no-booking')) !== null &&
+        (await page.$('#booking-unavailable')) === null,
+      'the shipment page does not show that there is no booking',
+    );
     await withdraw(one);
     check(
       'verification',

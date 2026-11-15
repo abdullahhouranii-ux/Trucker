@@ -30,6 +30,18 @@ No legal or tax rule is stated here. Every value that is not approved is a prote
 
 "Proposed implementation structure" means the slices are scoped and built on that structure, each scope still comes to you for approval, and nothing in it is treated as an approved commercial or legal rule.
 
+## 1A. Instructions of 15 November 2026 (13:15)
+
+| Subject | Status |
+|---|---|
+| CC-1 to CC-6 | **Development defaults only**: the shipper pays 3%, rounded half-up; 15-day payment terms; the proposed assignment deadline and buffers. Built in slice 14 as protected settings. Production approval is separate |
+| CC-7 | Geography **remains undecided** |
+| Reservation model (section 3) | **Approved**, with this addition: a resource has **many historical occupancy episodes and only one open episode**. No POD action releases resources automatically |
+| Short notice | If the calculated assignment deadline has already passed, acceptance is refused with a clear reason. No already-overdue booking is created. Built in slice 14, enforced also by a table constraint |
+| Driver-submitted documents | Kept |
+| Document expiry | Corrected in slice 13: the stated expiry date is preserved; each document type carries an explicit, configurable convention and time zone. Real conventions need country and document review before production |
+| Confirmation | A booking is not confirmed until every required, eligible resource is assigned and reserved. Assignment and dispatch checks stay separate. Slice 15 scope: ASSIGNMENT_SLICE_15_SCOPE.md |
+
 ## 2. Exceptions to the proposed structures
 
 | ID | Exception | Effect on the build |
@@ -59,8 +71,8 @@ Planned reservation and actual occupancy are two separate records. Neither is de
 
 | Item | Definition |
 |---|---|
-| What it is | One record per resource per booking: the fact that the resource is physically committed. It starts when dispatch is authorised and recorded, and stays open until the resource is released |
-| Integrity | A resource has at most one open occupancy (a unique index). **A resource with an open occupancy cannot be dispatched on another booking**, whatever the planned intervals say. This is a dispatch precondition checked in the database |
+| What it is | An occupancy episode: one record per resource per dispatch, the fact that the resource is physically committed. It opens when dispatch is authorised and recorded, and stays open until the resource is released. A resource accumulates many closed episodes over time |
+| Integrity | A resource has at most one open episode (a unique index on open episodes only), and any number of closed ones. **A resource with an open occupancy cannot be dispatched on another booking**, whatever the planned intervals say. This is a dispatch precondition checked in the database |
 | What it is not | It is not ended by the planned end passing, by a milestone, or by a POD being recorded or accepted (E-3) |
 
 ### 3.3 Overrun protection
