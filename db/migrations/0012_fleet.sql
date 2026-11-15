@@ -57,12 +57,21 @@ CREATE TABLE trucker.fleet_document_type (
   required boolean NOT NULL DEFAULT true,
   -- A driving licence: the document states the licence classes held.
   carries_licence boolean NOT NULL DEFAULT false,
+  -- How the stated expiry date is read. Both are explicit for every type; there is no default.
+  --   last_day_included: valid through the whole expiry date, in the stated time zone.
+  --   last_day_excluded: valid until the expiry date begins, in the stated time zone.
+  expiry_convention text NOT NULL CHECK (expiry_convention IN ('last_day_included', 'last_day_excluded')),
+  expiry_time_zone text NOT NULL,
   position integer NOT NULL DEFAULT 1,
   PRIMARY KEY (country_code, subject_kind, code),
-  CONSTRAINT fleet_document_type_licence CHECK (NOT carries_licence OR subject_kind = 'driver')
+  CONSTRAINT fleet_document_type_licence CHECK (NOT carries_licence OR subject_kind = 'driver'),
+  CONSTRAINT fleet_document_type_zone FOREIGN KEY (country_code, expiry_time_zone)
+    REFERENCES trucker.country_time_zone (country_code, zone_name)
 );
 COMMENT ON TABLE trucker.fleet_document_type IS
   'Fictional until the real requirements are approved. Not a statement of what any law requires.';
+COMMENT ON COLUMN trucker.fleet_document_type.expiry_convention IS
+  'Configuration, not a finding: the real convention for each country and document needs review before production.';
 COMMENT ON TABLE trucker.licence_class_category IS
   'Fictional until the real mapping is approved. Not a statement of what any licence permits.';
 CREATE TRIGGER vehicle_category_guard BEFORE INSERT OR UPDATE ON trucker.vehicle_category
@@ -289,11 +298,17 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, trucker, pg_t
      AND (SELECT e.kind FROM trucker.environment e) IN ('local-development', 'test')
 $$;
 
--- Until when a document counts: the start of its expiry date in UTC. Its last day is not
--- counted, whatever the time zone, so that no document is treated as valid after it lapsed.
-CREATE FUNCTION trucker.fleet_document_valid_until(p_expiry date) RETURNS timestamptz
-LANGUAGE sql IMMUTABLE SET search_path = pg_catalog, pg_temp AS $$
-  SELECT p_expiry::timestamp AT TIME ZONE 'UTC'
+-- Until when a document counts. The stated expiry date is kept as stated; the document type
+-- says how it is read: whether its last day counts, and in which time zone the day is taken.
+CREATE FUNCTION trucker.fleet_expiry_instant(p_expiry date, p_convention text, p_zone text) RETURNS timestamptz
+LANGUAGE sql STABLE SET search_path = pg_catalog, pg_temp AS $$
+  SELECT (p_expiry + CASE p_convention WHEN 'last_day_included' THEN 1 ELSE 0 END)::timestamp AT TIME ZONE p_zone
+$$;
+CREATE FUNCTION trucker.fleet_document_valid_until(d trucker.fleet_document) RETURNS timestamptz
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, trucker, pg_temp AS $$
+  SELECT trucker.fleet_expiry_instant(d.expiry_date, t.expiry_convention, t.expiry_time_zone)
+  FROM trucker.fleet_document_type t
+  WHERE t.country_code = d.country_code AND t.subject_kind = d.type_kind AND t.code = d.type_code
 $$;
 
 -- The first required document that does not cover the window, or NULL when all do.
@@ -310,7 +325,7 @@ BEGIN
   FOR t IN SELECT x.code FROM trucker.fleet_document_type x
            WHERE x.country_code = p_country AND x.subject_kind = p_kind AND x.required
            ORDER BY x.position, x.code LOOP
-    SELECT trucker.fleet_document_valid_until(d.expiry_date) INTO v_valid
+    SELECT trucker.fleet_document_valid_until(d) INTO v_valid
     FROM trucker.fleet_document d
     WHERE coalesce(d.vehicle_id, d.person_id) = p_subject AND d.country_code = p_country
       AND d.type_kind = p_kind AND d.type_code = t.code AND d.status = 'accepted';
@@ -432,7 +447,7 @@ BEGIN
            ON m.country_code = d.country_code AND m.class_code = ANY (d.licence_classes)
          WHERE d.person_id = a.person_id AND d.country_code = v_country AND d.status = 'accepted'
            AND t.carries_licence AND m.category_code = v.category_code
-           AND trucker.fleet_document_valid_until(d.expiry_date) >= p_until) THEN
+           AND trucker.fleet_document_valid_until(d) >= p_until) THEN
       RETURN 'licence_class_not_covering';
     END IF;
   END IF;
@@ -568,6 +583,7 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, trucker, pg_t
     'documentTypes', coalesce((
       SELECT jsonb_agg(jsonb_build_object('country', t.country_code, 'subject', t.subject_kind, 'code', t.code,
                'required', t.required, 'carriesLicence', t.carries_licence,
+               'expiryConvention', t.expiry_convention, 'expiryTimeZone', t.expiry_time_zone,
                'name', jsonb_build_object('en', t.name_en, 'ar', t.name_ar, 'ur', t.name_ur))
                ORDER BY t.country_code, t.subject_kind, t.position, t.code)
       FROM trucker.fleet_document_type t WHERE p_country IS NULL OR t.country_code = p_country), '[]'::jsonb),
@@ -608,7 +624,7 @@ BEGIN
   ELSE
     BEGIN
       v_expiry := (p_content ->> 'expiryDate')::date;
-      IF trucker.fleet_document_valid_until(v_expiry) <= p_at THEN
+      IF trucker.fleet_expiry_instant(v_expiry, t.expiry_convention, t.expiry_time_zone) <= p_at THEN
         problems := problems || jsonb_build_object('field', 'expiryDate', 'code', 'past');
       END IF;
     EXCEPTION WHEN datetime_field_overflow OR invalid_datetime_format THEN
@@ -1508,7 +1524,7 @@ BEGIN
     RETURN;
   END IF;
   -- A document that has lapsed while it waited cannot be accepted.
-  IF p_decision = 'accepted' AND trucker.fleet_document_valid_until(d.expiry_date) <= entered.at THEN
+  IF p_decision = 'accepted' AND trucker.fleet_document_valid_until(d) <= entered.at THEN
     status := 'invalid';
     detail := jsonb_build_object('reason', 'expired');
     RETURN;

@@ -259,7 +259,7 @@
       }
     }
   ],
-  "_fleet_notice": "Fictional vehicle categories, licence classes and document types for development only. Not a statement of what any law requires or what any licence permits.",
+  "_fleet_notice": "Fictional vehicle categories, licence classes and document types for development only. Not a statement of what any law requires or what any licence permits. The expiry convention and time zone of each document type are configuration for development, not a finding about any real document.",
   "vehicleCategories": [
     {
       "code": "fictional_rigid_truck",
@@ -342,7 +342,9 @@
         "en": "Fictional registration card (demonstration)",
         "ar": "بطاقة تسجيل وهمية (تجريبي)",
         "ur": "فرضی رجسٹریشن کارڈ (نمائشی)"
-      }
+      },
+      "expiryConvention": "last_day_included",
+      "expiryTimeZone": "Etc/GMT-4"
     },
     {
       "country": "XA",
@@ -354,7 +356,9 @@
         "en": "Fictional insurance certificate (demonstration)",
         "ar": "شهادة تأمين وهمية (تجريبي)",
         "ur": "فرضی انشورنس سرٹیفکیٹ (نمائشی)"
-      }
+      },
+      "expiryConvention": "last_day_included",
+      "expiryTimeZone": "Etc/GMT-4"
     },
     {
       "country": "XA",
@@ -366,7 +370,9 @@
         "en": "Fictional registration card (demonstration)",
         "ar": "بطاقة تسجيل وهمية (تجريبي)",
         "ur": "فرضی رجسٹریشن کارڈ (نمائشی)"
-      }
+      },
+      "expiryConvention": "last_day_included",
+      "expiryTimeZone": "Etc/GMT-4"
     },
     {
       "country": "XA",
@@ -378,7 +384,9 @@
         "en": "Fictional driving licence (demonstration)",
         "ar": "رخصة قيادة وهمية (تجريبي)",
         "ur": "فرضی ڈرائیونگ لائسنس (نمائشی)"
-      }
+      },
+      "expiryConvention": "last_day_included",
+      "expiryTimeZone": "Etc/GMT-4"
     },
     {
       "country": "XA",
@@ -390,7 +398,9 @@
         "en": "Fictional identity card (demonstration)",
         "ar": "بطاقة هوية وهمية (تجريبي)",
         "ur": "فرضی شناختی کارڈ (نمائشی)"
-      }
+      },
+      "expiryConvention": "last_day_included",
+      "expiryTimeZone": "Etc/GMT-4"
     },
     {
       "country": "XB",
@@ -402,7 +412,9 @@
         "en": "Fictional registration card (demonstration)",
         "ar": "بطاقة تسجيل وهمية (تجريبي)",
         "ur": "فرضی رجسٹریشن کارڈ (نمائشی)"
-      }
+      },
+      "expiryConvention": "last_day_included",
+      "expiryTimeZone": "Etc/GMT-3"
     },
     {
       "country": "XB",
@@ -414,7 +426,9 @@
         "en": "Fictional insurance certificate (demonstration)",
         "ar": "شهادة تأمين وهمية (تجريبي)",
         "ur": "فرضی انشورنس سرٹیفکیٹ (نمائشی)"
-      }
+      },
+      "expiryConvention": "last_day_included",
+      "expiryTimeZone": "Etc/GMT-3"
     },
     {
       "country": "XB",
@@ -426,7 +440,9 @@
         "en": "Fictional registration card (demonstration)",
         "ar": "بطاقة تسجيل وهمية (تجريبي)",
         "ur": "فرضی رجسٹریشن کارڈ (نمائشی)"
-      }
+      },
+      "expiryConvention": "last_day_included",
+      "expiryTimeZone": "Etc/GMT-3"
     },
     {
       "country": "XB",
@@ -438,7 +454,9 @@
         "en": "Fictional driving licence (demonstration)",
         "ar": "رخصة قيادة وهمية (تجريبي)",
         "ur": "فرضی ڈرائیونگ لائسنس (نمائشی)"
-      }
+      },
+      "expiryConvention": "last_day_included",
+      "expiryTimeZone": "Etc/GMT-3"
     },
     {
       "country": "XB",
@@ -450,7 +468,9 @@
         "en": "Fictional identity card (demonstration)",
         "ar": "بطاقة هوية وهمية (تجريبي)",
         "ur": "فرضی شناختی کارڈ (نمائشی)"
-      }
+      },
+      "expiryConvention": "last_day_included",
+      "expiryTimeZone": "Etc/GMT-3"
     }
   ]
 }

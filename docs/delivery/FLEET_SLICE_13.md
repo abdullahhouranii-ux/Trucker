@@ -26,7 +26,7 @@ Nothing is reserved, assigned, dispatched or booked. All document types, vehicle
 
 | Choice | Why |
 |---|---|
-| A document counts until the start of its expiry date in UTC | No document is treated as valid after it lapsed, whatever the time zone. Whether the last day counts is listed in SECURITY_BACKLOG for a decision with the real rules |
+| How an expiry date is read (corrected on 15 November 2026 by instruction) | The first build assumed the start of the expiry date in UTC. Now the stated date is preserved, and each document type carries an explicit, configurable convention (last day included or excluded) and time zone, with no default. The fictional types use "last day included" in the country's zone. Real conventions need country and document review before production |
 | The driver, not the carrier, submits driver documents | They are the driver's own; the carrier never needs the numbers |
 | Driver document types follow the carrier's country | The licence-class mapping is per country |
 | The eligibility functions take no locks themselves | They are read-only building blocks; the caller that makes a decision holds its own locks |
@@ -44,7 +44,7 @@ Nothing is reserved, assigned, dispatched or booked. All document types, vehicle
 | Check | Result |
 |---|---|
 | `npm run verify` | Passed: API 292 pass, 0 fail, 0 todo; web 24; console 9 |
-| Fleet API tests | 9 tests, all pass |
+| Fleet API tests | 10 tests, all pass, including the expiry convention and time zone |
 | Deliberate defects in 0012, each caught by the intended test | Window check removed (FLT-4); second verified claim allowed (FLT-2); another carrier's claim disclosed as "exists" (FLT-2); second active affiliation allowed (FLT-3); carrier keeps document access after the end (FLT-5); document numbers shown to the carrier (FLT-5); authorisation not required (FLT-5); licence class not required (FLT-5); capability not checked (FLT-6); independence not checked (FLT-7); operating control not checked (FLT-4). Migration restored, byte-identical |
 | Web browser checks | All passed, including 11 fleet checks and the lost answers for vehicle registration and driver invitation, each recorded once; three languages at four widths and with text doubled |
 | Console browser checks | All passed, including 5 fleet checks: a decision refused without the declaration, a verification, and a suspension |

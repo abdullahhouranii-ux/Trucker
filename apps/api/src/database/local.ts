@@ -133,6 +133,9 @@ interface FixtureFile {
     code: string;
     required: boolean;
     carriesLicence: boolean;
+    /** How the stated expiry date is read: configuration, not a finding about real documents. */
+    expiryConvention: 'last_day_included' | 'last_day_excluded';
+    expiryTimeZone: string;
     name: { en: string; ar: string; ur: string };
   }[];
 }
@@ -293,12 +296,14 @@ export async function loadCountryFixtures(
   for (const [index, type] of (data.fleetDocumentTypes ?? []).entries()) {
     await owner.query(
       `INSERT INTO trucker.fleet_document_type
-         (country_code, subject_kind, code, name_en, name_ar, name_ur, required, carries_licence, position)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         (country_code, subject_kind, code, name_en, name_ar, name_ur, required, carries_licence, position,
+          expiry_convention, expiry_time_zone)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
        ON CONFLICT (country_code, subject_kind, code) DO UPDATE
          SET name_en = EXCLUDED.name_en, name_ar = EXCLUDED.name_ar, name_ur = EXCLUDED.name_ur,
              required = EXCLUDED.required, carries_licence = EXCLUDED.carries_licence,
-             position = EXCLUDED.position`,
+             position = EXCLUDED.position, expiry_convention = EXCLUDED.expiry_convention,
+             expiry_time_zone = EXCLUDED.expiry_time_zone`,
       [
         type.country,
         type.subject,
@@ -309,6 +314,8 @@ export async function loadCountryFixtures(
         type.required,
         type.carriesLicence,
         index + 1,
+        type.expiryConvention,
+        type.expiryTimeZone,
       ],
     );
   }

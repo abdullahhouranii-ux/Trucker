@@ -426,7 +426,12 @@ const vehicleBody = (over: Record<string, unknown> = {}): Record<string, unknown
 /** A date some days after the test clock's present, as documents state it. */
 const day = (days: number): string =>
   new Date(clock().getTime() + days * 86_400_000).toISOString().slice(0, 10);
-const startOf = (date: string): Date => new Date(`${date}T00:00:00.000Z`);
+/**
+ * When a fictional XA document lapses: its type counts the last day, in the zone UTC+4, so it
+ * lapses when the day after the stated date begins there.
+ */
+const lapseOf = (date: string): Date =>
+  new Date(new Date(`${date}T00:00:00.000Z`).getTime() + (24 - 4) * 3_600_000);
 const documentBody = (type: string, over: Record<string, unknown> = {}) => ({
   type,
   documentNumber: `DOC-${randomBytes(3).toString('hex')}`,
@@ -873,7 +878,7 @@ test('FLT-4: documents are checked by field, decided by staff, and cover a windo
   assert.equal((await vehicleOf(person, org, vehicle.id)).eligibility, 'document_missing');
   await acceptDocuments(vehicle.id);
   assert.equal((await vehicleOf(person, org, vehicle.id)).eligibility, 'eligible');
-  const lapse = startOf(expiry);
+  const lapse = lapseOf(expiry);
   const now = clock();
   const second = (date: Date, seconds: number): Date => new Date(date.getTime() + seconds * 1000);
   assert.equal(await vehicleEligibility(vehicle.id, org, now, lapse), 'eligible');
@@ -1245,6 +1250,57 @@ test('FLT-7 and FLT-8: decisions need the reviewer privilege and independence; o
     );
 });
 
+test('the stated expiry date is kept, and read by the convention and time zone configured for the document type', async () => {
+  const { person, org } = await verifiedCarrier();
+  const vehicle = await registered(person, org);
+  assert.equal((await verifyOwnership(vehicle)).status, 200);
+  const expiry = day(40);
+  for (const type of TRUCK_DOCUMENTS)
+    assert.equal(
+      (
+        await submitVehicleDocument(
+          person,
+          org,
+          vehicle.id,
+          documentBody(type, { expiryDate: expiry }),
+        )
+      ).status,
+      201,
+    );
+  await acceptDocuments(vehicle.id);
+  // The date is stored and shown exactly as stated.
+  const shown = (await vehicleOf(person, org, vehicle.id)).documents;
+  assert.ok(shown.every((doc) => doc.expiryDate === expiry));
+  const stored = await owner.query<{ d: string }>(
+    `SELECT to_char(expiry_date, 'YYYY-MM-DD') AS d FROM trucker.fleet_document WHERE vehicle_id = $1`,
+    [vehicle.id],
+  );
+  assert.ok(stored.rows.every((row) => row.d === expiry));
+  const startUtc = new Date(`${expiry}T00:00:00.000Z`).getTime();
+  const at = (hoursFromUtcMidnight: number): Date =>
+    new Date(startUtc + hoursFromUtcMidnight * 3_600_000);
+  const coversUntil = async (until: Date): Promise<boolean> =>
+    (await vehicleEligibility(vehicle.id, org, clock(), until)) === 'eligible';
+  const configure = (convention: string, zone: string) =>
+    owner.query(
+      `UPDATE trucker.fleet_document_type SET expiry_convention = $1, expiry_time_zone = $2
+       WHERE country_code = 'XA' AND subject_kind = 'truck'`,
+      [convention, zone],
+    );
+  try {
+    // Last day counted, UTC+4: valid until 20:00 UTC on the stated date.
+    assert.deepEqual([await coversUntil(at(20)), await coversUntil(at(20.001))], [true, false]);
+    // Last day not counted, UTC+4: valid until 20:00 UTC the day before.
+    await configure('last_day_excluded', 'Etc/GMT-4');
+    assert.deepEqual([await coversUntil(at(-4)), await coversUntil(at(-3.999))], [true, false]);
+    // A zone that is not one of the country's is refused, and so is a missing convention.
+    await refused(() => configure('last_day_included', 'Etc/GMT-3'), /fleet_document_type_zone/);
+    await refused(() => configure('whenever', 'Etc/GMT-4'), /expiry_convention/);
+  } finally {
+    await configure('last_day_included', 'Etc/GMT-4');
+  }
+});
+
 // Last: it moves the clock past document expiry.
 test('a document lapses by the clock alone: eligibility ends with no worker, and a lapsed document cannot be accepted', async () => {
   const carrier = await verifiedCarrier();
@@ -1296,7 +1352,7 @@ test('a document lapses by the clock alone: eligibility ends with no worker, and
     [other.id, day(1), TRUCK_DOCUMENTS[1]],
   );
   assert.equal((await vehicleOf(person, carrier.org, other.id)).eligibility, 'eligible');
-  await advance(86_400);
+  await advance(2 * 86_400);
   const later = await again(carrier.person);
   assert.equal((await vehicleOf(later, carrier.org, other.id)).eligibility, 'document_expired');
   assert.equal(
