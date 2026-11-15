@@ -155,3 +155,24 @@ export async function acknowledgeAssignmentAction(form: FormData): Promise<void>
     body: { version },
   });
 }
+
+/** Cancellation is idempotent for the booking; an unconfirmed answer can be retried. */
+export async function cancelBookingAction(form: FormData): Promise<void> {
+  const { here, organisationId, bookingId } = bookingPage(form);
+  const version = Number(text(form, 'version'));
+  const reason = text(form, 'reason');
+  const note = text(form, 'note');
+  const valid =
+    organisationId !== null &&
+    Number.isInteger(version) &&
+    version >= 0 &&
+    WORD.test(reason) &&
+    note.length <= 2000;
+  await command(form, {
+    operation: 'cancel',
+    path: valid ? `/organisations/${organisationId}/bookings/${bookingId}/cancel` : null,
+    here,
+    anchor: 'cancel-booking',
+    body: { version, reason, note },
+  });
+}

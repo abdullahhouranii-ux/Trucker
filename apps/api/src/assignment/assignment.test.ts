@@ -20,6 +20,7 @@ import { configureApp } from '../http/configure-app.js';
 import { hashToken } from '../identity/secrets.js';
 import { DEMONSTRATION_TERMS_VERSION } from '../identity/terms.js';
 import { createTestClock } from '../testing/test-clock.js';
+import { blockedRequests } from '../testing/blocked-request.js';
 import { createTestDatabase, type TestDatabase } from '../testing/test-database.js';
 
 // Assignment, reservation and confirmation (slice 15). Real PostgreSQL, the API connected as
@@ -1967,6 +1968,18 @@ test('ASG-8, AB-4: after a missed assignment deadline the booking is shown as ov
   assert.equal((await reservationsOf(booking.id)).length, 0);
   assert.equal(await statusOf('shipment_draft', shipment.id), 'awarded');
 
+  // A late carrier cannot convert silence into consent to wait.
+  const refusedLateAssignment = await reassign(carrier, booking.id, {
+    truckId: truck.id,
+    driverId: affiliation,
+  });
+  assert.deepEqual(
+    [refusedLateAssignment.status, refusedLateAssignment.body.code],
+    [409, 'assignment_wait_required'],
+  );
+  assert.equal((await reservationsOf(booking.id)).length, 0);
+  assert.equal(await count('booking_confirmation', 'booking_id = $1', [booking.id]), 0);
+
   // Only the shipper decides to wait, once.
   assert.equal((await waitFor(carrier, booking.id)).status, 404);
   const at = clock();
@@ -2065,6 +2078,11 @@ test('occupancy is separate from the plan: many closed episodes and one open; a 
   // 72 hours on: both trucks are still out, past the planned end of 70 hours.
   await advance(72 * 3600);
   carrier = await freshParty(carrier);
+  // Consent to wait is independent of resource availability.
+  assert.equal(
+    (await waitFor(await freshParty(unassigned.shipper), unassigned.booking.id)).status,
+    200,
+  );
   // A new reservation that would start before now is refused, exactly like an overlap.
   const blocked = await assign(carrier, unassigned.booking.id, { version: 0, truckId: one.id });
   assert.deepEqual(refusal(blocked), [
@@ -2271,4 +2289,462 @@ test('ASG-9, ASG-10: the consistency check reports nothing for correct bookings 
     assert.deepEqual(reply.rows[0]!.detail, []);
   });
   assert.equal((await activeOf(booking.id)).length, 2);
+});
+
+// Cancellation before dispatch: use the same real journey, database and restricted role.
+const cancelBooking = async (
+  party: Party,
+  bookingId: string,
+  reason = 'other',
+  note: string | null = 'Test cancellation',
+  version?: number,
+) =>
+  call('POST', bookingRoute(party.org, bookingId, '/cancel'), {
+    token: party.person.token,
+    body: { version: version ?? (await viewOf(party, bookingId)).assignmentVersion, reason, note },
+  });
+
+test('CAN-1, CAN-5: only the booking parties cancel; validation refuses invalid reasons and keeps facts and private notes correctly', async () => {
+  const carrier = await verifiedCarrier();
+  const made = await booked(carrier);
+  const outsider = await verifiedShipper();
+  const missing = randomUUID();
+  for (const id of [made.booking.id, missing]) {
+    const reply = await call('POST', bookingRoute(outsider.org, id, '/cancel'), {
+      token: outsider.person.token,
+      body: { version: 0, reason: 'other', note: 'Secret' },
+    });
+    assert.equal(reply.status, 404);
+  }
+  assert.equal(
+    (
+      await call('POST', bookingRoute(made.shipper.org, made.booking.id, '/cancel'), {
+        body: { version: 0, reason: 'other', note: 'x' },
+      })
+    ).status,
+    401,
+  );
+  assert.equal(
+    (await cancelBooking(made.shipper, made.booking.id, 'resource_unavailable')).status,
+    422,
+  );
+  assert.equal((await cancelBooking(made.shipper, made.booking.id, 'other', '   ')).status, 422);
+  assert.equal(await count('booking_cancellation', 'booking_id=$1', [made.booking.id]), 0);
+  const reply = await cancelBooking(made.shipper, made.booking.id, 'other', 'Private note 7821');
+  assert.deepEqual([reply.status, reply.body.outcome], [200, 'cancelled']);
+  const mine = reply.body.booking as View & { cancellation: { note: string; chargeBasis: string } };
+  assert.equal(mine.status, 'cancelled');
+  assert.equal(mine.cancellation.note, 'Private note 7821');
+  assert.equal(mine.cancellation.chargeBasis, 'none_recorded');
+  const otherView = await detailOf(carrier, made.booking.id);
+  assert.equal(JSON.stringify(otherView).includes('Private note 7821'), false);
+  const facts = (
+    await owner.query(`SELECT * FROM trucker.booking_cancellation WHERE booking_id=$1`, [
+      made.booking.id,
+    ])
+  ).rows[0]!;
+  assert.equal(facts.party, 'shipper');
+  assert.equal(facts.was_confirmed, false);
+  assert.equal(facts.assignment_overdue, false);
+  assert.equal(
+    facts.terms_hash,
+    (await owner.query('SELECT terms_hash FROM trucker.booking WHERE id=$1', [made.booking.id]))
+      .rows[0]!.terms_hash,
+  );
+  await assert.rejects(
+    owner.query('UPDATE trucker.booking_cancellation SET note=$2 WHERE booking_id=$1', [
+      made.booking.id,
+      'rewritten',
+    ]),
+    /cannot be changed/,
+  );
+});
+
+test('CAN-2, CAN-6, CAN-7: cancellation frees all resources, preserves snapshots, hides the driver assignment and blocks every further command', async () => {
+  const carrier = await verifiedCarrier();
+  const truck = await rigid(carrier);
+  const { driver, affiliation } = await readyDriver(carrier);
+  const made = await booked(carrier);
+  const confirmed = await assigned(
+    carrier,
+    made.booking.id,
+    { truckId: truck.id, driverId: affiliation },
+    'confirmed',
+  );
+  assert.equal(
+    (await acknowledge(driver, made.booking.id, confirmed.assignmentVersion)).status,
+    200,
+  );
+  const snapshot = (
+    await owner.query('SELECT to_jsonb(b) AS value FROM trucker.booking b WHERE id=$1', [
+      made.booking.id,
+    ])
+  ).rows[0]!.value;
+  const confirmation = (
+    await owner.query(
+      'SELECT to_jsonb(c) AS value FROM trucker.booking_confirmation c WHERE booking_id=$1',
+      [made.booking.id],
+    )
+  ).rows[0]!.value;
+  assert.equal(
+    (await cancelBooking(carrier, made.booking.id, 'resource_unavailable', null, 0)).status,
+    409,
+  );
+  assert.equal(
+    (await cancelBooking(carrier, made.booking.id, 'resource_unavailable', null)).status,
+    200,
+  );
+  assert.equal(
+    (await reservationsOf(made.booking.id)).filter((x) => x.status === 'active').length,
+    0,
+  );
+  assert.equal((await activeOf(made.booking.id)).length, 0);
+  assert.equal(
+    (await assignmentsOf(driver)).some((x) => x.bookingId === made.booking.id),
+    false,
+  );
+  assert.equal((await viewOf(carrier, made.booking.id)).dispatch.ready, false);
+  for (const response of [
+    await assign(carrier, made.booking.id, {
+      version: confirmed.assignmentVersion + 1,
+      truckId: truck.id,
+      driverId: affiliation,
+    }),
+    await acknowledge(driver, made.booking.id, confirmed.assignmentVersion + 1),
+    await waitFor(made.shipper, made.booking.id),
+  ])
+    assert.equal(response.status, 409, response.text);
+  assert.deepEqual(
+    (
+      await owner.query('SELECT to_jsonb(b) AS value FROM trucker.booking b WHERE id=$1', [
+        made.booking.id,
+      ])
+    ).rows[0]!.value,
+    snapshot,
+  );
+  assert.deepEqual(
+    (
+      await owner.query(
+        'SELECT to_jsonb(c) AS value FROM trucker.booking_confirmation c WHERE booking_id=$1',
+        [made.booking.id],
+      )
+    ).rows[0]!.value,
+    confirmation,
+  );
+  assert.deepEqual(
+    (await consistency()).filter((x) => x.booking === made.booking.id),
+    [],
+  );
+  const next = await booked(carrier, 0, made.anchor);
+  await assigned(
+    carrier,
+    next.booking.id,
+    { truckId: truck.id, driverId: affiliation },
+    'confirmed',
+  );
+});
+
+test('CAN-3: lost-response retries and simultaneous cancellations leave one record and one event per party', async () => {
+  const carrier = await verifiedCarrier();
+  const made = await booked(carrier);
+  const replies = await Promise.all([
+    cancelBooking(made.shipper, made.booking.id, 'dates_changed', null, 0),
+    cancelBooking(carrier, made.booking.id, 'cannot_meet_window', null, 0),
+  ]);
+  assert.deepEqual(
+    replies.map((x) => x.status),
+    [200, 200],
+  );
+  assert.deepEqual(replies.map((x) => x.body.outcome).sort(), ['already_cancelled', 'cancelled']);
+  const before = (
+    await owner.query(
+      'SELECT to_jsonb(c) AS value FROM trucker.booking_cancellation c WHERE booking_id=$1',
+      [made.booking.id],
+    )
+  ).rows[0]!.value;
+  assert.equal(
+    (await cancelBooking(made.shipper, made.booking.id, 'other', 'Different retry', 0)).body
+      .outcome,
+    'already_cancelled',
+  );
+  assert.equal(await count('booking_cancellation', 'booking_id=$1', [made.booking.id]), 1);
+  assert.equal(
+    await count('audit_entry', "record_id=$1 AND action='booking.cancelled'", [made.booking.id]),
+    2,
+  );
+  assert.deepEqual(
+    (
+      await owner.query(
+        'SELECT to_jsonb(c) AS value FROM trucker.booking_cancellation c WHERE booking_id=$1',
+        [made.booking.id],
+      )
+    ).rows[0]!.value,
+    before,
+  );
+});
+
+test('CAN-4: cancellation racing assignment leaves no active resource and no confirmation after cancellation', async () => {
+  const carrier = await verifiedCarrier();
+  const truck = await rigid(carrier);
+  const { affiliation } = await readyDriver(carrier);
+  const made = await booked(carrier);
+  const [cancelled, assignedReply] = await Promise.all([
+    cancelBooking(made.shipper, made.booking.id, 'dates_changed', null, 0),
+    assign(carrier, made.booking.id, { version: 0, truckId: truck.id, driverId: affiliation }),
+  ]);
+  // If assignment wins, cancellation's stale version must be explicitly retried.
+  assert.ok([200, 409].includes(cancelled.status), cancelled.text);
+  assert.ok([200, 409].includes(assignedReply.status), assignedReply.text);
+  if (cancelled.status === 409)
+    assert.equal(
+      (await cancelBooking(made.shipper, made.booking.id, 'dates_changed', null)).status,
+      200,
+    );
+  assert.equal(
+    (await reservationsOf(made.booking.id)).filter((x) => x.status === 'active').length,
+    0,
+  );
+  assert.equal((await activeOf(made.booking.id)).length, 0);
+  assert.equal((await viewOf(made.shipper, made.booking.id)).status, 'cancelled');
+});
+
+test('CAN-7: any occupancy episode marks the dispatch boundary; cancellation cannot release occupied or previously dispatched resources', async () => {
+  const carrier = await verifiedCarrier();
+  const truck = await rigid(carrier);
+  const made = await booked(carrier);
+  await assigned(carrier, made.booking.id, { truckId: truck.id }, 'assigned');
+  const episode = await openEpisode(made.booking.id, truck.id);
+  assert.equal(
+    (await cancelBooking(carrier, made.booking.id, 'resource_unavailable', null)).status,
+    409,
+  );
+  assert.equal(
+    (await reservationsOf(made.booking.id)).filter((x) => x.status === 'active').length,
+    1,
+  );
+  assert.equal(await count('booking_cancellation', 'booking_id=$1', [made.booking.id]), 0);
+  await closeEpisode(episode);
+  assert.equal(
+    (await cancelBooking(carrier, made.booking.id, 'resource_unavailable', null)).status,
+    409,
+  );
+});
+
+test('CAN-8: accept, cancel, republish and accept creates a new booking per cycle and preserves earlier bookings and quotations', async () => {
+  const carrier = await verifiedCarrier();
+  const made = await booked(carrier);
+  assert.equal(
+    (await cancelBooking(made.shipper, made.booking.id, 'dates_changed', null)).status,
+    200,
+  );
+  const current = await call('GET', shipments(made.shipper.org, `/${made.shipment.id}`), {
+    token: made.shipper.person.token,
+  });
+  assert.equal(current.status, 200, current.text);
+  const cancelledShipment = current.body.shipment as Shipment;
+  assert.equal(cancelledShipment.status, 'booking_cancelled');
+  const republished = await act(
+    made.shipper.person,
+    made.shipper.org,
+    made.shipment.id,
+    'republish',
+    {
+      version: cancelledShipment.version,
+      quotationDeadline: { local: local(24) },
+    },
+  );
+  assert.equal(republished.status, 200, republished.text);
+  const newCycle = (republished.body.shipment as Shipment).publication.publicationCycle;
+  assert.notEqual(newCycle, made.shipment.publication.publicationCycle);
+  const quotation = await quoted(carrier.person, carrier.org, made.shipment.id);
+  const accepted = await accept(made.shipper.person, made.shipper.org, quotation.id, 1);
+  assert.equal(accepted.status, 200, accepted.text);
+  const next = accepted.body.booking as Booking;
+  assert.notEqual(next.id, made.booking.id);
+  assert.equal(await count('booking', 'shipment_id=$1', [made.shipment.id]), 2);
+  assert.equal(await count('booking_publication_cycle', 'shipment_id=$1', [made.shipment.id]), 2);
+  assert.equal((await viewOf(carrier, made.booking.id)).status, 'cancelled');
+  assert.equal((await viewOf(carrier, next.id)).status, 'awaiting_resources');
+  const staff = await newStaff(['reviewer']);
+  for (const [id, state] of [
+    [made.booking.id, 'cancelled'],
+    [next.id, 'awaiting_resources'],
+  ]) {
+    const read = await call('GET', `/staff/bookings/${id}/detail`, { token: staff.token });
+    assert.equal(read.status, 200, read.text);
+    assert.equal((read.body.booking as Booking).status, state);
+  }
+  const plain = await newStaff([]);
+  assert.equal(
+    (await call('GET', `/staff/bookings/${made.booking.id}/detail`, { token: plain.token })).status,
+    403,
+  );
+});
+
+test('CAN-4: a pending substitution is ended atomically and cannot be accepted after cancellation', async () => {
+  const carrier = await verifiedCarrier();
+  const truck = await rigid(carrier);
+  const unit = await tractor(carrier);
+  const trailer = await semiTrailer(carrier);
+  const { driver, affiliation } = await readyDriver(carrier);
+  const made = await booked(carrier);
+  await assigned(
+    carrier,
+    made.booking.id,
+    { truckId: truck.id, driverId: affiliation },
+    'confirmed',
+  );
+  const proposed = await assigned(
+    carrier,
+    made.booking.id,
+    { truckId: unit.id, trailerId: trailer.id },
+    'proposed',
+  );
+  assert.ok(proposed.substitution);
+  const original = proposed.substitution!;
+  assert.equal(
+    (await cancelBooking(made.shipper, made.booking.id, 'dates_changed', null)).status,
+    200,
+  );
+  assert.equal(
+    await count('booking_substitution', "booking_id=$1 AND status='proposed'", [made.booking.id]),
+    0,
+  );
+  assert.equal(
+    (await reservationsOf(made.booking.id)).filter((x) => x.status === 'active').length,
+    0,
+  );
+  assert.equal(
+    (await decideSubstitution(made.shipper, original.id, original.version, 'accept')).status,
+    409,
+  );
+  assert.equal(
+    (await acknowledge(driver, made.booking.id, proposed.assignmentVersion)).status,
+    409,
+  );
+  assert.deepEqual(
+    (await consistency()).filter((x) => x.booking === made.booking.id),
+    [],
+  );
+});
+
+test('CAN-4: a cancellation waiting behind the assignment lock rechecks session expiry and saves nothing', async () => {
+  const carrier = await verifiedCarrier();
+  const truck = await rigid(carrier);
+  const made = await booked(carrier);
+  await assigned(carrier, made.booking.id, { truckId: truck.id }, 'assigned');
+  const { whileBlocked } = blockedRequests(() => owner, advance);
+  const reply = await whileBlocked(
+    [
+      'SELECT 1 FROM trucker.booking_assignment_state WHERE booking_id=$1 FOR UPDATE',
+      [made.booking.id],
+    ],
+    () => cancelBooking(made.shipper, made.booking.id, 'dates_changed', null, 1),
+    D.session_idle_minutes * 60 + 1,
+  );
+  assert.equal(reply.status, 401, reply.text);
+  assert.equal(await count('booking_cancellation', 'booking_id=$1', [made.booking.id]), 0);
+  assert.equal(
+    (await reservationsOf(made.booking.id)).filter((x) => x.status === 'active').length,
+    1,
+  );
+});
+
+test('CAN-9: consistency detects a seeded active reservation on a cancelled booking; identity and cancellation tables remain private', async () => {
+  const carrier = await verifiedCarrier();
+  const truck = await rigid(carrier);
+  const made = await booked(carrier);
+  await assigned(carrier, made.booking.id, { truckId: truck.id }, 'assigned');
+  assert.equal(
+    (await cancelBooking(carrier, made.booking.id, 'resource_unavailable', null)).status,
+    200,
+  );
+  const client = await owner.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      "UPDATE trucker.resource_reservation SET status='active',released_at=NULL,release_reason=NULL WHERE booking_id=$1",
+      [made.booking.id],
+    );
+    const found = (
+      await client.query<{ v: { code: string; booking: string }[] }>(
+        'SELECT trucker.booking_consistency() AS v',
+      )
+    ).rows[0]!.v;
+    assert.ok(
+      found.some((x) => x.code === 'cancelled_active_reservation' && x.booking === made.booking.id),
+    );
+  } finally {
+    await client.query('ROLLBACK');
+    client.release();
+  }
+  for (const table of ['booking_cancellation', 'booking_publication_cycle'])
+    await refused(() => app.query(`SELECT * FROM trucker.${table}`), /permission denied/);
+  await refused(
+    () => app.query('SELECT trucker.cancellation_values($1,$2)', [made.booking.id, 'staff']),
+    /permission denied/,
+  );
+});
+
+test('CAN-4: cancellation races acknowledgement and substitution decisions without leaving live resources', async () => {
+  for (const operation of ['acknowledge', 'substitution'] as const) {
+    const carrier = await verifiedCarrier();
+    const truck = await rigid(carrier);
+    const { driver, affiliation } = await readyDriver(carrier);
+    const made = await booked(carrier);
+    let detail = await assigned(
+      carrier,
+      made.booking.id,
+      { truckId: truck.id, driverId: affiliation },
+      'confirmed',
+    );
+    if (operation === 'substitution') {
+      const unit = await tractor(carrier);
+      const trailer = await semiTrailer(carrier);
+      detail = await assigned(
+        carrier,
+        made.booking.id,
+        { truckId: unit.id, trailerId: trailer.id },
+        'proposed',
+      );
+    }
+    const [cancelled, competing] = await Promise.all([
+      cancelBooking(made.shipper, made.booking.id, 'dates_changed', null, detail.assignmentVersion),
+      operation === 'acknowledge'
+        ? acknowledge(driver, made.booking.id, detail.assignmentVersion)
+        : decideSubstitution(
+            made.shipper,
+            detail.substitution!.id,
+            detail.substitution!.version,
+            'accept',
+          ),
+    ]);
+    assert.ok([200, 409].includes(cancelled.status), cancelled.text);
+    assert.ok([200, 409].includes(competing.status), competing.text);
+    if (cancelled.status === 409) {
+      const latest = await viewOf(made.shipper, made.booking.id);
+      const retry = await cancelBooking(
+        made.shipper,
+        made.booking.id,
+        'dates_changed',
+        null,
+        latest.assignmentVersion,
+      );
+      assert.equal(retry.status, 200, retry.text);
+    }
+    assert.equal((await viewOf(carrier, made.booking.id)).status, 'cancelled');
+    assert.equal(
+      (await reservationsOf(made.booking.id)).filter((x) => x.status === 'active').length,
+      0,
+    );
+    assert.equal((await activeOf(made.booking.id)).length, 0);
+    assert.equal(
+      await count('booking_substitution', "booking_id=$1 AND status='proposed'", [made.booking.id]),
+      0,
+    );
+    assert.deepEqual(
+      (await consistency()).filter((x) => x.booking === made.booking.id),
+      [],
+    );
+  }
 });

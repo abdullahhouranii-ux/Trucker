@@ -24,6 +24,18 @@ const decisionBody = z.object({
   decision: z.enum(['accept', 'decline', 'withdraw']),
 });
 const acknowledgeBody = z.object({ version: z.number().int().min(1) });
+const cancellationBody = z.object({
+  version: z.number().int().min(0),
+  reason: z.enum([
+    'shipment_no_longer_needed',
+    'dates_changed',
+    'carrier_did_not_assign',
+    'resource_unavailable',
+    'cannot_meet_window',
+    'other',
+  ]),
+  note: z.string().max(2000).nullable().optional(),
+});
 
 function bearer(request: IncomingRequest): string | undefined {
   const header = request.headers.authorization;
@@ -76,6 +88,23 @@ export class AssignmentController {
   ) {
     const caller = await this.caller(request);
     return this.assignments.detail(caller, identifier(organisationId), identifier(bookingId));
+  }
+
+  @Post('bookings/:bookingId/cancel')
+  @HttpCode(200)
+  async cancel(
+    @Param('organisationId') organisationId: string,
+    @Param('bookingId') bookingId: string,
+    @Body() body: unknown,
+    @Req() request: IncomingRequest,
+  ) {
+    const caller = await this.caller(request);
+    return this.assignments.cancel(
+      caller,
+      identifier(organisationId),
+      identifier(bookingId),
+      parse(cancellationBody, body),
+    );
   }
 
   @Post('bookings/:bookingId/assignment')
@@ -169,6 +198,13 @@ export class AssignmentStaffController {
     @Inject(StaffService) private readonly staff: StaffService,
     @Inject(AssignmentService) private readonly assignments: AssignmentService,
   ) {}
+
+  @Get(':bookingId/detail')
+  @Header('Cache-Control', 'no-store')
+  async detail(@Param('bookingId') bookingId: string, @Req() request: IncomingRequest) {
+    const caller = await this.staff.authenticate(bearer(request), request.requestId);
+    return this.assignments.staffDetail(caller, identifier(bookingId));
+  }
 
   @Get('attention')
   @Header('Cache-Control', 'no-store')

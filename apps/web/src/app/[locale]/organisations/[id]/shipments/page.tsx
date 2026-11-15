@@ -28,7 +28,14 @@ export default async function ShipmentsPage({ params, searchParams }: Props) {
   const m = getMessages(locale);
   const t = m.ship;
   const search = await searchParams;
-  const LISTS = ['draft', 'published', 'expired', 'withdrawn', 'discarded'] as const;
+  const LISTS = [
+    'draft',
+    'published',
+    'expired',
+    'withdrawn',
+    'booking_cancelled',
+    'discarded',
+  ] as const;
   const status: (typeof LISTS)[number] = LISTS.find((name) => name === search.status) ?? 'draft';
   const after = typeof search.after === 'string' && UUID.test(search.after) ? search.after : null;
   const { problems } = shipmentProblems(
@@ -106,7 +113,7 @@ export default async function ShipmentsPage({ params, searchParams }: Props) {
         >
           {t.filterOpen}
         </a>
-        {(['published', 'expired', 'withdrawn'] as const).map((name) => (
+        {(['published', 'expired', 'withdrawn', 'booking_cancelled'] as const).map((name) => (
           <a
             key={name}
             className="button"
@@ -118,7 +125,9 @@ export default async function ShipmentsPage({ params, searchParams }: Props) {
               ? m.pub.filterPublished
               : name === 'expired'
                 ? m.pub.filterExpired
-                : m.pub.filterWithdrawn}
+                : name === 'booking_cancelled'
+                  ? m.pub.filterBookingCancelled
+                  : m.pub.filterWithdrawn}
           </a>
         ))}
         <a

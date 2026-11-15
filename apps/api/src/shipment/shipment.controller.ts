@@ -164,7 +164,15 @@ const changeBody = z.object({
   version: z.number().int().min(1),
 });
 const republishBody = z.object({ quotationDeadline: windowEnd, version: z.number().int().min(1) });
-const LIST_STATES = ['draft', 'discarded', 'published', 'withdrawn', 'expired', 'all'] as const;
+const LIST_STATES = [
+  'draft',
+  'discarded',
+  'published',
+  'withdrawn',
+  'expired',
+  'booking_cancelled',
+  'all',
+] as const;
 
 function parse<T>(schema: z.ZodType<T>, body: unknown): T {
   const result = schema.safeParse(body);

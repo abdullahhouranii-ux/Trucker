@@ -1275,14 +1275,13 @@ test('who may accept: only an administrator of the shipper; the carrier, outside
     ),
   );
   assert.equal(closed.rows[0]!.status, 'closed');
-  // No route assigns, confirms, cancels, invoices or pays.
+  // Explicit confirmation, invoices and payments remain outside the implemented slices.
   const booked = await accept(shipper.person, shipper.org, made.id, 1);
   assert.equal(booked.status, 200, booked.text);
   const id = (booked.body.booking as Booking).id;
   for (const [method, route] of [
     ['POST', `/organisations/${carrier.org}/bookings/${id}/confirm`],
     ['POST', `/organisations/${carrier.org}/bookings/${id}/assignments`],
-    ['POST', `/organisations/${shipper.org}/bookings/${id}/cancel`],
     ['POST', `/organisations/${shipper.org}/bookings/${id}/payments`],
     ['GET', `/organisations/${shipper.org}/bookings/${id}/invoice`],
   ] as const)

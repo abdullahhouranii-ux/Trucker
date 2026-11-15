@@ -69,7 +69,7 @@ export default async function BookingsPage() {
                   {reply.data.attention.bookings.map((item) => (
                     <li className="card" key={item.id} data-booking={item.id}>
                       <h2>
-                        <a href={`/shipments/${item.shipmentId}`}>
+                        <a href={`/bookings/${item.id}`}>
                           {item.shipper.legalName} with {item.carrier.legalName}
                         </a>
                       </h2>

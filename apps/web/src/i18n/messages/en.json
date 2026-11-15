@@ -488,14 +488,16 @@
       "suspended": "Published, suspended",
       "withdrawn": "Withdrawn",
       "expired": "Expired",
-      "awarded": "Awarded"
+      "awarded": "Awarded",
+      "booking_cancelled": "Cancelled"
     },
     "notice": {
       "published": "Published as version {n}. Quotations close at the deadline.",
       "suspended": "Suspended. Carriers could not find it and no new quotation would be accepted. Nothing is cancelled. It is no longer suspended only when every cause below has passed again, before the deadline.",
       "withdrawn": "Withdrawn. This cannot be undone. To publish again, make a new draft from a copy.",
       "expired": "The quotation deadline has passed. You can publish it again with a new deadline, or make a new draft from a copy.",
-      "awarded": "Awarded: a quotation was accepted and a booking exists. It is not confirmed until the carrier has assigned its resources."
+      "awarded": "Awarded: a quotation was accepted and a booking exists. It is not confirmed until the carrier has assigned its resources.",
+      "booking_cancelled": "This booking has ended. The figures below are the original booking snapshot, not a cancellation charge."
     },
     "causes": {
       "verification": "Your organisation's verification was withdrawn or no longer allows publication.",
@@ -579,7 +581,8 @@
       "copy_unconfirmed": "It was not confirmed that a new draft was made. It may have been. Check your drafts before trying again.",
       "retry_key_conflict": "An earlier attempt may already have been applied. Check the current state before trying again.",
       "unavailable": "The service did not answer, so this cannot be shown. Try again."
-    }
+    },
+    "filterBookingCancelled": "Cancelled"
   },
   "carrier": {
     "title": "Carrier capability",
@@ -948,7 +951,8 @@
     "bookingTitle": "Booking",
     "status": {
       "awaiting_resources": "Awaiting the carrier's resources",
-      "confirmed": "Confirmed"
+      "confirmed": "Confirmed",
+      "cancelled": "Cancelled"
     },
     "statusNote": "Not confirmed. A booking is confirmed only when the carrier has assigned and reserved every resource it needs. Nothing is assigned yet.",
     "provisional": "The fee, payment period, assignment deadline and reservation times are development values. They are not approved for real use.",
@@ -988,7 +992,8 @@
       "shipment_suspended": "The shipment is suspended.",
       "assignment_deadline_passed": "The pick-up is too soon for the carrier to assign its resources in time, so this cannot be accepted."
     },
-    "unavailable": "The booking could not be loaded. Try again."
+    "unavailable": "The booking could not be loaded. Try again.",
+    "cancelledNote": "This booking has ended. The figures below are the original booking snapshot, not a cancellation charge."
   },
   "asg": {
     "open": "Open this booking",
@@ -1009,7 +1014,8 @@
       "needs_reassignment": "A resource no longer meets a requirement. The carrier must reassign it. The booking is not cancelled.",
       "resource_occupied": "A resource is still on another trip.",
       "resource_overrunning": "A resource is still on another trip past its planned end. This booking is at risk.",
-      "acknowledgement_missing": "The driver has not acknowledged the assignment."
+      "acknowledgement_missing": "The driver has not acknowledged the assignment.",
+      "booking_cancelled": "This booking is cancelled."
     },
     "roles": {
       "truck": "Truck",
@@ -1063,7 +1069,9 @@
       "withdrawn": "The proposal is withdrawn.",
       "already_decided": "This proposal was already decided.",
       "recorded": "Recorded.",
-      "already_recorded": "This was already recorded."
+      "already_recorded": "This was already recorded.",
+      "cancelled": "Cancellation confirmed. Reservations are released.",
+      "already_cancelled": "Cancellation confirmed. Reservations are released."
     },
     "errors": {
       "unavailable": "This could not be loaded. Try again.",
@@ -1079,10 +1087,14 @@
       "resource_not_free": "A resource is not free for the planned time. Nothing was changed.",
       "carrier_not_eligible": "This organisation is not a verified carrier now.",
       "booking_closed": "This is not available here.",
+      "assignment_wait_required": "The assignment deadline has passed. The shipper must choose to wait before resources can be assigned.",
       "assignment_not_overdue": "The assignment deadline has not passed.",
       "booking_confirmed": "This booking is already confirmed.",
       "not_found": "This was not found.",
-      "invalid": "The request was not valid. Nothing was changed."
+      "invalid": "The request was not valid. Nothing was changed.",
+      "booking_cancelled": "This booking is cancelled.",
+      "booking_dispatched": "This booking has been dispatched. Contact operations.",
+      "cancel_unconfirmed": "Cancellation was not confirmed. The current booking state is shown below; check again to confirm."
     },
     "driver": {
       "title": "Your assignments",
@@ -1096,6 +1108,30 @@
       "acknowledge": "Acknowledge this assignment",
       "acknowledged": "You acknowledged this assignment.",
       "note": "Addresses are shown at dispatch, which is not available yet."
+    }
+  },
+  "cancel": {
+    "title": "Cancel before dispatch",
+    "warning": "Cancelling ends this booking and releases its reservations. No charge is calculated here. Any amount owed between the parties is not decided here.",
+    "reason": "Reason",
+    "note": "Private note (required for Other)",
+    "submit": "Cancel this booking",
+    "confirm": "Confirm cancellation status",
+    "done": "Cancellation confirmed. Reservations are released.",
+    "again": "Open shipment to publish again",
+    "party": "Cancelled by",
+    "at": "Cancellation time",
+    "status": "Cancelled",
+    "statusNote": "This booking has ended. The figures below are the original booking snapshot, not a cancellation charge.",
+    "blocked": "This booking is cancelled.",
+    "unknown": "Cancellation was not confirmed. The current booking state is shown below; check again to confirm.",
+    "reasons": {
+      "shipment_no_longer_needed": "Shipment no longer needed",
+      "dates_changed": "Dates changed",
+      "carrier_did_not_assign": "Carrier did not assign resources",
+      "resource_unavailable": "Resources unavailable",
+      "cannot_meet_window": "Cannot meet the time window",
+      "other": "Other"
     }
   }
 }

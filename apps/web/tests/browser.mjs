@@ -57,6 +57,7 @@ const REVOCATIONS = [
   ['POST', /^\/organisations\/[^/]+\/fleet\/drivers$/],
   // Accepting a quotation.
   ['POST', /^\/organisations\/[^/]+\/quotations\/[^/]+\/accept$/],
+  ['POST', /^\/organisations\/[^/]+\/bookings\/[^/]+\/cancel$/],
   // Assigning resources to a booking.
   ['POST', /^\/organisations\/[^/]+\/bookings\/[^/]+\/assignment$/],
 ];
@@ -3642,6 +3643,58 @@ async function main() {
       'the carrier is not shown the overdue booking with the wait decision',
     );
     await inspect('en', 'overdue for carrier');
+
+    // Cancellation: the API commits but its response is lost. The retry reconciles the
+    // terminal result without another cancellation or audit event.
+    await open(bookingPath('en', carrierOrg, waitBooking), 390);
+    await page.select('#cancel-reason', 'other');
+    await page.type('#cancel-note', 'Private cancellation note 7821');
+    relay.mode = 'lose';
+    await submit('#cancel-booking-submit');
+    relay.mode = 'pass';
+    check(
+      'cancellation',
+      relay.lost.at(-1)?.includes(`/bookings/${waitBooking}/cancel -> 200`),
+      'the relay did not lose a committed cancellation response',
+    );
+    await open(`${bookingPath('en', carrierOrg, waitBooking)}?aError=cancel_unconfirmed`, 390);
+    check(
+      'cancellation',
+      (await page.$('#cancellation-record')) !== null &&
+        (await page.$('#assign-form')) === null &&
+        (await ready()) === 'no',
+      'a cancelled booking still offers assignment or dispatch',
+    );
+    await submit('#cancel-booking-submit');
+    const cancelledRows = await owner.query(
+      'SELECT * FROM trucker.booking_cancellation WHERE booking_id=$1',
+      [waitBooking],
+    );
+    const cancellationEvents = await owner.query(
+      "SELECT organisation_id FROM trucker.audit_entry WHERE record_id=$1 AND action='booking.cancelled'",
+      [waitBooking],
+    );
+    check(
+      'cancellation',
+      cancelledRows.rowCount === 1 && cancellationEvents.rowCount === 2,
+      'a cancellation retry duplicated its record or either party history entry',
+    );
+    check(
+      'cancellation',
+      (await text('#cancellation-record')).includes('Private cancellation note 7821'),
+      'the cancelling party cannot read its private note',
+    );
+    for (const locale of locales) {
+      await open(bookingPath(locale, carrierOrg, waitBooking), 390);
+      await inspect(locale, 'cancelled booking');
+    }
+    await open(bookingPath('ur', verifyOrg, waitBooking), 390);
+    check(
+      'cancellation',
+      !(await text('body')).includes('Private cancellation note 7821'),
+      'the private cancellation note leaked to the other party',
+    );
+    relay.lost.length = 0;
 
     // Suspended when the verification is withdrawn by staff (test accounts, migration role).
     const adminToken = `${randomBytes(16).toString('hex')}.${randomBytes(16).toString('hex')}`;
