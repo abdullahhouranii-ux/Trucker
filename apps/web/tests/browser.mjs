@@ -3597,6 +3597,14 @@ async function main() {
     for (const locale of locales) {
       await open(bookingPath(locale, verifyOrg), 390);
       await inspect(locale, 'vehicle changes');
+      // The arrow points from the replaced vehicle to its replacement in the reading direction.
+      const swap = (await text('#vehicle-changes [data-change="truck"]')) ?? '';
+      const [forward, backward] = locale === 'en' ? ['→', '←'] : ['←', '→'];
+      check(
+        'assignment',
+        swap.includes(forward) && !swap.includes(backward),
+        `${locale}: the vehicle change reads ${swap}`,
+      );
     }
 
     // A second booking, left unassigned. The real clock cannot be moved here, so the migration

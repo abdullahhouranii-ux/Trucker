@@ -278,7 +278,7 @@ export default async function BookingPage({ params, searchParams }: Props) {
                   <li key={`${index}-${change.role}`} data-change={change.role}>
                     <InstantText at={entry.at} />: {a.roles[change.role]}{' '}
                     {change.from ? plate(change.from) : a.none}
-                    {' → '}
+                    {arrow(locale as Locale)}
                     {change.to ? plate(change.to) : a.none}
                   </li>
                 )),
