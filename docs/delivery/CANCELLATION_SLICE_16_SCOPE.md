@@ -1,6 +1,6 @@
 # Trucker: cancellation before dispatch slice 16, scope and acceptance criteria
 
-Version 1.0, 15 November 2026. Status: **recorded as approved by Abdullah; built on `feat/cancellation`.** Sources: `docs/specs/STAGE_2_PART_2_PUBLICATION_QUOTATION_BOOKING.md` section 8 (AT-241 to AT-244); decision DB-8, a proposed implementation structure (RELEASE_1_DECISIONS.md); the instruction of 15 November that cancellation without charge after a missed assignment deadline belongs here.
+Version 1.0, 15 November 2026. Status: **approved by Abdullah on 15 November 2026 (22:16), with CB-1 to CB-5 as recommended; built on `feat/cancellation` (PR #22).** Sources: `docs/specs/STAGE_2_PART_2_PUBLICATION_QUOTATION_BOOKING.md` section 8 (AT-241 to AT-244); decision DB-8, a proposed implementation structure (RELEASE_1_DECISIONS.md); the instruction of 15 November that cancellation without charge after a missed assignment deadline belongs here.
 
 No fee, compensation or legal consequence is stated in this scope. The cancellation record stores the facts a later, approved policy would need; it applies no policy.
 
