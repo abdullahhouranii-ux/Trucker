@@ -311,6 +311,12 @@ export class StaffService {
           'staff_self_action',
           'This cannot be done to your own account. Another administrator must do it.',
         );
+      case 'last_administrator':
+        throw new ApiError(
+          409,
+          'last_administrator',
+          'This would leave no active administrator. Nothing was changed.',
+        );
       default:
     }
   }
