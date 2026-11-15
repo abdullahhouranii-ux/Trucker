@@ -1,8 +1,8 @@
 # Trucker — Stage 2, Part 2: shipment publication, quotation, booking and resource reservation (provisional)
 
-Version 0.3, 13 Nov 2026. Owner: Abdullah. Builds on the Stage 1 baseline and Stage 2 Part 1 (v0.3). Authoritative copy: `docs/specs` in the repository; Claude-project copies are synchronised references. Changes in 0.3: substitution cannot waive hard requirements (7.2); an occupied resource blocks dispatch of its next booking (7.3); foundation-only setup waits for no decision (12). Changes in 0.2 after review: the flow is stated as agent-shaped and provisional until D-001; substitution has commercial rules; conflict flags are concurrency-safe; retry rules have security boundaries; reservation expectations follow lifecycle state; TBD items are split into approved rules and operating parameters. No application tests were run; this is a document.
+Version 0.4, 13 Nov 2026. Owner: Abdullah. Changes in 0.4: time zones are named, lanes carry transit countries, and the group A decision is restated for the regional direction (REGIONAL_GEOGRAPHY.md). Builds on the Stage 1 baseline and Stage 2 Part 1 (v0.3). Authoritative copy: `docs/specs` in the repository; Claude-project copies are synchronised references. Changes in 0.3: substitution cannot waive hard requirements (7.2); an occupied resource blocks dispatch of its next booking (7.3); foundation-only setup waits for no decision (12). Changes in 0.2 after review: the flow is stated as agent-shaped and provisional until D-001; substitution has commercial rules; conflict flags are concurrency-safe; retry rules have security boundaries; reservation expectations follow lifecycle state; TBD items are split into approved rules and operating parameters. No application tests were run; this is a document.
 
-**Status.** Provisional design; nothing is implemented. D-001 (commercial model), D-002 (payment approach) and D-003 (launch geography) remain **TBD**. **The booking flow drafted here is agent-shaped**: a carrier or owner authors a quotation and the shipper accepts it, giving one agreement between those two parties. Under a principal model the contracting parties differ and there are two linked agreements with Trucker in the middle; that is a structural difference that no visibility setting resolves. Sections 5 to 8 are therefore **provisional until D-001** and booking implementation waits for it. Section 9 separates what holds under either model from what does not. No payment model is designed. No supplier is selected and no legal, tax or licensing compliance is asserted. Policies marked **TBD** are listed in section 10.
+**Status.** Provisional design; nothing is implemented. D-001 (commercial model) and D-002 (payment approach) remain **TBD**; D-003 has a confirmed target geography (Middle East, GCC first) with initial countries, lanes and eligibility **TBD** (REGIONAL_GEOGRAPHY.md). **The booking flow drafted here is agent-shaped**: a carrier or owner authors a quotation and the shipper accepts it, giving one agreement between those two parties. Under a principal model the contracting parties differ and there are two linked agreements with Trucker in the middle; that is a structural difference that no visibility setting resolves. Sections 5 to 8 are therefore **provisional until D-001** and booking implementation waits for it. Section 9 separates what holds under either model from what does not. No payment model is designed. No supplier is selected and no legal, tax or licensing compliance is asserted. Policies marked **TBD** are listed in section 10.
 
 ## 1. Surfaces in this part
 
@@ -41,7 +41,7 @@ Native shipper, carrier and owner applications stay in the target; their launch 
 | Deadlines | Quotation validity, shipment expiry and reassignment deadlines are absolute instants, judged by the server clock only; device clocks are never trusted |
 | Windows | Half-open intervals: a window ending at 14:00 does not overlap one starting at 14:00 |
 | Date-only values | Not used for anything that drives a rule |
-| D-003 effect | With one country there is one zone in practice; cross-border lanes can have pick-up and delivery in different zones, which this design already handles |
+| D-003 effect | Each location stores a named time zone (for example `Asia/Muscat`, `Asia/Dubai`, `Asia/Riyadh`), never a fixed offset. The six GCC countries use six named zones and, today, two offsets, so pick-up and delivery are often in different zones, which this design already handles |
 
 ### 3.2 Idempotent retries
 
@@ -245,9 +245,10 @@ Depends on D-001 and must be redrawn if principal is chosen: who authors and who
 
 | Point | Effect |
 |---|---|
-| Currency | One currency, or currency chosen per shipment by country; amounts already carry currency |
+| Currency | Several currencies with two or three decimal places are in the target geography; amounts already carry currency. Which currency is used for quotation, invoicing and settlement is undecided |
+| Lanes | A lane is an origin country, a destination country, the ordered transit countries between them and the border crossings used. A shipment can be published only on an enabled lane whose transit countries are all transit-ready |
 | Shipment fields | Cross-border lanes add border crossing, customs documents and who handles clearance |
-| Eligibility | Cross-border work needs vehicle and driver documents valid for each country |
+| Eligibility | Carrier, vehicle and driver permissions are checked for every country on the route, including transit countries, at quotation and again at assignment |
 | Time | Different zones at pick-up and delivery (handled in 3.1) |
 | Enabled lanes | Carry-over C-02 and C-03 |
 
@@ -308,7 +309,7 @@ Carry-over items C-18 (return loads, post an empty truck) and C-27 (truck hire) 
 
 | Group | Unblocks | Decisions |
 |---|---|---|
-| **A** | Sign-in, organisations, verification, shipment create and list | 1. First country for the document catalogue and currency (the minimum form of D-003). 2. Sign-in identifiers (Q-101). 3. Who will build, review and test (delivery capacity) |
+| **A** | Sign-in, organisations, verification, shipment create and list | 1. Which countries are enabled for registration and for shipment locations first, and which lanes (D-003b to D-003d). 2. Sign-in identifiers (Q-101). 3. Who will build, review and test (delivery capacity) |
 | **B** | Quotation, acceptance, booking, reservation | 4. D-001 commercial model. 5. D-005 pricing mechanism. 6. P-201 when the driver must be named. 7. Q-102 driver affiliation with several organisations (legal input) |
 | **C** | Cancellation fees, finance, settlement | 8. D-002 payment approach. 9. D-008 cancellation and waiting-time policy |
 

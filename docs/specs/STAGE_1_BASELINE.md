@@ -1,6 +1,6 @@
 # Trucker — Stage 1 baseline (provisional)
 
-Version 0.1, 13 Nov 2026. Owner and decision maker: Abdullah.
+Version 0.2, 13 Nov 2026. Owner and decision maker: Abdullah. Changes in 0.2: regional direction confirmed (F-08 to F-11); D-003 split into D-003a to D-003e and D-014 added; assumption A-02 corrected; section 7.3 replaced. Detail: REGIONAL_GEOGRAPHY.md.
 Status: **provisional**. Nothing here is approved unless it sits under "Confirmed". Items marked **TBD** are waiting for a decision. Legal, tax, licensing and payment points need qualified review; this document claims no compliance.
 
 ## 0. Evidence: what was inspected
@@ -98,7 +98,7 @@ The right-hand column is **my recommendation only**. None of it is approved, and
 
 | Area | Full target | Recommended pilot | Status |
 |---|---|---|---|
-| Geography | TBD, up to GCC and wider Middle East | See decision D-003 | TBD |
+| Geography | Middle East, prioritising the six GCC countries (confirmed, F-08) | Initial countries and lanes are open (D-003b, D-003c); no recommendation is made here | Target confirmed; launch TBD |
 | Commercial model | TBD | See decision D-001 | TBD |
 | Payments | Provider collection, payouts, reconciliation | See decision D-002 | TBD |
 | Surfaces | All seven, plus native apps for shipper, carrier and owner | Website, three responsive portals, operations console, driver app; partner API and other native apps in later releases | TBD (D-004) |
@@ -166,7 +166,11 @@ Historical TruckLink decisions are **not** Trucker policy. Status meanings: **Pr
 | F-04 | English, Arabic and Urdu, including RTL |
 | F-05 | Core is independent of Odoo |
 | F-06 | Mandatory requirements, **not yet implemented**: two-person financial approval, reservation integrity, secure offline synchronisation |
-| F-07 | Repository contains documents only (section 0) |
+| F-07 | Repository contains documents only (section 0). Superseded: foundation code now exists; see docs/delivery/STATUS.md |
+| F-08 | Trucker targets the Middle East, prioritising the six GCC countries: Oman, UAE, Saudi Arabia, Qatar, Kuwait and Bahrain. The platform is not scoped as Oman-only |
+| F-09 | The platform is designed for country-specific configuration: international phone numbers, currencies, named time zones, document requirements, domestic routes and cross-border journeys including transit countries |
+| F-10 | Adding a country is not assumed to be only a matter of catalogue rows |
+| F-11 | The business base is a separate decision (D-014) from launch countries and routes. Business registration and launch-market permissions are separate |
 
 **Open decisions**
 
@@ -174,7 +178,11 @@ Historical TruckLink decisions are **not** Trucker policy. Status meanings: **Pr
 |---|---|---|---|
 | D-001 | Commercial model | Section 7.1 | Finance design, terms, licensing questions |
 | D-002 | Payment approach | Section 7.2 | Finance module depth, provider onboarding |
-| D-003 | Launch geography | Section 7.3 | Tax, currency, documents, hosting, vendors |
+| D-003a | Full target geography | **Confirmed:** Middle East, six GCC countries first (F-08) | — |
+| D-003b | Initial enabled countries | None; GCC-wide and phased options are set out in REGIONAL_GEOGRAPHY.md | Tax, currency, documents, vendors, support |
+| D-003c | Initial domestic and cross-border lanes, including transit countries | None | Lane configuration, border documents and milestones |
+| D-003d | Participant eligibility by country | None | Registration, verification matrix |
+| D-003e | Country launch dependencies | Readiness record per country (REGIONAL_GEOGRAPHY.md, section 6) | Enabling any country |
 | D-004 | Launch surfaces and order | Web portals plus driver app first | Build order after the foundation |
 | D-005 | Pricing mechanism | Quotation with limited counter-offers | Offer state model details |
 | D-006 | Cargo, equipment and exclusions | Dry general cargo first | Catalogue and verification rules |
@@ -185,20 +193,21 @@ Historical TruckLink decisions are **not** Trucker policy. Status meanings: **Pr
 | D-011 | Suppliers: hosting, SMS/OTP, maps, storage, push | Interfaces now, choose before live use | Production |
 | D-012 | Pilot limits and success measures | TBD | Section 1 targets, performance gate |
 | D-013 | Carry-over items marked "Confirm" | Section 5 | Scope |
+| D-014 | Business base | **Preferred direction recorded 13 Nov 2026:** Dubai, UAE, with a free-zone company. The specific free zone is undecided and nothing is registered | Legal entity (D-007), contracts, provider onboarding |
 
 **Assumptions in use until you say otherwise**
 
 | ID | Assumption |
 |---|---|
 | A-01 | The reference stack is the starting point for Stage 3 evaluation: Next.js, Flutter, NestJS modular monolith, PostgreSQL/PostGIS |
-| A-02 | Every organisation, location and booking carries country, currency and time zone, so one country or several can be launched without redesign |
+| A-02 | Every organisation, location and booking carries country, currency and a named time zone. This keeps the data model open to several countries; it does not make a country launchable. Each country also needs rules, integrations, content and a readiness review (REGIONAL_GEOGRAPHY.md, sections 6 and 7) |
 | A-03 | Money is stored in minor units with per-currency precision (OMR uses three decimal places) |
 | A-04 | The commercial model and policy version are stored on each booking as a snapshot |
 | A-05 | Platform-held money is never called escrow |
 
 ## 7. The three decisions that shape architecture and operations
 
-D-001, D-002 and D-003 are **TBD**. The tables in this section are **illustrative comparisons, not findings**: payment deadlines, price visibility, liability, invoicing and tax treatment must follow approved contracts and professional legal and accounting review. The recommendations are not approvals.
+D-001 and D-002 are **TBD**. D-003 is split: the target geography is confirmed; initial countries, lanes and eligibility are **TBD**. The tables in this section are **illustrative comparisons, not findings**: payment deadlines, price visibility, liability, invoicing and tax treatment must follow approved contracts and professional legal and accounting review. The recommendations are not approvals.
 
 ### 7.1 D-001 Commercial model
 
@@ -228,18 +237,20 @@ D-001, D-002 and D-003 are **TBD**. The tables in this section are **illustrativ
 
 **Recommendation:** build the finance module **provider-ready from the start** (payment attempts, verified webhooks, replay protection, reconciliation), go live on **recorded bank transfers**, and start provider onboarding in parallel so collection with split payout can be switched on when the contract and legal review are done. Card fees on freight-sized invoices were reported at roughly 2 to 3 percent in the reference research; that figure needs re-checking with providers.
 
-### 7.3 D-003 Launch geography
+### 7.3 D-003 Geography and D-014 business base
 
-| | Oman domestic | Oman plus one cross-border lane | GCC-wide from launch |
-|---|---|---|---|
-| Currency and tax | One | Two | Six |
-| Documents | Domestic | Customs and border documents, border milestones | Many variants |
-| Licensing and legal review | One country | Two | Each country |
-| Vendor setup (SMS sender names, payment onboarding) | One | Two | All |
-| Operations | Simplest; local support | Border delays and waiting-time disputes | Round-the-clock, multi-country support |
-| Market size | Smallest | Adds the high-volume UAE lane | Largest |
+Revised 13 Nov 2026. The earlier comparison and my recommendation to launch "Oman domestic" are **withdrawn**.
 
-**Recommendation:** build **multi-country capable** (assumption A-02) and launch **Oman domestic**, with the Oman–UAE lane as the first expansion once counsel confirms licensing and tax treatment. This keeps the architecture open while the first operation stays manageable.
+| Part | Status |
+|---|---|
+| D-003a Full target geography | **Confirmed:** Middle East, prioritising the six GCC countries |
+| D-003b Initial enabled countries | **TBD** |
+| D-003c Initial lanes, including transit countries | **TBD** |
+| D-003d Participant eligibility | **TBD** |
+| D-003e Country launch dependencies | Framework in REGIONAL_GEOGRAPHY.md; content needs qualified review |
+| D-014 Business base | Preferred direction: Dubai, UAE, with a free-zone company. Specific free zone **TBD**. Not a registration instruction |
+
+A company registered in one country is not thereby permitted to operate transport, platform or payment activities in another. The full treatment, including named time zones and transit-country checks, is in `REGIONAL_GEOGRAPHY.md`.
 
 ## 8. Dependencies, risks and acceptance criteria
 
