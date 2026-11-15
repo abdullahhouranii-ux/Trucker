@@ -1,7 +1,7 @@
 import { notFound, redirect } from 'next/navigation';
 import { BookingCard, InstantText } from '../../../../../../components/booking-view.tsx';
 import { ErrorSummary, Field } from '../../../../../../components/form.tsx';
-import { isLocale, type Locale } from '../../../../../../i18n/config.ts';
+import { direction, isLocale, type Locale } from '../../../../../../i18n/config.ts';
 import { getMessages, type Messages } from '../../../../../../i18n/messages.ts';
 import {
   api,
@@ -28,6 +28,9 @@ type Props = {
 };
 type A = Messages['asg'];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Points from the earlier value to the later one in the reading direction of the page. */
+const arrow = (locale: Locale) => (direction(locale) === 'rtl' ? ' ← ' : ' → ');
 
 const plate = (vehicle: AssignedVehicle) => (
   <bdi dir="ltr">
@@ -210,7 +213,7 @@ export default async function BookingPage({ params, searchParams }: Props) {
                     (<bdi>{item.from[locale as Locale]}</bdi>
                     {item.to ? (
                       <>
-                        {' → '}
+                        {arrow(locale as Locale)}
                         <bdi>{item.to[locale as Locale]}</bdi>
                       </>
                     ) : null}
