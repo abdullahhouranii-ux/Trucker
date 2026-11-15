@@ -49,6 +49,9 @@ const REVOCATIONS = [
   // Publishing and withdrawing a shipment.
   ['POST', /^\/organisations\/[^/]+\/shipments\/[^/]+\/publish$/],
   ['POST', /^\/organisations\/[^/]+\/shipments\/[^/]+\/withdraw$/],
+  // Sending and withdrawing a quotation.
+  ['POST', /^\/organisations\/[^/]+\/discovery\/shipments\/[^/]+\/quotations$/],
+  ['POST', /^\/organisations\/[^/]+\/quotations\/[^/]+\/withdraw$/],
 ];
 function startRelay() {
   const server = http.createServer((request, response) => {
@@ -645,11 +648,11 @@ async function main() {
     mkdirSync(outDir, { recursive: true });
     // At most five pictures, for design review only.
     const shots = {
-      'ur:publish form': 'publish-form-ur-390',
-      'ar:published': 'published-preview-ar-390',
-      'en:suspended': 'suspended-en-390',
       'ur:carrier apply': 'carrier-apply-ur-390',
       'ar:discovery list': 'discovery-list-ar-390',
+      'ar:quotation form': 'quotation-form-ar-390',
+      'ur:quotation errors': 'quotation-errors-ur-390',
+      'en:quotation comparison': 'quotation-comparison-en-390',
     };
     // Fictional numbers: country code 999 is not assigned. Unique per run.
     const stamp = String(Date.now()).slice(-7);
@@ -2644,6 +2647,224 @@ async function main() {
         (await page.$('#open-carrier')) !== null &&
         (await page.$('#discovery-list')) === null,
       `a shipper opening discovery saw ${page.url()}`,
+    );
+
+    // ------------------------------------------------------------------------------------
+    // Quotations: terms, problems by field, lost answers, comparison, rejection
+    // ------------------------------------------------------------------------------------
+    const quotesPath = (locale) =>
+      `/${locale}/organisations/${verifyOrg}/shipments/${pubShipment}/quotations`;
+    const quotePath = (locale) => `${discoverPath(locale)}/${pubShipment}`;
+    const enQuo = messagesFor('en').quo;
+    const urQuo = messagesFor('ur').quo;
+    const quotationRows = async () =>
+      (
+        await owner.query(
+          `SELECT q.id, q.status, q.current_version, trim_scale(v.amount)::text AS amount
+           FROM trucker.quotation q JOIN trucker.quotation_version v
+             ON v.quotation_id = q.id AND v.version_no = q.current_version
+           WHERE q.shipment_id = $1 ORDER BY q.created_at`,
+          [pubShipment],
+        )
+      ).rows;
+    const quoCount = async (action) =>
+      Number(
+        (
+          await owner.query(
+            `SELECT count(*) AS n FROM trucker.audit_entry a JOIN trucker.quotation q ON q.id = a.record_id
+             WHERE q.shipment_id = $1 AND a.action = $2`,
+            [pubShipment, action],
+          )
+        ).rows[0].n,
+      );
+    const standingShown = () =>
+      page.evaluate(
+        () => document.querySelector('#own-quotation [data-standing]')?.dataset.standing ?? null,
+      );
+    // Before the shipper chooses a currency, nothing can be sent.
+    await open(quotePath('en'), 390);
+    check(
+      'quotation',
+      (await page.$('#terms-missing')) !== null && (await page.$('#submit-quotation')) === null,
+      `before terms the carrier page offered ${await page.$('#submit-quotation')}`,
+    );
+    // The shipper opens the quotations from the shipment and chooses the one currency.
+    await open(shipmentPath('en'), 390);
+    await submit('#open-quotations');
+    check(
+      'quotation',
+      page.url() === `${origin}${quotesPath('en')}` && (await page.$('#terms-form')) !== null,
+      `the shipment's quotations link led to ${page.url()}`,
+    );
+    await page.select('#currency', 'XTS');
+    await submit('#save-terms');
+    check(
+      'quotation',
+      page.url().includes('qDone=set') && ((await text('#quotation-terms')) ?? '').includes('XTS'),
+      `saving the currency led to ${page.url()}`,
+    );
+    for (const locale of locales) {
+      await open(quotePath(locale), 390);
+      await inspect(locale, 'quotation form');
+    }
+    // Sent with nothing filled in: refused by field, nothing recorded.
+    await open(quotePath('ur'), 390);
+    await submit('#submit-quotation');
+    const quoLinks = await page.evaluate(() =>
+      [...document.querySelectorAll('#error-summary a')].map((a) => a.getAttribute('href')),
+    );
+    check(
+      'quotation',
+      (await focusedId()) === 'error-summary' &&
+        quoLinks.includes('#amount') &&
+        quoLinks.includes('#inc-fictional_item_1') &&
+        quoLinks.includes('#validUntilDate') &&
+        quoLinks.includes('#earliestPickupDate') &&
+        (await quotationRows()).length === 0,
+      `an empty quotation answered ${page.url()} with links ${quoLinks}`,
+    );
+    await inspect('ur', 'quotation errors');
+    // Too many decimal places for the currency: refused at the amount, with the limit.
+    const fillQuotation = async (amount) => {
+      await page.$eval('#amount', (input) => (input.value = ''));
+      await page.type('#amount', amount);
+      for (const item of [1, 2, 3])
+        await page.click(`#inc-fictional_item_${item}-${item === 2 ? 'no' : 'yes'}`);
+      const until = zoned(6, 4);
+      const pickup = zoned(49, 4);
+      for (const [id, value] of [
+        ['#validUntilDate', until.slice(0, 10)],
+        ['#validUntilTime', until.slice(11, 16)],
+        ['#earliestPickupDate', pickup.slice(0, 10)],
+        ['#earliestPickupTime', pickup.slice(11, 16)],
+      ]) {
+        await page.$eval(id, (input) => (input.value = ''));
+        await page.type(id, value);
+      }
+    };
+    await fillQuotation('1250.505');
+    await submit('#submit-quotation');
+    check(
+      'quotation',
+      page.url().includes('amount%3Aprecision') || page.url().includes('amount:precision')
+        ? ((await text('#error-summary')) ?? '').includes(
+            urQuo.errors.amount_precision.replace('{n}', '2'),
+          ) && (await quotationRows()).length === 0
+        : false,
+      `three decimal places led to ${page.url()}`,
+    );
+    // Sent; the server records it and the answer is lost. Not reported as sent; the page then
+    // shows the quotation as the server holds it, recorded once.
+    await open(quotePath('ur'), 390);
+    await fillQuotation('1250.5');
+    relay.lost.length = 0;
+    relay.mode = 'lose';
+    await submit('#submit-quotation');
+    relay.mode = 'pass';
+    check(
+      'lost answer',
+      relay.lost[0]?.startsWith(
+        `POST /organisations/${carrierOrg}/discovery/shipments/${pubShipment}/quotations -> 201`,
+      ) &&
+        page.url().includes('qError=submit_unconfirmed') &&
+        (await text('#quotation-confirmation')) === null,
+      `a lost quotation answer led to ${page.url()}: ${relay.lost}`,
+    );
+    relay.lost.length = 0;
+    await open(quotePath('ur'), 390);
+    const afterLostQuote = await quotationRows();
+    check(
+      'lost answer',
+      afterLostQuote.length === 1 &&
+        afterLostQuote[0].amount === '1250.5' &&
+        (await quoCount('quotation.submitted')) === 1 &&
+        (await page.$('#own-quotation')) !== null &&
+        (await standingShown()) === 'current',
+      `after a lost quotation answer: ${JSON.stringify(afterLostQuote)} and ${await quoCount('quotation.submitted')} records`,
+    );
+    // With no answer from the API the session is unconfirmed, not ended: the page says the
+    // quotation could not be loaded and does not send the carrier to sign in.
+    relay.mode = 'down';
+    await open(quotePath('en'), 390);
+    const downUrl = page.url();
+    const downShown = await page.evaluate(
+      () => document.querySelector('[data-state]')?.dataset.state ?? null,
+    );
+    relay.mode = 'pass';
+    check(
+      'lost answer',
+      downUrl.startsWith(`${origin}${quotePath('en')}`) && !downUrl.includes('sign-in'),
+      `with the API unreachable the quotation page led to ${downUrl} showing ${downShown}`,
+    );
+    // The shipper compares: the exact amount, the inclusions answered, no contact details.
+    await open(quotesPath('en'), 390);
+    const listed = await page.evaluate(() =>
+      [...document.querySelectorAll('#quotation-list > li')].map((li) => li.dataset.amount),
+    );
+    check(
+      'quotation',
+      listed.join() === '1250.50' &&
+        (await page.$('#terms-locked')) !== null &&
+        (await page.$('#terms-form')) === null &&
+        ((await text('#quotation-list')) ?? '').includes(enQuo.carrierVerified) &&
+        !((await text('#quotation-list')) ?? '').includes(`CAR-${stamp}`),
+      `the shipper's comparison listed ${listed}`,
+    );
+    // Withdrawn; the server records it and the answer is lost. Asking again does not withdraw
+    // twice, and the page shows it withdrawn.
+    await open(quotePath('ur'), 390);
+    relay.mode = 'lose';
+    await submit('#withdraw-quotation');
+    relay.mode = 'pass';
+    check(
+      'lost answer',
+      relay.lost[0]?.startsWith(
+        `POST /organisations/${carrierOrg}/quotations/${afterLostQuote[0].id}/withdraw -> 200`,
+      ) && page.url().includes('qError=withdraw_unconfirmed'),
+      `a lost withdrawal answer led to ${page.url()}: ${relay.lost}`,
+    );
+    relay.lost.length = 0;
+    await open(quotePath('ur'), 390);
+    check(
+      'lost answer',
+      (await quotationRows())[0].status === 'withdrawn' &&
+        (await quoCount('quotation.withdrawn')) === 1 &&
+        (await page.$('#withdraw-quotation')) === null &&
+        (await page.$('#ended-quotation')) !== null,
+      `after a lost withdrawal: ${JSON.stringify(await quotationRows())}`,
+    );
+    // A new quotation, then the shipper rejects it.
+    await fillQuotation('990');
+    await submit('#submit-quotation');
+    await open(quotesPath('en'), 390);
+    await inspect('en', 'quotation comparison');
+    for (const locale of ['ar', 'ur']) {
+      await open(quotesPath(locale), 390);
+      await inspect(locale, 'quotation comparison');
+    }
+    await open(quotesPath('en'), 390);
+    const rejectedQuote = (await quotationRows())[1];
+    const listedAfter = await page.evaluate(() =>
+      [...document.querySelectorAll('#quotation-list > li')].map((li) => li.dataset.amount),
+    );
+    await submit(`[data-reject="${rejectedQuote.id}"]`);
+    check(
+      'quotation',
+      listedAfter.join() === '990.00,1250.50' &&
+        page.url().includes('qDone=rejected') &&
+        (await quotationRows())[1].status === 'rejected' &&
+        (await quoCount('quotation.rejected')) === 1 &&
+        (await page.$(`[data-reject="${rejectedQuote.id}"]`)) === null,
+      `rejecting led to ${page.url()} after listing ${listedAfter}`,
+    );
+    await open(quotePath('en'), 390);
+    check(
+      'quotation',
+      (await page.$('#ended-quotation')) !== null &&
+        (await page.evaluate(
+          () => document.querySelector('#ended-quotation [data-standing]')?.dataset.standing,
+        )) === 'rejected',
+      `the carrier sees ${await page.evaluate(() => document.querySelector('#ended-quotation')?.textContent)}`,
     );
 
     // Suspended when the verification is withdrawn by staff (test accounts, migration role).

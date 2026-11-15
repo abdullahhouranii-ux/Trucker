@@ -1,6 +1,14 @@
+import { randomUUID } from 'node:crypto';
 import { notFound, redirect } from 'next/navigation';
+import { DraftKeeper } from '../../../../../../components/draft-keeper.tsx';
 import { ErrorSummary } from '../../../../../../components/form.tsx';
 import { CarrierFacts } from '../../../../../../components/publication-view.tsx';
+import {
+  QuotationFacts,
+  QuotationFields,
+  Standing,
+  quotationProblems,
+} from '../../../../../../components/quotation-view.tsx';
 import { isLocale } from '../../../../../../i18n/config.ts';
 import { getMessages } from '../../../../../../i18n/messages.ts';
 import {
@@ -8,25 +16,44 @@ import {
   type Catalogues,
   type Country,
   type DiscoveryItem,
+  type QuotationContext,
 } from '../../../../../../server/api.ts';
+import {
+  reconfirmQuotationAction,
+  reviseQuotationAction,
+  submitQuotationAction,
+  withdrawQuotationAction,
+} from '../../../../../../server/quotation-actions.ts';
 import { requirePerson } from '../../../../../../server/session.ts';
 
 // One discovered shipment: the carrier projection, judged again by the server at this request.
 // A shipment that is no longer discoverable answers exactly like one that never existed.
 
-type Props = { params: Promise<{ locale: string; id: string; shipmentId: string }> };
+type Props = {
+  params: Promise<{ locale: string; id: string; shipmentId: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+};
+const RETRY_KEY = /^[A-Za-z0-9._-]{16,128}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export default async function DiscoveredShipmentPage({ params }: Props) {
+export default async function DiscoveredShipmentPage({ params, searchParams }: Props) {
   const { locale, id, shipmentId } = await params;
+  const search = await searchParams;
+  const qError = typeof search.qError === 'string' ? search.qError : '';
+  const qDone = typeof search.qDone === 'string' ? search.qDone : undefined;
+  const keyFor = (operation: string): string => {
+    const value = search[`${operation}Retry`];
+    return typeof value === 'string' && RETRY_KEY.test(value) ? value : randomUUID();
+  };
   if (!isLocale(locale)) notFound();
   if (!UUID.test(id) || !UUID.test(shipmentId)) notFound();
   const m = getMessages(locale);
   const t = m.disc;
   const person = await requirePerson(locale);
-  if (person.state !== 'signed-in') redirect(`/${locale}/sign-in?error=session_ended`);
+  // An unconfirmed session (the API gave no answer) is not an ended one: the requests below
+  // either fail as unavailable, shown as such, or are refused with 401 and end it.
   const list = `/${locale}/organisations/${id}/discover`;
-  const [reply, countries, catalogues] = await Promise.all([
+  const [reply, countries, catalogues, quoting] = await Promise.all([
     api<{ shipment: DiscoveryItem }>(
       'GET',
       `/organisations/${id}/discovery/shipments/${shipmentId}`,
@@ -36,6 +63,11 @@ export default async function DiscoveredShipmentPage({ params }: Props) {
     ),
     api<{ countries: Country[] }>('GET', '/registration/countries', { token: person.token }),
     api<Catalogues>('GET', `/organisations/${id}/shipment-catalogues`, { token: person.token }),
+    api<{ quotation: QuotationContext }>(
+      'GET',
+      `/organisations/${id}/discovery/shipments/${shipmentId}/quotation`,
+      { token: person.token },
+    ),
   ]);
   if (!reply.ok && reply.status === 401) redirect(`/${locale}/sign-in?error=session_ended`);
   const back = (
@@ -81,6 +113,153 @@ export default async function DiscoveredShipmentPage({ params }: Props) {
         id="discovered"
       />
       <p id="free-text-note">{t.freeTextNote}</p>
+      <QuotationSection
+        locale={locale}
+        m={m}
+        organisationId={id}
+        shipmentId={shipmentId}
+        context={quoting.ok ? quoting.data.quotation : null}
+        error={qError}
+        done={qDone}
+        keyFor={keyFor}
+      />
     </div>
+  );
+}
+
+function QuotationSection({
+  locale,
+  m,
+  organisationId,
+  shipmentId,
+  context,
+  error,
+  done,
+  keyFor,
+}: {
+  locale: 'en' | 'ar' | 'ur';
+  m: ReturnType<typeof getMessages>;
+  organisationId: string;
+  shipmentId: string;
+  context: QuotationContext | null;
+  error: string;
+  done: string | undefined;
+  keyFor: (operation: string) => string;
+}) {
+  const q = m.quo;
+  const terms = context?.terms ?? null;
+  const { errors, summary } = quotationProblems(q, error, terms, locale);
+  const open = context?.quotations.find((item) => item.status === 'submitted');
+  const latest = context?.quotations[0];
+  const current = open?.versions[0];
+  const confirmation = done ? (q.done as Record<string, string>)[done] : undefined;
+  const hidden = (operation: string, version?: number) => (
+    <>
+      <input type="hidden" name="locale" value={locale} />
+      <input type="hidden" name="organisationId" value={organisationId} />
+      <input type="hidden" name="shipmentId" value={shipmentId} />
+      {open ? <input type="hidden" name="quotationId" value={open.id} /> : null}
+      {version !== undefined ? <input type="hidden" name="version" value={version} /> : null}
+      <input type="hidden" name="retryKey" value={keyFor(operation)} />
+    </>
+  );
+  return (
+    <section className="section" aria-labelledby="quotation-title" id="quotation">
+      <h2 id="quotation-title">{q.carrierTitle}</h2>
+      <p className="notice" role="note" id="no-commitment">
+        {q.noCommitment}
+      </p>
+      <ErrorSummary title={m.auth.errors.summary} problems={summary} />
+      {confirmation && summary.length === 0 ? (
+        <p className="notice notice-success" role="status" id="quotation-confirmation">
+          {confirmation}
+        </p>
+      ) : null}
+      {!context ? (
+        <p className="notice" role="note" id="quotation-unavailable">
+          {q.errors.unavailable}
+        </p>
+      ) : !terms ? (
+        <p className="notice" role="note" id="terms-missing">
+          {q.termsMissing}
+        </p>
+      ) : (
+        <>
+          <p className="field-hint" id="inclusions-fictional">
+            {q.inclusionsFictional}
+          </p>
+          {open && current ? (
+            <div className="card" id="own-quotation" data-quotation={open.id}>
+              <h3>{q.version.replace('{n}', String(open.currentVersion))}</h3>
+              <Standing t={q} quotation={open} />
+              <QuotationFacts
+                t={q}
+                locale={locale}
+                terms={terms}
+                version={current}
+                id="own-quotation-facts"
+              />
+              {open.reconfirmationNeeded ? (
+                <form className="form-inline" id="reconfirm-form" action={reconfirmQuotationAction}>
+                  {hidden('reconfirm', open.currentVersion)}
+                  <p>{q.reconfirmLead}</p>
+                  <button className="button button-primary" type="submit" id="reconfirm-quotation">
+                    {q.reconfirm}
+                  </button>
+                </form>
+              ) : null}
+              <form
+                className="form-inline"
+                id="withdraw-quotation-form"
+                action={withdrawQuotationAction}
+              >
+                {hidden('withdraw', open.currentVersion)}
+                <button className="button button-danger" type="submit" id="withdraw-quotation">
+                  {q.withdraw}
+                </button>
+              </form>
+            </div>
+          ) : latest ? (
+            <div className="card" id="ended-quotation" data-quotation={latest.id}>
+              <h3>{q.version.replace('{n}', String(latest.currentVersion))}</h3>
+              <Standing t={q} quotation={latest} />
+            </div>
+          ) : null}
+          <h3 id="quotation-form-title">{open ? q.reviseTitle : q.submitTitle}</h3>
+          <form
+            className="form card"
+            id={open ? 'revise-form' : 'quotation-form'}
+            action={open ? reviseQuotationAction : submitQuotationAction}
+            noValidate
+          >
+            {hidden(open ? 'revisions' : 'submit', open?.currentVersion)}
+            <QuotationFields
+              t={q}
+              locale={locale}
+              terms={terms}
+              current={current}
+              errors={errors}
+              zone={context.pickupWindow.timeZone}
+              deadline={context.quotationDeadline.local}
+              window={context.pickupWindow}
+            />
+            <button
+              className="button button-primary"
+              type="submit"
+              id={open ? 'revise-quotation' : 'submit-quotation'}
+            >
+              {open ? q.revise : q.submit}
+            </button>
+          </form>
+          <DraftKeeper
+            key={`${open?.currentVersion ?? 0}-${Boolean(confirmation)}`}
+            formId={open ? 'revise-form' : 'quotation-form'}
+            scope={`q${open?.currentVersion ?? 0}`}
+            overwrite
+            clear={Boolean(confirmation)}
+          />
+        </>
+      )}
+    </section>
   );
 }

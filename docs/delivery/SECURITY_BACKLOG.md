@@ -63,3 +63,7 @@ That outcome is an accident, not a rule. Writing the audit entry makes each requ
 | Real evidence requirements, document storage and document checking | Do not exist; verification is demonstration only and never allows production publication or discovery |
 | Retention of the carrier access log (`carrier_access_log`) | **Unresolved production requirement.** The log is append-only and staff-only; how long entries are kept, and how they are removed after that, is not decided. Nothing removes them now |
 | Discovery page size, read limit and cursor lifetime | Development defaults (20, 120 per minute, 2 hours); need production review with the other settings |
+| Quotation limits | Development defaults only (minimum validity 15 minutes, 100 open quotations per carrier, 5 versions per quotation); production review with the other settings |
+| Currency and inclusion registers | Empty after migrations; only the test currency XTS and fictional inclusions exist in development. Real currencies per country and the real inclusions register are release decisions |
+| Fee, tax and inclusion rules for quotations | Not decided; no fee field or tax treatment exists. Explicit Release 1 decisions (RELEASE_1_READINESS.md) |
+| Retention of the quotation read log (`quotation_read_log`) | **Unresolved production requirement**, as for the carrier access log |

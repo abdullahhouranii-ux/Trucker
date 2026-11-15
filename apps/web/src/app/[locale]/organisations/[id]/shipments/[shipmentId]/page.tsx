@@ -287,6 +287,13 @@ export default async function ShipmentPage({ params, searchParams }: Props) {
         ) : null}
         {live ? <p className="form-note">{m.pub.noCarrierYet}</p> : null}
       </div>
+      {shipment.publication.publishedVersion !== null || state === 'draft' ? (
+        <p>
+          <a className="button" id="open-quotations" href={`${here}/quotations`}>
+            {m.quo.quotationsLink}
+          </a>
+        </p>
+      ) : null}
       {shipment.publication.publishedVersion !== null ? (
         <PublicationFacts
           locale={locale}

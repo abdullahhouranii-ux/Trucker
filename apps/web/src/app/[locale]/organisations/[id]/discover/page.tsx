@@ -53,7 +53,8 @@ export default async function DiscoverPage({ params, searchParams }: Props) {
   const here = `/${locale}/organisations/${id}/discover`;
 
   const person = await requirePerson(locale);
-  if (person.state !== 'signed-in') redirect(`/${locale}/sign-in?error=session_ended`);
+  // An unconfirmed session (the API gave no answer) is not an ended one: the requests below
+  // either fail as unavailable, shown as such, or are refused with 401 and end it.
   const [reply, countries, catalogues] = await Promise.all([
     api<DiscoveryPage>('GET', `/organisations/${id}/discovery/shipments?${query({ cursor })}`, {
       token: person.token,
@@ -88,6 +89,15 @@ export default async function DiscoverPage({ params, searchParams }: Props) {
       </p>
       <p className="notice" role="note" id="no-quotations">
         {t.noQuotations}
+      </p>
+      <p>
+        <a
+          className="button"
+          id="open-my-quotations"
+          href={`/${locale}/organisations/${id}/quotations`}
+        >
+          {m.quo.myLink}
+        </a>
       </p>
     </>
   );

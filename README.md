@@ -80,8 +80,19 @@ An organisation applies for the carrier capability through verification, declari
 and equipment types it serves; a verified carrier lists and opens the published shipments that
 match, seeing only the carrier projection (docs/delivery/CARRIER_DISCOVERY_SLICE_11.md). The
 declared service is matching criteria only: not verified vehicles, availability or permission to
-accept work. Shipper and carrier capabilities are decided and withdrawn independently. No
-quotation exists yet.
+accept work. Shipper and carrier capabilities are decided and withdrawn independently.
+
+## Quotations
+
+A carrier that can discover a shipment sends a quotation: an exact amount in the one currency the
+shipper chose, an answer for every inclusion, a validity and the earliest pick-up it can meet
+(docs/delivery/QUOTATION_SLICE_12.md). The carrier can revise, reconfirm or withdraw it; the
+shipper compares quotations and may reject one. Quotations expire at their validity or the
+shipment's deadline, and suspension does not pause that. Nothing is accepted, booked or paid, and
+no fee or tax treatment exists. Only a test currency and fictional inclusions exist.
+
+Release 1 is planned as an invitation-only shipment-and-quotation pilot; its readiness checklist
+is docs/delivery/RELEASE_1_READINESS.md. No launch country or lane is chosen.
 
 ## Product reference
 

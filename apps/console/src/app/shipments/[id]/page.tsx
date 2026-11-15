@@ -37,6 +37,24 @@ interface AccessEntry {
   requestId: string | null;
 }
 
+/** The quotations on the shipment, read-only. */
+interface StaffQuotations {
+  terms: { currency: string; inclusions: { code: string }[]; locked: boolean } | null;
+  quotations: {
+    id: string;
+    status: string;
+    standing: string;
+    currentVersion: number;
+    carrier: { id: string; legalName: string };
+    versions: {
+      amount: string;
+      currency: string;
+      inclusions: Record<string, boolean>;
+      validUntil: { at: string };
+    }[];
+  }[];
+}
+
 interface Detail {
   shipment: Record<string, unknown> & { id: string; state: string };
   organisation: { id: string; legalName: string; status: string; countryCode: string };
@@ -66,11 +84,12 @@ export default async function ShipmentPage({ params }: Props) {
       </>
     );
   }
-  const [one, access] = await Promise.all([
+  const [one, access, quotes] = await Promise.all([
     api<Detail>('GET', `/staff/shipments/${id}`, { token: found.token }),
     api<{ entries: AccessEntry[] }>('GET', `/staff/shipments/${id}/carrier-access`, {
       token: found.token,
     }),
+    api<StaffQuotations>('GET', `/staff/shipments/${id}/quotations`, { token: found.token }),
   ]);
   if (!one.ok && one.status === 401) redirect('/sign-in?error=session_ended');
   if (!one.ok && one.status === 404) notFound();
@@ -151,6 +170,47 @@ export default async function ShipmentPage({ params }: Props) {
             <pre className="card code-block" id="carrier-view">
               {JSON.stringify(carrierView, null, 2)}
             </pre>
+          </section>
+          <section className="section" aria-labelledby="quotations-title">
+            <h2 id="quotations-title">Quotations</h2>
+            <p>
+              Read-only. Nothing is accepted or booked in this version. Inclusions are fictional
+              test items.
+            </p>
+            {quotes.ok ? (
+              <>
+                <p id="quotation-terms">
+                  {quotes.data.terms
+                    ? `Currency ${quotes.data.terms.currency}; ${quotes.data.terms.inclusions.length} inclusions answered by every quotation${quotes.data.terms.locked ? '; fixed' : ''}.`
+                    : 'No currency or inclusions chosen yet.'}
+                </p>
+                {quotes.data.quotations.length === 0 ? (
+                  <p id="no-quotations">No quotation.</p>
+                ) : (
+                  <ul className="evidence" id="staff-quotations">
+                    {quotes.data.quotations.map((quotation) => {
+                      const current = quotation.versions[0]!;
+                      return (
+                        <li key={quotation.id} data-standing={quotation.standing}>
+                          {quotation.carrier.legalName}: {current.amount} {current.currency},
+                          version {quotation.currentVersion},{' '}
+                          {quotation.standing.replace(/_/g, ' ')}, valid until{' '}
+                          {utc(current.validUntil.at)}; included:{' '}
+                          {Object.entries(current.inclusions)
+                            .filter(([, included]) => included)
+                            .map(([code]) => code)
+                            .join(', ') || 'none'}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </>
+            ) : (
+              <p className="notice notice-error" role="alert" id="quotations-unavailable">
+                The quotations could not be read. Reload the page.
+              </p>
+            )}
           </section>
           <section className="section" aria-labelledby="access-title">
             <h2 id="access-title">Carrier access</h2>

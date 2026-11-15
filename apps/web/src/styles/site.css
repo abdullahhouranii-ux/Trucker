@@ -759,6 +759,15 @@ textarea {
   padding-inline: var(--s-2);
   font-size: var(--t-lg);
   font-weight: 700;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+/* A fieldset inside another, such as one inclusion of a quotation, keeps the narrow screen. */
+.fieldset .fieldset {
+  padding-inline: var(--s-2);
+}
+.fieldset .fieldset legend {
+  font-size: var(--t-md);
 }
 .window-end {
   display: flex;

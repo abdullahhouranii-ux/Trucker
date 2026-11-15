@@ -199,6 +199,22 @@ export class ReviewService {
     );
   }
 
+  /** The quotations on a published shipment, read-only. Each look is recorded. */
+  async shipmentQuotations(
+    caller: StaffCaller,
+    shipmentId: string,
+  ): Promise<Record<string, unknown>> {
+    const result = await this.pool.query<{ status: string; detail: Record<string, unknown> }>(
+      'SELECT status, detail FROM trucker.staff_shipment_quotations($1, $2, $3)',
+      [caller.tokenHash, shipmentId, caller.requestId ?? null],
+    );
+    const row = result.rows[0]!;
+    if (row.status === 'forbidden') throw forbidden();
+    if (row.status === 'not_found') throw notFound();
+    if (row.status !== 'ok') throw unauthorized();
+    return row.detail;
+  }
+
   /** Who read a shipment's carrier projection: the access log, for staff only. */
   async carrierAccess(caller: StaffCaller, shipmentId: string): Promise<Record<string, unknown>> {
     const result = await this.pool.query<{ status: string; detail: Record<string, unknown> }>(
