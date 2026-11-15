@@ -48,7 +48,7 @@ Status values: **Open** (nothing done), **Partial** (some of it is built or chec
 | R1-L5 | Data protection: lawful basis, data residency, cross-border transfer, retention periods | Open | Question for advisers; feeds R1-S7 |
 | R1-L6 | Agent model wording: what Trucker is and is not responsible for in a quotation (D-001c) | Open | Lawyer review |
 | R1-C1 | Trucker's fee during the pilot: none, or how it is set and who pays (D-001a, D-001b) | Open | Decision. No fee field exists; a pilot without a fee still needs the statement recorded |
-| R1-C2 | Tax treatment of quoted amounts: stated with or without tax, and what the screen says | Open | Accountant review. Screens say only "as quoted by the carrier" |
+| R1-C2 | Tax treatment of quoted amounts: stated with or without tax, and what the screen says | Open | Accountant review. The quotation form says only that Trucker does not determine how tax applies |
 | R1-C3 | Real inclusions register for quotations (QB-4 production) | Open | Decision. Fictional items only in development; register empty in production |
 | R1-C4 | Production limits: minimum validity, open quotations per carrier, versions per quotation, discovery page size and read limit, cursor lifetime, session limits | Open | All are development defaults; review as one settings decision |
 | R1-C5 | Pilot agreement with participants (free pilot, no service level, feedback consent) | Open | Decision and lawyer review |
