@@ -47,11 +47,11 @@ The following are not in this slice:
 | Topic | Proposal |
 |---|---|
 | Who manages the fleet | Administrators of an organisation with an effective `carry_as_company` capability. Every check is repeated in the database function, after its locks |
-| Vehicle record | Kind (truck or trailer); equipment type from the slice 10 catalogue; registration country and number, unique per country among active claims; vehicle category for licence matching (FB-3); documents |
+| Vehicle record | Kind (truck or trailer); equipment type from the slice 10 catalogue; registration country and number, one active record per carrier and one verified claim per registration (FC-3); vehicle category for licence matching (FB-3); documents |
 | Driver record | A link to an existing person, with affiliation states `invited` → `active` → `ended`; documents; licence classes as stated on the verified licence |
 | Documents | Type from a register per country and subject kind (fictional in development, FB-1). States: number, issuing country, issue and expiry dates, `submitted` → `accepted` / `rejected`. A new version replaces an old one only when accepted |
 | Staff decisions | The reviewer privilege, with the no-conflict declaration and audit of slice 9. A decision records its reason code |
-| Eligibility | One function, `resource_eligible(resource, from, until)`, returns `eligible` or the first failing reason code. It reads under share locks and uses the database clock |
+| Eligibility | As built: `vehicle_eligibility` and `driver_eligibility` answer for a window with `eligible` or the first failing reason code, using the database clock. They take no locks; the caller that decides holds its own |
 | Withdrawal | The carrier ends an affiliation or authorisation, or retires a vehicle. Staff can suspend a resource with a reason. Each takes effect at the next eligibility check |
 | Privacy | Driver documents are visible to the driver, the affiliated carrier's administrators and staff. A shipper sees nothing in this slice; slice 15 decides the assignment view (DB-6) |
 | History | One audit entry per transition, each exactly once. Retries are handled as in earlier slices |

@@ -1,6 +1,6 @@
 # Trucker: Release 1 decision record and remaining choices
 
-Version 0.1, 15 November 2026. Owner and decision maker: Abdullah. This records the instructions of 15 November 2026 (11:13) against the decisions DB-1 to DB-18 of RELEASE_1_GAP_TO_LAUNCH.md, defines the reservation model that DB-6 needs before it is built, and batches the four commercial choices still open.
+Version 0.1, 15 November 2026. Owner and decision maker: Abdullah. This records the instructions of 15 November 2026 (11:13) against the decisions DB-1 to DB-18 of RELEASE_1_GAP_TO_LAUNCH.md, defines the reservation model that DB-6 needs before it is built, and batches the four groups of commercial choices still open: the fee, the payment due period, the assignment deadline and buffers, and the launch country and lanes.
 
 No legal or tax rule is stated here. Every value that is not approved is a protected setting with a development default: it can be changed without code, and production refuses to start until the settings are reviewed (the existing production gate). Unapproved values therefore stop no decision-independent work and cannot reach real users.
 
@@ -15,7 +15,7 @@ No legal or tax rule is stated here. Every value that is not approved is a prote
 | DB-8 | Cancellation | **Proposed implementation structure.** No automatic fee; wording still needs the lawyer |
 | DB-9 | Dispatch authority | **Proposed implementation structure** |
 | DB-10 | Milestones only; no live GPS | **Approved for Release 1.** Live GPS is deferred |
-| DB-11 | Phone web for drivers | **Approved for Release 1.** Native apps and the full offline queue are deferred. A report entered on someone else's behalf is clearly identified as such (E-3 below) |
+| DB-11 | Phone web for drivers | **Approved for Release 1.** Native apps and the full offline queue are deferred. A report entered on someone else's behalf is clearly identified as such (E-4 below) |
 | DB-12 | POD review | **Proposed implementation structure, with exception E-1** |
 | DB-13 | Delivery exceptions | **Proposed implementation structure, with exception E-3** |
 | DB-14 | Disputes and holds | **Proposed implementation structure, with exception E-2** |
