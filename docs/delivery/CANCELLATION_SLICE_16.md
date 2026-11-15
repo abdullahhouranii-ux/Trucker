@@ -41,3 +41,27 @@ The second acceptance in the publication-cycle test initially exposed the old sh
 The local dependency install used separate packages because this environment refused workspace symlink creation. Manifests and the committed lockfile are unchanged; a clean locked workspace install and GitHub CI remain required before merge. Docker was not run. No physical-phone, screen-reader or native-reader review was performed. Arabic/Urdu wording and cosmetic corrections are deferred in the final-audit backlog.
 
 Production gates and real commercial/legal settings remain unchanged. No live cancellation policy is inferred from development reason codes or `none_recorded`. Next functional work is dispatch and trip execution, including the shared cancellation/dispatch boundary, driver acknowledgement, rechecked eligibility and occupancy lifecycle. No production use is authorised by these local results.
+
+## Review before the pull request (Claude, 15 November 2026)
+
+The work above was done by another assistant on Abdullah's computer and was uncommitted. It was copied unchanged into a checkout of `feat/assignment` at `d49e120`, installed from the lockfile with `npm ci`, and checked in full. The first commit of this branch is that work as found, apart from two encoding repairs; the second holds the corrections below.
+
+| Finding | Effect | Correction |
+|---|---|---|
+| The full API suite had not been run (the record lists four API test files). One slice 7 guard test failed: it forbids the word "booking" in the shipment module, which now names the state `booking_cancelled` | `npm run verify` failed | The guard allows that one state name and still refuses any booking route or field. The route list it checks is unchanged |
+| The shipments list offers a "booking cancelled" filter, but the database list function (migration 0008) refuses that status | Choosing the filter made the API fail with a server error | Migration 0017 also replaces `list_shipment_drafts`, accepting `booking_cancelled`; nothing else in it changes. A test lists the cancelled shipment through the filter |
+| Republishing recorded the earlier state as `expired` in the history even when it was `booking_cancelled` | Wrong history entry | Republish records the state it actually left. A test checks the entry after a cancellation |
+| Three characters were stored with a broken encoding (the inclusion marks ✓ and ✗, the dash between planned times, and the arrow in substitution differences) | Garbled symbols on the booking pages | Repaired on import |
+| `offset_choices` is restated in 0017 identically to 0008 | None | Left as found |
+
+Evidence after the corrections, on Linux with PostgreSQL 16.15:
+
+| Check | Result |
+|---|---|
+| `npm ci` from the committed lockfile | Passed |
+| `npm run verify` | Passed: API 323 pass, 0 fail, 0 todo; web 24; console 9 |
+| The two new assertions | Fail against 0017 as found, pass with the correction |
+| Web browser checks | All passed, including 5 cancellation checks and 11 assignment checks |
+| Console browser checks | All passed (243) |
+
+Not reviewed here: Windows-specific behaviour, Docker, physical phones, screen readers, and native Arabic and Urdu reading.

@@ -53,7 +53,7 @@ No legal or tax rule is stated here. Every value that is not approved is a prote
 | Acknowledgement | Required before dispatch |
 | Before merging PR #20 | An immutable, versioned, demonstration-only terms reference on the booking, and refusals recorded without leaking another organisation's data. Both added to PR #20 |
 | Missed assignment deadline | The shipper's explicit decision to wait is recorded. Cancellation without charge is slice 16. Nothing automatic |
-| Choices made inside this scope | N-1 to N-6 in ASSIGNMENT_SLICE_15.md, for confirmation |
+| Choices made inside this scope | N-1 to N-6 in ASSIGNMENT_SLICE_15.md, for confirmation. **N-4 is changed by migration 0016** (slice 16 branch): after the assignment deadline the carrier cannot make the initial assignment until the shipper records a decision to wait. Which reading is intended is for Abdullah to confirm |
 
 ## 2. Exceptions to the proposed structures
 

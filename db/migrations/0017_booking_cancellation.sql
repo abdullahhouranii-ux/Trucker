@@ -854,6 +854,7 @@ DECLARE
   r record;
   problems jsonb;
   before_cycle uuid;
+  before_status text;
   hash text := trucker.content_hash(coalesce(p_deadline, 'null'::jsonb) || jsonb_build_object('_v', p_expected_version));
 BEGIN
   IF p_shipment IS NULL OR p_deadline IS NULL OR jsonb_typeof(p_deadline) <> 'object' THEN
@@ -908,6 +909,7 @@ BEGIN
     RETURN;
   END IF;
   before_cycle := d.publication_cycle;
+  before_status := d.status;
   UPDATE trucker.shipment_draft x SET
     deadline_local = d.deadline_local, deadline_offset_minutes = d.deadline_offset_minutes,
     deadline_at = d.deadline_at, status = 'published', expired_at = NULL,
@@ -927,7 +929,7 @@ BEGIN
      publication_cycle, before_values, after_values)
   VALUES (entered.at, entered.actor, entered.org, 'shipment.republished', 'shipment_draft', d.id,
           nullif(current_setting('trucker.request_id', true), ''), d.publication_cycle,
-          jsonb_build_object('status', 'expired', 'previousCycle', before_cycle),
+          jsonb_build_object('status', before_status, 'previousCycle', before_cycle),
           jsonb_build_object('status', 'published', 'publishedVersion', d.published_version,
                              'carrierValues', trucker.shipment_material_values(d)));
   status := 'republished';
@@ -1108,6 +1110,55 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, trucker, pg_t
   WHERE d.id = p_draft
     AND d.organisation_id = trucker.request_organisation()
     AND e.found > 1
+$$;
+
+-- The shipment list offers "booking cancelled" as a filter. The list function is the one of
+-- 0008 with that one state added to the values it accepts; anything else is unchanged.
+CREATE OR REPLACE FUNCTION trucker.list_shipment_drafts(p_status text, p_after uuid)
+RETURNS TABLE (
+  id uuid, status text, version integer, shipper_reference text, cargo_description text,
+  pickup_country text, delivery_country text, created_at timestamptz, updated_at timestamptz,
+  more boolean, published_version integer, deadline_at timestamptz)
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, trucker, pg_temp AS $$
+#variable_conflict use_column
+DECLARE
+  org uuid := trucker.request_organisation();
+  page integer;
+  start_before bigint;
+  t timestamptz := trucker.clock_now();
+BEGIN
+  IF p_status IS NULL OR p_status NOT IN ('draft', 'discarded', 'published', 'withdrawn', 'expired', 'booking_cancelled', 'all') THEN
+    RAISE EXCEPTION 'invalid argument' USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+  IF org IS NULL THEN
+    RETURN;
+  END IF;
+  SELECT g.shipment_page_size INTO page FROM trucker.security_setting g;
+  IF p_after IS NOT NULL THEN
+    SELECT d.list_position INTO start_before FROM trucker.shipment_draft d
+    WHERE d.id = p_after AND d.organisation_id = org;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'unknown cursor' USING ERRCODE = 'TR010';
+    END IF;
+  END IF;
+  RETURN QUERY
+    SELECT q.id, q.state, q.version, q.shipper_reference, q.cargo_description,
+           q.pickup_country, q.delivery_country, q.created_at, q.updated_at,
+           count(*) OVER () > page, q.published_version, q.deadline_at
+    FROM (
+      SELECT d.*, trucker.shipment_state(d, t) AS state FROM trucker.shipment_draft d
+      WHERE d.organisation_id = org
+        -- Judged by state at this moment: a shipment past its deadline lists as expired, and a
+        -- suspended one is published.
+        AND (p_status = 'all'
+             OR (CASE trucker.shipment_state(d, t) WHEN 'suspended' THEN 'published'
+                 ELSE trucker.shipment_state(d, t) END) = p_status)
+        AND (start_before IS NULL OR d.list_position < start_before)
+      ORDER BY d.list_position DESC
+      LIMIT page + 1) q
+    ORDER BY q.list_position DESC
+    LIMIT page;
+END
 $$;
 
 -- Historical bookings remain readable to authorized staff by booking id, even after a

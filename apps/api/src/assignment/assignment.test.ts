@@ -2543,6 +2543,15 @@ test('CAN-8: accept, cancel, republish and accept creates a new booking per cycl
   assert.equal(current.status, 200, current.text);
   const cancelledShipment = current.body.shipment as Shipment;
   assert.equal(cancelledShipment.status, 'booking_cancelled');
+  // The shipments list offers the state as a filter, and it lists this shipment.
+  const listed = await call('GET', shipments(made.shipper.org, '?status=booking_cancelled'), {
+    token: made.shipper.person.token,
+  });
+  assert.equal(listed.status, 200, listed.text);
+  assert.deepEqual(
+    (listed.body.shipments as { id: string }[]).map((item) => item.id),
+    [made.shipment.id],
+  );
   const republished = await act(
     made.shipper.person,
     made.shipper.org,
@@ -2556,6 +2565,13 @@ test('CAN-8: accept, cancel, republish and accept creates a new booking per cycl
   assert.equal(republished.status, 200, republished.text);
   const newCycle = (republished.body.shipment as Shipment).publication.publicationCycle;
   assert.notEqual(newCycle, made.shipment.publication.publicationCycle);
+  // The history says which state the shipment was republished from.
+  const republishedFrom = await owner.query<{ status: string }>(
+    `SELECT before_values ->> 'status' AS status FROM trucker.audit_entry
+     WHERE record_id = $1 AND action = 'shipment.republished'`,
+    [made.shipment.id],
+  );
+  assert.deepEqual(republishedFrom.rows, [{ status: 'booking_cancelled' }]);
   const quotation = await quoted(carrier.person, carrier.org, made.shipment.id);
   const accepted = await accept(made.shipper.person, made.shipper.org, quotation.id, 1);
   assert.equal(accepted.status, 200, accepted.text);
