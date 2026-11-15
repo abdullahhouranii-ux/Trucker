@@ -37,11 +37,24 @@ Nothing is dispatched, occupied, released, cancelled, invoiced or paid. Every re
 | N-5 | The driver sees areas, windows, cargo and vehicles before dispatch: no address and no price | Addresses for the driver belong to dispatch |
 | N-6 | An overrun and an at-risk flag are recorded on their own rows, not in the participant history | The history requires a person as actor; the clock is not one |
 
+## A defect found in earlier work, and fixed (migration 0015)
+
+The first CI run of this branch failed one staff-identity test in all three jobs, and the failure then reproduced locally. It was investigated, not retried.
+
+| Item | Finding |
+|---|---|
+| Symptom | Completing a staff enrolment with a value that is not an authenticator code returned an unexpected error (500) instead of "wrong code" |
+| Cause (verified) | `staff_enrol_complete` in migration 0006 (slice 8, merged) tests a field of an untyped record that it leaves unassigned for a malformed value. PostgreSQL cannot plan that test while the record is unassigned. It fails on the first call of a database session and after the session's cached plans are reset. Reproduced in an empty database with four lines of PL/pgSQL, with no Trucker code involved |
+| Effect | An unexpected error to the caller, and the failed attempt was not counted towards the limit that ends an enrolment link. No credential was accepted or exposed |
+| Why it appeared now (**inferred, not verified**) | A session that had already checked a well-shaped code kept a working plan, which hid it. With migration 0014 in place that plan was no longer there at the moment of the test: the failure is reproducible with 0014 and absent without it. The likeliest mechanism is that the larger migration set, run for a scratch database in the same test file, overflows PostgreSQL's invalidation queue and resets idle sessions' plans. That mechanism was not measured |
+| Fix | Migration `0015_staff_enrol_complete_malformed_code.sql` replaces the function with the same logic, keeping the outcome of the check in two typed variables. Nothing else about enrolment changes |
+| Test | A new staff test calls the function with malformed values as the first statement of a new session and again after `DISCARD PLANS`, checks that each is refused and counted, and that the right code still completes the enrolment. Without 0015 that test and the original one fail; with it both pass |
+
 ## Evidence
 
 | Check | Result |
 |---|---|
-| `npm run verify` | Passed: API 312 pass, 0 fail, 0 todo; web 24; console 9 |
+| `npm run verify` | Passed: API 313 pass, 0 fail, 0 todo; web 24; console 9 (with migration 0015) |
 | Assignment API tests | 9 tests, all pass: confirmation and staged release; every hard requirement; two races and touching intervals; substitution rules including a race between acceptance and withdrawal; lost eligibility; the driver; the missed deadline; occupancy and overrun; the consistency check and the API role |
 | Deliberate defects in 0014, each caught | 18 of 18: the exclusion constraint removed; the availability pre-check removed (the constraint still refuses); confirmed without the trailer; a hard requirement waived; no shipper consent for a different set; acceptance without the re-check; an acknowledgement surviving a change; lost eligibility unconfirming; overrun ignored; two open episodes allowed; the shipper told why; resources shown to the shipper early; addresses shown to the carrier early; a wait before the deadline; any carrier assigning; removal after confirmation; a driver seeing other assignments; the confirmation editable. Migration restored, byte-identical |
 | Web browser checks | All passed, including 11 assignment checks and a lost assignment answer leaving one confirmation and two reservations; three languages with text doubled |
