@@ -52,4 +52,5 @@ A defect in slice 21: two simultaneous attempts to become one's own driver and t
 
 - Commission (slice 23), pricing, payments: not in this slice. The fee payer recorded here is not yet what the booking's fee line uses; that is phase three.
 - Messages for the new publication refusals fall back to the general "check the details" text on the publication form; specific wording is in the final-audit backlog.
+- The first-time broker application is tested through the API. Its form on the verification page is covered by the build and the type check only, not by a browser journey.
 - No physical-phone, screen-reader or native Arabic and Urdu review.
