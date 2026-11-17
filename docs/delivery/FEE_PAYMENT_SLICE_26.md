@@ -30,10 +30,10 @@ Date: 17 November 2026. Branch `feat/fee-payment`, stacked on PR #29. First slic
 | D-6 | 12 hours after acceptance, never after the assignment deadline. In this environment the assignment deadline is also 12 hours after acceptance, so the two fall together |
 | D-7 | As above |
 | D-8 | Every refund case is recorded as a full refund. Second-administrator approval and the five-business-day limit come with processing in slice 28 |
-| FP-1 | A transfer recorded by the deadline holds the booking until the second administrator decides |
-| FP-2 | Only an exact match is recorded against a fee that is due. A short or over-payment is not recorded here; it waits for reconciliation (slice 28) |
-| FP-3 | Recording and approving are done by staff administrators, as for the financial settings (F-1 still open) |
-| FP-4 | No bank account details are shown: none were given. The payer is told they are not set up in this environment yet |
+| FD-1 | A transfer recorded by the deadline holds the booking until the second administrator decides |
+| FD-2 | Only an exact match is recorded against a fee that is due. A short or over-payment is not recorded here; it waits for reconciliation (slice 28) |
+| FD-3 | Recording and approving are done by staff administrators, as for the financial settings (F-1 still open) |
+| FD-4 | No bank account details are shown: none were given. The payer is told they are not set up in this environment yet |
 
 ## How it is built
 
@@ -54,7 +54,7 @@ Found while testing and fixed in this slice: a confirmation by fee verification 
 
 ## Not done, and limits
 
-- The console's approve and reject buttons were not exercised in a browser: the console's test database has no booking. The two-person flow is exercised through the API (FP-2 to FP-7) and, for the web, through the staff routes.
+- The console's approve and reject buttons were not exercised in a browser: the console's test database has no booking. The two-person flow is exercised through the API tests FP-2 to FP-7 and, for the web, through the staff routes.
 - Online payment (G-10) is slice 27; refund approval and payment (D-8) and reconciliation, including unmatched money, are slice 28.
 - Trucker's bank account details are not configured anywhere.
 - A lapse is recorded within a minute of the deadline by the job, or at once by any command on that booking; until then the booking shows the fee as not paid by the deadline.
@@ -63,8 +63,8 @@ Found while testing and fixed in this slice: a confirmation by fee verification 
 
 ## Decisions needed (none blocks the next slice)
 
-- **FP-1.** What counts as paid in time for a transfer: recorded by staff by the deadline (built), or the bank's value date? I recommend keeping the recording time: the value date has no time of day and staff can only act on what the statement shows.
-- **FP-2.** A transfer that does not match the fee exactly: refuse it here and return it through reconciliation (built), or accept it with the difference returned? I recommend refusing until reconciliation exists.
-- **FP-4.** Trucker's bank account details: what they are, and that a change to them is approved by a second administrator like the financial settings. Needed before any real payer can pay.
+- **FD-1.** What counts as paid in time for a transfer: recorded by staff by the deadline (built), or the bank's value date? I recommend keeping the recording time: the value date has no time of day and staff can only act on what the statement shows.
+- **FD-2.** A transfer that does not match the fee exactly: refuse it here and return it through reconciliation (built), or accept it with the difference returned? I recommend refusing until reconciliation exists.
+- **FD-4.** Trucker's bank account details: what they are, and that a change to them is approved by a second administrator like the financial settings. Needed before any real payer can pay.
 - F-1 (a separate finance privilege) now also covers who records and approves transfers.
 - The production values of D-6 to D-8 remain yours to approve.

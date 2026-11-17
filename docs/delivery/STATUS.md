@@ -28,9 +28,9 @@ Each slice has a scope and a record with its evidence in this folder.
 | 23b | Commission contracts accepted in advance | PR #27 |
 | 24 | Financial settings: versions, second-administrator approval, effective time | PR #28 |
 | 25 | Price breakdown, views by role, fee payer from roles, freight terms on each booking | PR #29 |
-| 26 | Trucker's fee before confirmation: bank transfer verified by two administrators, lapse at the deadline, refund records | `feat/fee-payment` |
+| 26 | Trucker's fee before confirmation: bank transfer verified by two administrators, lapse at the deadline, refund records | PR #30 |
 
-Pull requests #15 to #29 are stacked, open and green in CI; slice 26 follows as its own pull request. None is merged; each needs a dependency review and Abdullah's explicit authorisation.
+Pull requests #15 to #30 are stacked and open; #15 to #29 are green in CI. None is merged; each needs a dependency review and Abdullah's explicit authorisation.
 
 ## Next
 
