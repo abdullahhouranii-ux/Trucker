@@ -29,7 +29,7 @@ Each slice has a scope and a record with its evidence in this folder.
 | 24 | Financial settings: versions, second-administrator approval, effective time | PR #28 |
 | 25 | Price breakdown, views by role, fee payer from roles, freight terms on each booking | PR #29 |
 | 26 | Trucker's fee before confirmation: bank transfer verified by two administrators, lapse at the deadline, refund records | PR #30 |
-| 27 | Online payment of the fee through a provider-neutral interface (development stand-in only), receipts | `feat/online-payment` |
+| 27 | Online payment of the fee through a provider-neutral interface (development stand-in only), receipts | PR #31 |
 
 Pull requests #15 to #30 are stacked, open and green in CI; slice 27 follows as its own pull request. None is merged; each needs a dependency review and Abdullah's explicit authorisation.
 
