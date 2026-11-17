@@ -86,7 +86,7 @@ Behaviour changed on purpose: with the provider unreachable, a booking whose pay
 ## Not done, and limits
 
 - No real payment provider: choosing one is a paid supplier that depends on the launch country (O-5). Its notification route, signature scheme and status check become a new implementation of the interface.
-- The stand-in keeps its checkouts in the API's memory: a restart forgets them, and a status check then answers "unknown"; the booking then waits for its deadline.
+- The stand-in keeps its checkouts in the API's memory: a restart forgets them, and a status check then answers "unknown"; the booking then waits for the end of the longest wait (OP-7) before it can lapse.
 - Card gateway payment of freight (P-2) is not this; this is Trucker's fee only.
 - A cancellation does not close a checkout in progress at the provider; money taken on it afterwards is recorded for return.
 - Refund approval and payment, and reconciliation of mismatched or unknown notifications, are slice 28.
@@ -95,7 +95,7 @@ Behaviour changed on purpose: with the provider unreachable, a booking whose pay
 
 ## Decisions needed (none blocks the next slice)
 
-- **OP-3 (proposed, not decided).** What makes an online payment in time: the provider's payment time by the deadline (built), or Trucker receiving the word by the deadline? I recommend the provider's time, with the 15-minute wait. It protects a payer whose notification is late only while the provider answers within the wait; beyond it the booking lapses and the payment is returned (PAY-9).
+- **OP-3 (proposed, not decided).** What makes an online payment in time: the provider's payment time by the deadline (built), or Trucker receiving the word by the deadline? I recommend the provider's time, with the 15-minute wait. It protects a payer whose notification is late only while the provider answers before the longest wait (OP-7) ends; after that the booking lapses and the payment is returned (PAY-9).
 - **OP-7 (development default 60 minutes).** How long a booking waits for the provider's answer on a payment it has not answered for, after the usual wait, before it can lapse. Longer protects a payer whose payment went through; shorter frees the carrier's resources sooner.
 - **OP-5.** Whether receipts must follow a legal numbering or format in the launch country (for example as tax documents). Built as acknowledgements only; a tax adviser should answer.
 - O-5: the payment provider itself, and the production values of OP-1, OP-2 and OP-6.
