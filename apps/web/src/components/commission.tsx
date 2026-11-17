@@ -66,7 +66,14 @@ export async function CommissionSection({
     { token },
   );
   if (!reply.ok || !reply.data.arranged) return null;
-  const { commission, editable } = reply.data;
+  const { commission, editable, limits } = reply.data;
+  // Options the settings in force offer, and the one already chosen, if any.
+  const offered = (['none', 'percentage', 'fixed', 'contract'] as const).filter(
+    (option) =>
+      option === 'none' ||
+      option === commission?.option ||
+      (limits?.options ?? []).includes(option),
+  );
   const errors = (error ?? '')
     .split(',')
     .filter((code) => code !== '')
@@ -102,7 +109,7 @@ export async function CommissionSection({
               name="commissionOption"
               defaultValue={commission?.option ?? 'none'}
             >
-              {(['none', 'percentage', 'fixed', 'contract'] as const).map((option) => (
+              {offered.map((option) => (
                 <option value={option} key={option}>
                   {t.options[option]}
                 </option>
@@ -112,7 +119,7 @@ export async function CommissionSection({
           <div className="field">
             <label htmlFor="commissionPercent">{t.percent}</label>
             <p className="field-hint" id="commissionPercent-hint">
-              {t.percentHint}
+              {fill(t.percentHint, { max: percentText(limits?.maxBasisPoints ?? 0) })}
             </p>
             <input
               id="commissionPercent"

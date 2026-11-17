@@ -321,6 +321,7 @@ test('every table has row security: a policy, or no right at all for the API', a
   // barrier. A new table is on neither list, so it must carry row security and a policy, or
   // this test fails.
   const closed = [
+    'financial_setting_version',
     'commission_contract',
     'booking_commission',
     'quotation_commission',
@@ -1567,6 +1568,7 @@ test('the database itself refuses fixture countries unless it is marked for them
         problems: [],
         environment: 'production',
         settingsReviewed: true,
+        financialSettingsApproved: true,
         connectionEncrypted: true,
         parametersKeptOutOfLogs: true,
       }),
@@ -1673,6 +1675,7 @@ test('loading fixtures needs every safeguard at once; production configuration r
       problems: [],
       environment: 'test',
       settingsReviewed: true,
+      financialSettingsApproved: true,
       connectionEncrypted: true,
       parametersKeptOutOfLogs: true,
     }).join(),
@@ -1684,6 +1687,7 @@ test('loading fixtures needs every safeguard at once; production configuration r
       problems: [],
       environment: 'unmarked',
       settingsReviewed: true,
+      financialSettingsApproved: true,
       connectionEncrypted: true,
       parametersKeptOutOfLogs: true,
     }).join(),
@@ -1695,6 +1699,7 @@ test('loading fixtures needs every safeguard at once; production configuration r
       problems: ['the database role is a superuser'],
       environment: 'production',
       settingsReviewed: true,
+      financialSettingsApproved: true,
       connectionEncrypted: true,
       parametersKeptOutOfLogs: true,
     }).length,
@@ -1707,10 +1712,24 @@ test('loading fixtures needs every safeguard at once; production configuration r
       problems: [],
       environment: 'production',
       settingsReviewed: false,
+      financialSettingsApproved: true,
       connectionEncrypted: true,
       parametersKeptOutOfLogs: true,
     }).join(),
     /have not been recorded as reviewed for production/,
+  );
+  // Nor while only the development default of the financial settings is in force.
+  assert.match(
+    productionStartProblems({
+      rowSecurityBinds: true,
+      problems: [],
+      environment: 'production',
+      settingsReviewed: true,
+      financialSettingsApproved: false,
+      connectionEncrypted: true,
+      parametersKeptOutOfLogs: true,
+    }).join(),
+    /no approved version of the financial settings is in force/,
   );
   // Nor over a connection that is not encrypted, nor with a server that may log parameters.
   const gates = productionStartProblems({
@@ -1718,6 +1737,7 @@ test('loading fixtures needs every safeguard at once; production configuration r
     problems: [],
     environment: 'production',
     settingsReviewed: true,
+    financialSettingsApproved: true,
     connectionEncrypted: false,
     parametersKeptOutOfLogs: false,
   }).join('\n');

@@ -399,3 +399,78 @@ export async function suspendFleetAction(form: FormData): Promise<void> {
   if (reply.status === 401) await sessionEnded();
   redirect(`/fleet?error=${fleetRefusal(reply)}`);
 }
+
+// ---------------------------------------------------------------------------------------------
+// Financial settings: drafted by one administrator, approved by another
+// ---------------------------------------------------------------------------------------------
+const FINANCE_REFUSALS = [
+  'staff_privilege_required',
+  'different_person_required',
+  'effective_time_passed',
+  'version_in_effect',
+  'version_not_open',
+  'record_changed',
+  'retry_key_conflict',
+  'not_found',
+];
+const whole = (form: FormData, name: string): number | null => {
+  const value = text(form, name).trim();
+  return /^-?[0-9]{1,6}$/.test(value) ? Number(value) : null;
+};
+
+/** A new draft. The figures are passed on as typed; the database judges every one. */
+export async function draftFinancialAction(form: FormData): Promise<void> {
+  const token = await signedIn();
+  const key = text(form, 'retryKey');
+  const retryKey = RETRY_KEY.test(key) ? key : randomUUID();
+  const at = text(form, 'effective') === 'scheduled';
+  const date = text(form, 'effectiveDate').trim();
+  const time = text(form, 'effectiveTime').trim();
+  const body = {
+    feeBasisPoints: whole(form, 'feeBasisPoints') ?? -1,
+    commissionOptions: ['percentage', 'fixed', 'contract'].filter(
+      (option) => form.get(`option-${option}`) === 'on',
+    ),
+    commissionMaxBasisPoints: whole(form, 'commissionMaxBasisPoints') ?? -1,
+    commissionSettlementMaxDays: whole(form, 'commissionSettlementMaxDays') ?? -1,
+    freightDueDays: whole(form, 'freightDueDays') ?? -1,
+    note: text(form, 'note'),
+    // A time in UTC, as the form says; anything else is refused by the database.
+    effectiveFrom: at ? `${date}T${time}:00Z` : null,
+  };
+  const reply = await api<{ outcome: string }>('POST', '/staff/financial-settings', {
+    token,
+    retryKey,
+    body,
+  });
+  if (reply.ok) redirect(`/finance?done=${reply.data.outcome}`);
+  if (reply.status === 401) await sessionEnded();
+  if (unknown(reply)) redirect(`/finance?error=unconfirmed&retry=${retryKey}`);
+  if (reply.code === 'validation_failed') {
+    const problems = Array.isArray(reply.details.problems)
+      ? (reply.details.problems as { field: string; code: string }[])
+      : [];
+    const codes = problems
+      .map((problem) => `${problem.field}:${problem.code}`)
+      .filter((code) => /^[A-Za-z]{1,40}:[a-z_]{1,40}$/.test(code));
+    redirect(`/finance?error=validation_failed&fields=${codes.join(',')}&retry=${retryKey}`);
+  }
+  redirect(`/finance?error=${FINANCE_REFUSALS.includes(reply.code) ? reply.code : 'refused'}`);
+}
+
+/** Approve, discard or withdraw one version. */
+export async function moveFinancialAction(form: FormData): Promise<void> {
+  const token = await signedIn();
+  const id = text(form, 'settingId');
+  const move = text(form, 'move');
+  if (!UUID.test(id) || !['approve', 'discard', 'withdraw'].includes(move))
+    redirect('/finance?error=not_found');
+  const reply = await api<{ outcome: string }>('POST', `/staff/financial-settings/${id}/moves`, {
+    token,
+    body: { version: Number(text(form, 'version')), move },
+  });
+  if (reply.ok) redirect(`/finance?done=${reply.data.outcome}`);
+  if (reply.status === 401) await sessionEnded();
+  if (unknown(reply)) redirect('/finance?error=unconfirmed');
+  redirect(`/finance?error=${FINANCE_REFUSALS.includes(reply.code) ? reply.code : 'refused'}`);
+}

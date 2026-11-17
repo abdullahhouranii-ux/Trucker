@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { z } from 'zod';
 import { ApiError } from '../http/api-error.js';
+import { FinanceService } from './finance.service.js';
 import { ReviewService, type QueueEntry } from './review.service.js';
 import {
   StaffService,
@@ -95,6 +96,21 @@ const privilegeBody = z.object({
   granted: z.boolean(),
 });
 
+// A draft of the financial settings. The database judges every value and its limits.
+const financialDraftBody = z.object({
+  feeBasisPoints: z.number().int(),
+  commissionOptions: z.array(z.enum(['percentage', 'fixed', 'contract'])).max(3),
+  commissionMaxBasisPoints: z.number().int(),
+  commissionSettlementMaxDays: z.number().int(),
+  freightDueDays: z.number().int(),
+  note: z.string().max(2000),
+  effectiveFrom: z.union([z.string().max(40), z.null()]),
+});
+const financialMoveBody = z.object({
+  version: z.number().int().min(1),
+  move: z.enum(['approve', 'discard', 'withdraw']),
+});
+
 function parse<T>(schema: z.ZodType<T>, body: unknown): T {
   const result = schema.safeParse(body);
   if (result.success) return result.data;
@@ -126,6 +142,7 @@ export class StaffController {
   constructor(
     @Inject(StaffService) private readonly staff: StaffService,
     @Inject(ReviewService) private readonly review: ReviewService,
+    @Inject(FinanceService) private readonly finance: FinanceService,
   ) {}
 
   private caller(request: IncomingRequest): Promise<StaffCaller> {
@@ -332,6 +349,37 @@ export class StaffController {
   ): Promise<{ outcome: 'decided' | 'already_decided' | 'claim_review' }> {
     const caller = await this.caller(request);
     return this.review.decide(caller, identifier(id), parse(decisionBody, body));
+  }
+
+  // Financial settings: drafted by one administrator, approved by another.
+  @Get('financial-settings')
+  async financialSettings(@Req() request: IncomingRequest) {
+    const caller = await this.caller(request);
+    return { settings: await this.finance.overview(caller) };
+  }
+
+  @Post('financial-settings')
+  async financialDraft(
+    @Body() body: unknown,
+    @Headers('idempotency-key') key: string | undefined,
+    @Req() request: IncomingRequest,
+  ) {
+    const caller = await this.caller(request);
+    if (typeof key !== 'string' || !RETRY_KEY.test(key))
+      throw new ApiError(400, 'retry_key_required', 'An Idempotency-Key header is required.');
+    return this.finance.draft(caller, key, parse(financialDraftBody, body));
+  }
+
+  @Post('financial-settings/:id/moves')
+  @HttpCode(200)
+  async financialMove(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Req() request: IncomingRequest,
+  ) {
+    const caller = await this.caller(request);
+    const { version, move } = parse(financialMoveBody, body);
+    return this.finance.move(caller, identifier(id), version, move);
   }
 
   @Post('verification/organisations/:organisationId/revoke')

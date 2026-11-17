@@ -231,9 +231,8 @@ async function main() {
     mkdirSync(outDir, { recursive: true });
     // At most five pictures, for design review only.
     const shots = {
-      application: 'console-application-390',
-      withdraw: 'console-withdraw-390',
-      'published shipment': 'console-published-shipment-390',
+      finance: 'console-finance-390',
+      'finance draft': 'console-finance-draft-390',
     };
 
     /** Helpers bound to one page, so that two staff members can be signed in at once. */
@@ -1380,6 +1379,57 @@ async function main() {
       ].every((entry) => reviewAudit.includes(entry)),
       `the audit list lacks verification entries: ${[...new Set(reviewAudit)].join(', ')}`,
     );
+
+    // ------------------------------------------------------------------------------------
+    // Financial settings (slice 24): drafted by one administrator, approved by another
+    // ------------------------------------------------------------------------------------
+    await one.open('/finance');
+    const defaultShown =
+      (await one.page.$('#development-default')) !== null &&
+      (await one.page.$('#in-force[data-fee="300"][data-default="true"]')) !== null;
+    await one.inspect('finance');
+    // A figure out of range is refused, named in the summary; nothing is drafted.
+    const fillDraft = async (fee) => {
+      await one.page.$eval('#feeBasisPoints', (input) => (input.value = ''));
+      await one.page.type('#feeBasisPoints', fee);
+      await one.page.type('#note', 'Browser test change (fictional)');
+    };
+    await fillDraft('6000');
+    await one.submit('#draft-setting');
+    const refusedDraft =
+      one.page.url().includes('error=validation_failed') &&
+      ((await one.text('#error-summary')) ?? '').includes("Trucker's fee") &&
+      (await one.page.$('[data-state="draft"]')) === null;
+    await fillDraft('400');
+    await one.submit('#draft-setting');
+    const drafted =
+      one.page.url().includes('done=drafted') &&
+      (await one.page.$('[data-state="draft"]')) !== null;
+    check(
+      'finance',
+      defaultShown && refusedDraft && drafted,
+      `the draft journey ended at ${one.page.url()} (default shown ${defaultShown}, refused ${refusedDraft})`,
+    );
+    // The one who drafted it cannot approve it.
+    await one.submit('[data-state="draft"] [data-move="approve"]');
+    const ownRefused =
+      one.page.url().includes('error=different_person_required') &&
+      (await one.page.$('[data-state="draft"]')) !== null &&
+      (await one.page.$('#in-force[data-fee="300"]')) !== null;
+    await one.inspect('finance draft');
+    // A different administrator approves: in force at once, no longer the default.
+    await two.open('/finance');
+    await two.submit('[data-state="draft"] [data-move="approve"]');
+    check(
+      'finance',
+      ownRefused &&
+        two.page.url().includes('done=approved') &&
+        (await two.page.$('#in-force[data-fee="400"][data-default="false"]')) !== null &&
+        (await two.page.$('#development-default')) === null &&
+        (await two.page.$('[data-state="superseded"]')) !== null,
+      `approval by the second administrator led to ${two.page.url()} (own approval refused ${ownRefused})`,
+    );
+    await two.inspect('finance');
 
     // ------------------------------------------------------------------------------------
     // Sign-out whose answer is lost: never reported as done

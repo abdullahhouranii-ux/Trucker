@@ -17,6 +17,7 @@ import {
 import { defaultMigrationsDir, migrateUp } from '../database/migrations.js';
 import { SECURITY_SETTING_DEFAULTS } from '../database/settings.js';
 import { configureApp } from '../http/configure-app.js';
+import { restoreFinancialSettings, setFinancialSettings } from '../testing/financial.js';
 import { hashToken } from '../identity/secrets.js';
 import { DEMONSTRATION_TERMS_VERSION } from '../identity/terms.js';
 import { createTestClock } from '../testing/test-clock.js';
@@ -1229,13 +1230,11 @@ test('SR-7: a booking keeps its accepted snapshot and its roles whatever changes
   // Afterwards: the authority ends, the organiser loses its capability, the fee setting changes.
   assert.equal((await endAuthority(customer, authority)).status, 200);
   assert.equal((await revokeCapability(fresh.org, 'organise')).status, 200);
-  await owner.query('UPDATE trucker.security_setting SET booking_fee_basis_points = 450');
+  await setFinancialSettings(owner, { feeBasisPoints: 450 });
   try {
     assert.deepEqual(await snapshot(), accepted);
   } finally {
-    await owner.query('UPDATE trucker.security_setting SET booking_fee_basis_points = $1', [
-      D.booking_fee_basis_points,
-    ]);
+    await restoreFinancialSettings(owner);
   }
   // The roles of a booking cannot be rewritten, even by the migration role.
   await refused(

@@ -17,6 +17,7 @@ import {
 import { defaultMigrationsDir, migrateUp } from '../database/migrations.js';
 import { SECURITY_SETTING_DEFAULTS } from '../database/settings.js';
 import { configureApp } from '../http/configure-app.js';
+import { restoreFinancialSettings, setFinancialSettings } from '../testing/financial.js';
 import { hashToken } from '../identity/secrets.js';
 import { DEMONSTRATION_TERMS_VERSION } from '../identity/terms.js';
 import { blockedRequests } from '../testing/blocked-request.js';
@@ -791,16 +792,11 @@ test('accepting a quotation creates one booking with exact snapshots of the vers
     () => owner.query('DELETE FROM trucker.booking WHERE id = $1', [booking.id]),
     /cannot be changed/,
   );
-  await owner.query(
-    'UPDATE trucker.security_setting SET booking_fee_basis_points = 900, booking_payment_due_days = 60',
-  );
+  await setFinancialSettings(owner, { feeBasisPoints: 900, freightDueDays: 60 });
   try {
     assert.deepEqual((await bookingsOf(carrier.person, carrier.org))[0], asCarrier);
   } finally {
-    await owner.query(
-      'UPDATE trucker.security_setting SET booking_fee_basis_points = $1, booking_payment_due_days = $2',
-      [D.booking_fee_basis_points, D.booking_payment_due_days],
-    );
+    await restoreFinancialSettings(owner);
   }
   // Nothing was assigned, reserved or confirmed.
   // The row stores no state: nothing on it can say "confirmed".
@@ -823,10 +819,8 @@ test('the fee is exact: half-up at the minor unit, from the settings at the mome
   for (const [amount, points, payer, fee, total] of cases) {
     const { shipper, shipment, carrier } = await market();
     const made = await quoted(carrier.person, carrier.org, shipment.id, quoteBody({ amount }));
-    await owner.query(
-      'UPDATE trucker.security_setting SET booking_fee_basis_points = $1, booking_fee_payer = $2',
-      [points, payer],
-    );
+    await setFinancialSettings(owner, { feeBasisPoints: points });
+    await owner.query('UPDATE trucker.security_setting SET booking_fee_payer = $1', [payer]);
     try {
       const reply = await accept(shipper.person, shipper.org, made.id, 1);
       assert.equal(reply.status, 200, reply.text);
@@ -840,10 +834,8 @@ test('the fee is exact: half-up at the minor unit, from the settings at the mome
       // Amounts are text end to end.
       assert.ok(!/"(transportAmount|amount|shipperTotal)":\s*[0-9]/.test(reply.text));
     } finally {
-      await owner.query(
-        `UPDATE trucker.security_setting SET booking_fee_basis_points = $1, booking_fee_payer = 'shipper'`,
-        [D.booking_fee_basis_points],
-      );
+      await restoreFinancialSettings(owner);
+      await owner.query(`UPDATE trucker.security_setting SET booking_fee_payer = 'shipper'`);
     }
   }
   // A booking whose fee is not the stated share cannot exist.
@@ -1262,7 +1254,8 @@ test('who may accept: only an administrator of the shipper; the carrier, outside
     'SELECT * FROM trucker.booking_retry_key',
     'SELECT * FROM trucker.acceptance_terms(1, 2, NULL, now())',
     `SELECT trucker.booking_terms_available(true)`,
-    `UPDATE trucker.security_setting SET booking_fee_basis_points = 0`,
+    `UPDATE trucker.security_setting SET booking_fee_payer = 'carrier'`,
+    'SELECT * FROM trucker.financial_setting_version',
   ])
     await refused(
       () => asApiRole(context, (client) => client.query(statement)),

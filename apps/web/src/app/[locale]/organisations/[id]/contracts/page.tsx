@@ -1,5 +1,6 @@
 import { notFound, redirect } from 'next/navigation';
-import { ContractTerms } from '../../../../../components/commission.tsx';
+import { ContractTerms, percentText } from '../../../../../components/commission.tsx';
+import { fill } from '../../../../../i18n/format.ts';
 import { isLocale } from '../../../../../i18n/config.ts';
 import { getMessages } from '../../../../../i18n/messages.ts';
 import { api, type ContractsOverview } from '../../../../../server/api.ts';
@@ -127,7 +128,9 @@ export default async function ContractsPage({ params, searchParams }: Props) {
             <div className="field">
               <label htmlFor="contractPercent">{m.commission.percent}</label>
               <p className="field-hint" id="contractPercent-hint">
-                {m.commission.percentHint}
+                {fill(m.commission.percentHint, {
+                  max: percentText(overview.limits.maxBasisPoints),
+                })}
               </p>
               <input
                 id="contractPercent"
@@ -167,7 +170,7 @@ export default async function ContractsPage({ params, searchParams }: Props) {
             <div className="field">
               <label htmlFor="settlementDays">{t.settlementDays}</label>
               <p className="field-hint" id="settlementDays-hint">
-                {t.settlementDaysHint}
+                {fill(t.settlementDaysHint, { max: overview.limits.settlementMaxDays })}
               </p>
               <input
                 id="settlementDays"

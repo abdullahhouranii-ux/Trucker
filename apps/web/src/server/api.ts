@@ -722,10 +722,13 @@ export interface ContractsOverview {
   organiser: boolean;
   carrier: boolean;
   contracts: CommissionContract[];
+  limits: { maxBasisPoints: number; settlementMaxDays: number };
 }
 export interface CommissionView {
   commission: CommissionTerms | null;
   contract?: CommissionContract | null;
+  /** For the organiser's form: what the settings in force allow. */
+  limits?: { options: ('percentage' | 'fixed' | 'contract')[]; maxBasisPoints: number };
   arranged?: boolean;
   editable?: boolean;
 }
