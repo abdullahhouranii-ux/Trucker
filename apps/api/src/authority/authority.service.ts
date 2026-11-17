@@ -18,6 +18,7 @@ const ERRORS: Record<string, [number, string, string]> = {
   not_organiser: [403, 'organiser_not_eligible', 'This account is not a verified organiser now.'],
   // The same answer whether the code names nothing, this account, or an unverified account.
   no_account: [404, 'account_code_not_found', 'No account can be asked with this code.'],
+  not_carrier: [403, 'carrier_not_eligible', 'This account is not a verified carrier now.'],
   conflict: [409, 'record_changed', 'The record changed since it was opened. Nothing was changed.'],
   not_draft: [
     409,
@@ -123,6 +124,57 @@ export class AuthorityService {
       { ended: 'ended', already_ended: 'already_ended' },
     );
     return { outcome, authority: detail };
+  }
+
+  /** Commission contracts of the account, on either side. */
+  async contracts(caller: Caller, organisationId: string): Promise<Detail> {
+    const { detail } = await this.run(
+      caller,
+      organisationId,
+      'SELECT status, detail FROM trucker.commission_contracts()',
+      [],
+      { ok: 'ok' },
+    );
+    return detail as Detail;
+  }
+
+  async proposeContract(caller: Caller, organisationId: string, code: string, terms: Detail) {
+    const { outcome, detail } = await this.run(
+      caller,
+      organisationId,
+      'SELECT status, detail FROM trucker.propose_commission_contract($1, $2)',
+      [code, JSON.stringify(terms)],
+      { proposed: 'proposed', exists: 'already_proposed' },
+    );
+    return { outcome, contract: detail };
+  }
+
+  async decideContract(
+    caller: Caller,
+    organisationId: string,
+    id: string,
+    version: number,
+    decision: string,
+  ) {
+    const { outcome, detail } = await this.run(
+      caller,
+      organisationId,
+      'SELECT status, detail FROM trucker.decide_commission_contract($1, $2, $3)',
+      [id, version, decision],
+      { accepted: 'accepted', declined: 'declined', already_decided: 'already_decided' },
+    );
+    return { outcome, contract: detail };
+  }
+
+  async endContract(caller: Caller, organisationId: string, id: string, version: number) {
+    const { outcome, detail } = await this.run(
+      caller,
+      organisationId,
+      'SELECT status, detail FROM trucker.end_commission_contract($1, $2)',
+      [id, version],
+      { ended: 'ended', already_ended: 'already_ended' },
+    );
+    return { outcome, contract: detail };
   }
 
   async parties(caller: Caller, organisationId: string, shipmentId: string): Promise<Detail> {

@@ -697,13 +697,35 @@ export interface ShipmentParties {
   feeAgreement: 'own_act' | 'authority' | null;
 }
 export interface CommissionTerms {
-  option: 'percentage' | 'fixed';
+  option: 'percentage' | 'fixed' | 'contract';
   basisPoints: number | null;
   amount: string | null;
   currency: string | null;
 }
+export interface CommissionContract {
+  id: string;
+  version: number;
+  status: 'proposed' | 'active' | 'declined' | 'ended';
+  role: 'organiser' | 'carrier';
+  option: 'percentage' | 'fixed';
+  basisPoints: number | null;
+  amount: string | null;
+  currency: string | null;
+  earningCondition: 'freight_receipt_recorded';
+  settlementDays: number;
+  endedBy: 'organiser' | 'carrier' | null;
+  organiser: { legalName: string };
+  carrier: { legalName: string };
+}
+export interface ContractsOverview {
+  accountCode: string;
+  organiser: boolean;
+  carrier: boolean;
+  contracts: CommissionContract[];
+}
 export interface CommissionView {
   commission: CommissionTerms | null;
+  contract?: CommissionContract | null;
   arranged?: boolean;
   editable?: boolean;
 }

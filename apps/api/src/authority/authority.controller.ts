@@ -31,11 +31,21 @@ const partiesBody = z.object({
 
 const commissionBody = z.object({
   version,
-  option: z.enum(['none', 'percentage', 'fixed']),
+  option: z.enum(['none', 'percentage', 'fixed', 'contract']),
   basisPoints: z.number().int().optional(),
   amount: z.string().max(20).optional(),
   currency: z.string().max(3).optional(),
 });
+
+const proposalBody = z.object({
+  carrierCode: z.string().max(40),
+  option: z.enum(['percentage', 'fixed']),
+  basisPoints: z.number().int().optional(),
+  amount: z.string().max(20).optional(),
+  currency: z.string().max(3).optional(),
+  settlementDays: z.number().int(),
+});
+const contractDecisionBody = z.object({ version, decision: z.enum(['accept', 'decline']) });
 
 function parse<T>(schema: z.ZodType<T>, body: unknown): T {
   const result = schema.safeParse(body);
@@ -70,6 +80,63 @@ export class AuthorityController {
   private async caller(request: IncomingRequest): Promise<Caller> {
     const auth = await this.identity.authenticate(bearer(request), request.requestId);
     return { personId: auth.personId, tokenHash: auth.tokenHash, requestId: request.requestId };
+  }
+
+  @Get('commission-contracts')
+  async contracts(
+    @Param('organisationId') organisationId: string,
+    @Req() request: IncomingRequest,
+  ) {
+    const caller = await this.caller(request);
+    return { contracts: await this.authorities.contracts(caller, identifier(organisationId)) };
+  }
+
+  @Post('commission-contracts')
+  async proposeContract(
+    @Param('organisationId') organisationId: string,
+    @Body() body: unknown,
+    @Req() request: IncomingRequest,
+  ) {
+    const caller = await this.caller(request);
+    const { carrierCode, ...terms } = parse(proposalBody, body);
+    return this.authorities.proposeContract(caller, identifier(organisationId), carrierCode, terms);
+  }
+
+  @Post('commission-contracts/:contractId/decision')
+  @HttpCode(200)
+  async decideContract(
+    @Param('organisationId') organisationId: string,
+    @Param('contractId') contractId: string,
+    @Body() body: unknown,
+    @Req() request: IncomingRequest,
+  ) {
+    const caller = await this.caller(request);
+    const { version: seen, decision } = parse(contractDecisionBody, body);
+    return this.authorities.decideContract(
+      caller,
+      identifier(organisationId),
+      identifier(contractId),
+      seen,
+      decision,
+    );
+  }
+
+  @Post('commission-contracts/:contractId/end')
+  @HttpCode(200)
+  async endContract(
+    @Param('organisationId') organisationId: string,
+    @Param('contractId') contractId: string,
+    @Body() body: unknown,
+    @Req() request: IncomingRequest,
+  ) {
+    const caller = await this.caller(request);
+    const { version: seen } = parse(endBody, body);
+    return this.authorities.endContract(
+      caller,
+      identifier(organisationId),
+      identifier(contractId),
+      seen,
+    );
   }
 
   @Get('authorities')

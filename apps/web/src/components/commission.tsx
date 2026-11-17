@@ -3,6 +3,7 @@ import type { Locale } from '../i18n/config.ts';
 import type { Messages } from '../i18n/messages.ts';
 import {
   api,
+  type CommissionContract,
   type CommissionLine,
   type CommissionTerms,
   type CommissionView,
@@ -11,6 +12,7 @@ import { setShipmentCommissionAction } from '../server/authority-actions.ts';
 import { Ltr } from './ltr.tsx';
 
 type T = Messages['commission'];
+type TC = Messages['contracts'];
 
 /** Basis points as a percentage, without a rounding error: 750 is 7.5, 1000 is 10. */
 export const percentText = (basisPoints: number): string =>
@@ -24,6 +26,7 @@ export const percentText = (basisPoints: number): string =>
 
 /** The commission as one phrase: "10% of the shipping price" or "100.00 XTS". */
 export function CommissionPhrase({ t, terms }: { t: T; terms: CommissionTerms }) {
+  if (terms.option === 'contract') return <>{t.isContract}</>;
   return terms.option === 'percentage' ? (
     <>{fill(t.isPercentage, { percent: percentText(terms.basisPoints ?? 0) })}</>
   ) : (
@@ -99,7 +102,7 @@ export async function CommissionSection({
               name="commissionOption"
               defaultValue={commission?.option ?? 'none'}
             >
-              {(['none', 'percentage', 'fixed'] as const).map((option) => (
+              {(['none', 'percentage', 'fixed', 'contract'] as const).map((option) => (
                 <option value={option} key={option}>
                   {t.options[option]}
                 </option>
@@ -166,8 +169,48 @@ export async function CommissionSection({
   );
 }
 
+/** The terms of one commission contract, as a list (a grid overflows inside a card at large text). */
+export function ContractTerms({ t, tc, contract }: { t: T; tc: TC; contract: CommissionContract }) {
+  return (
+    <ul data-contract-terms={contract.id}>
+      <li>
+        {tc.commission}: <CommissionPhrase t={t} terms={contract} />
+      </li>
+      <li>
+        {tc.earned}: {tc.earningConditions[contract.earningCondition]}
+      </li>
+      <li>
+        {tc.settlementDays}: {fill(tc.days, { n: contract.settlementDays })}
+      </li>
+    </ul>
+  );
+}
+
 /** What a carrier is told before it prices a shipment that carries a commission. */
-export function CarrierCommissionNotice({ t, terms }: { t: T; terms: CommissionTerms }) {
+export function CarrierCommissionNotice({
+  t,
+  terms,
+  contract,
+  contractsHref,
+}: {
+  t: T;
+  terms: CommissionTerms;
+  contract?: CommissionContract | null;
+  contractsHref: string;
+}) {
+  if (terms.option === 'contract')
+    return contract ? (
+      <p className="notice" role="note" id="commission-terms" data-option="contract">
+        {t.carrierContract} <CommissionPhrase t={t} terms={contract} />. {t.carrierNote}
+      </p>
+    ) : (
+      <div className="notice notice-error" role="note" id="commission-terms" data-option="contract">
+        <p>{t.carrierNoContract}</p>
+        <a className="button" href={contractsHref} id="open-contracts">
+          {t.openContracts}
+        </a>
+      </div>
+    );
   return (
     <p className="notice" role="note" id="commission-terms" data-option={terms.option}>
       {t.carrierLead} <CommissionPhrase t={t} terms={terms} />. {t.carrierNote}

@@ -130,12 +130,8 @@ export async function setShipmentCommissionAction(form: FormData): Promise<void>
   const org = text(form, 'organisationId');
   const shipment = text(form, 'shipmentId');
   const chosen = text(form, 'commissionOption');
-  const option = chosen === 'percentage' || chosen === 'fixed' ? chosen : 'none';
-  // A percentage as typed, to whole basis points, without passing through a binary fraction.
-  const percent = /^([0-9]{1,2})(?:\.([0-9]{1,2}))?$/.exec(text(form, 'commissionPercent').trim());
-  const basisPoints = percent
-    ? Number(percent[1]) * 100 + Number((percent[2] ?? '').padEnd(2, '0'))
-    : 0;
+  const option =
+    chosen === 'percentage' || chosen === 'fixed' || chosen === 'contract' ? chosen : 'none';
   await send(
     form,
     UUID.test(org) && UUID.test(shipment)
@@ -144,7 +140,9 @@ export async function setShipmentCommissionAction(form: FormData): Promise<void>
     {
       version: version(form),
       option,
-      ...(option === 'percentage' ? { basisPoints } : {}),
+      ...(option === 'percentage'
+        ? { basisPoints: basisPoints(text(form, 'commissionPercent')) }
+        : {}),
       ...(option === 'fixed'
         ? {
             amount: text(form, 'commissionAmount').trim().slice(0, 20),
@@ -154,5 +152,69 @@ export async function setShipmentCommissionAction(form: FormData): Promise<void>
     },
     `/${localeOf(form)}/organisations/${org}/shipments/${shipment}`,
     { done: 'commDone', error: 'commError' },
+  );
+}
+
+const contractsPage = (form: FormData): { org: string; here: string } => {
+  const org = text(form, 'organisationId');
+  return { org, here: `/${localeOf(form)}/organisations/${org}/contracts` };
+};
+const CONTRACT_NAMES = { done: 'cDone', error: 'cError' };
+
+/** A percentage as typed, to whole basis points, without passing through a binary fraction. */
+const basisPoints = (typed: string): number => {
+  const percent = /^([0-9]{1,2})(?:\.([0-9]{1,2}))?$/.exec(typed.trim());
+  return percent ? Number(percent[1]) * 100 + Number((percent[2] ?? '').padEnd(2, '0')) : 0;
+};
+
+export async function proposeContractAction(form: FormData): Promise<void> {
+  const { org, here } = contractsPage(form);
+  const option = text(form, 'contractOption') === 'fixed' ? 'fixed' : 'percentage';
+  const days = text(form, 'settlementDays').trim();
+  await send(
+    form,
+    UUID.test(org) ? `/organisations/${org}/commission-contracts` : null,
+    {
+      carrierCode: text(form, 'carrierCode').trim().slice(0, 40),
+      option,
+      ...(option === 'percentage'
+        ? { basisPoints: basisPoints(text(form, 'contractPercent')) }
+        : {
+            amount: text(form, 'contractAmount').trim().slice(0, 20),
+            currency: text(form, 'contractCurrency').trim().toUpperCase().slice(0, 3),
+          }),
+      settlementDays: /^[0-9]{1,2}$/.test(days) ? Number(days) : 0,
+    },
+    here,
+    CONTRACT_NAMES,
+  );
+}
+
+export async function decideContractAction(form: FormData): Promise<void> {
+  const { org, here } = contractsPage(form);
+  const id = text(form, 'contractId');
+  await send(
+    form,
+    UUID.test(org) && UUID.test(id)
+      ? `/organisations/${org}/commission-contracts/${id}/decision`
+      : null,
+    {
+      version: version(form),
+      decision: text(form, 'decision') === 'accept' ? 'accept' : 'decline',
+    },
+    here,
+    CONTRACT_NAMES,
+  );
+}
+
+export async function endContractAction(form: FormData): Promise<void> {
+  const { org, here } = contractsPage(form);
+  const id = text(form, 'contractId');
+  await send(
+    form,
+    UUID.test(org) && UUID.test(id) ? `/organisations/${org}/commission-contracts/${id}/end` : null,
+    { version: version(form) },
+    here,
+    CONTRACT_NAMES,
   );
 }

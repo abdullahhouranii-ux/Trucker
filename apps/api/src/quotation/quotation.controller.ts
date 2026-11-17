@@ -47,6 +47,10 @@ const content = z.object({
 });
 const versioned = z.object({ version: z.number().int().min(1) });
 const revision = content.extend({ version: z.number().int().min(1) });
+const reconfirmation = z.object({
+  version: z.number().int().min(1),
+  commissionAccepted: content.shape.commissionAccepted,
+});
 const termsBody = z.object({
   version: z.number().int().min(0),
   currency: z.string().regex(/^[A-Z]{3}$/),
@@ -173,13 +177,14 @@ export class QuotationController {
     @Req() request: IncomingRequest,
   ) {
     const caller = await this.caller(request);
-    const { version } = parse(versioned, body);
+    const { version, commissionAccepted } = parse(reconfirmation, body);
     return this.quotations.reconfirm(
       caller,
       identifier(organisationId),
       identifier(quotationId),
       retryKey(key),
       version,
+      commissionAccepted,
     );
   }
 
