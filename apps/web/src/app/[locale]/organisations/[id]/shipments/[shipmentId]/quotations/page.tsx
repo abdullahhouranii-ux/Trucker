@@ -256,6 +256,24 @@ export default async function ShipmentQuotationsPage({ params, searchParams }: P
                         {hidden('accept')}
                         <input type="hidden" name="quotationId" value={quotation.id} />
                         <input type="hidden" name="version" value={quotation.currentVersion} />
+                        {(preview(quotation.id)!.freight?.methods.length ?? 0) > 1 ? (
+                          <fieldset className="fieldset" id={`freight-choice-${quotation.id}`}>
+                            <legend>{m.book.chooseFreight}</legend>
+                            {preview(quotation.id)!.freight!.methods.map((method) => (
+                              <div className="check" key={method}>
+                                <input
+                                  id={`freight-${quotation.id}-${method}`}
+                                  name="freightMethod"
+                                  type="radio"
+                                  value={method}
+                                />
+                                <label htmlFor={`freight-${quotation.id}-${method}`}>
+                                  {m.book.freightMethodChoice[method]}
+                                </label>
+                              </div>
+                            ))}
+                          </fieldset>
+                        ) : null}
                         <p className="field-hint">{m.book.acceptNote}</p>
                         <button
                           className="button button-primary"

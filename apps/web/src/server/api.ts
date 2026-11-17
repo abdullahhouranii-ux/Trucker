@@ -371,6 +371,7 @@ export interface QuotationVersion {
   notes: string | null;
   shipmentVersion: number;
   createdAt: string;
+  freight: FreightTerms;
 }
 export type QuotationStanding =
   | 'current'
@@ -409,6 +410,7 @@ export interface QuotationContext {
   terms: QuotationTerms | null;
   pickupWindow: { timeZone: string; from: string; until: string };
   quotationDeadline: { at: string; local: string; timeZone: string };
+  freightMaxDueDays: number;
   quotations: Quotation[];
 }
 export interface ShipmentQuotations {
@@ -509,8 +511,39 @@ export interface DriverSide {
 }
 
 // Acceptance and booking (slice 14) -----------------------------------------------------------
+export type FreightMethod = 'cash_on_delivery' | 'bank_transfer' | 'card_gateway';
+export interface FreightTerms {
+  methods: FreightMethod[];
+  dueDays: number | null;
+}
+/** A booking's price, as the database chose it for the one asking (D-11). */
+export interface BookingPrice {
+  currency: string;
+  shippingPrice: string;
+  fee?: {
+    method: string;
+    basisPoints: number;
+    amount: string;
+    payer: 'customer' | 'organiser' | 'carrier';
+  };
+  total?: string;
+  commission?: {
+    option: string;
+    basisPoints: number | null;
+    contract: boolean;
+    amount: string;
+  } | null;
+  net?: string;
+  freight: {
+    payer: 'customer' | 'sender' | 'receiver' | null;
+    method: FreightMethod | null;
+    dueRule: 'on_delivery' | 'after_proof_of_delivery' | null;
+    dueDays: number | null;
+  };
+  madeBeforeBreakdown: boolean;
+}
 export interface BookingFee {
-  payer: 'shipper' | 'carrier';
+  payer: 'shipper' | 'carrier' | 'organiser';
   basisPoints: number;
   rounding: 'half_up';
   /** Exact decimal text, never a binary number. */
@@ -606,10 +639,15 @@ export interface Booking {
   carrier: { id: string; legalName: string; tradingName: string | null };
   currency: string;
   transportAmount: string;
-  fee: BookingFee;
-  shipperTotal: string;
-  carrierNet: string;
-  paymentDueDays: number;
+  /** The shipper, staff, and a carrier that pays it. */
+  fee?: BookingFee;
+  /** The shipper and staff. */
+  shipperTotal?: string;
+  /** The carrier and staff. */
+  carrierNet?: string;
+  /** Days after proof of delivery; nothing for cash on delivery. */
+  paymentDueDays: number | null;
+  price: BookingPrice;
   terms: BookingTerms;
   inclusions: { code: string; included: boolean; name: { en: string; ar: string; ur: string } }[];
   assignment: { dueAt: string; hours: number; leadHours: number };
@@ -635,7 +673,8 @@ export interface AcceptancePreview {
   transportAmount?: string;
   fee?: BookingFee;
   shipperTotal?: string;
-  paymentDueDays?: number;
+  paymentDueDays?: number | null;
+  freight?: FreightTerms;
   terms?: BookingTerms;
   assignmentDueAt?: string | null;
 }
@@ -729,6 +768,8 @@ export interface CommissionView {
   contract?: CommissionContract | null;
   /** For the organiser's form: what the settings in force allow. */
   limits?: { options: ('percentage' | 'fixed' | 'contract')[]; maxBasisPoints: number };
+  /** The organiser's view of the booked price, once the shipment is booked. */
+  bookedPrice?: BookingPrice | null;
   arranged?: boolean;
   editable?: boolean;
 }

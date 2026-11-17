@@ -691,7 +691,8 @@ test('accepting a quotation creates one booking with exact snapshots of the vers
   assert.equal(reply.status, 200, reply.text);
   const booking = reply.body.booking as Booking;
   assert.equal(reply.body.outcome, 'accepted');
-  // 1250.50 × 3% = 37.515, rounded half-up to 37.52. The carrier receives what it quoted.
+  // 1250.50 × 3% = 37.515, rounded half-up to 37.52. The shipper is shown the price, the fee
+  // and its total, not the carrier's net (D-11).
   assert.deepEqual(
     [
       booking.status,
@@ -707,7 +708,7 @@ test('accepting a quotation creates one booking with exact snapshots of the vers
       '1250.50',
       { payer: 'shipper', basisPoints: 300, rounding: 'half_up', amount: '37.52' },
       '1288.02',
-      '1250.50',
+      undefined,
     ],
   );
   assert.deepEqual(
@@ -760,17 +761,22 @@ test('accepting a quotation creates one booking with exact snapshots of the vers
   const asCarrier = (await bookingsOf(carrier.person, carrier.org))[0]!;
   const asShipper = (await bookingsOf(shipper.person, shipper.org))[0]!;
   assert.deepEqual([asCarrier.role, asShipper.role], ['carrier', 'shipper']);
-  // What was agreed is the same for both. What each is shown of the resources differs by
-  // stage and by party, and is the subject of the assignment tests.
+  // What was agreed is the same for both. What each is shown of the money differs by role
+  // (slice 25), and of the resources by stage and party (the assignment tests).
+  const money = ['fee', 'shipperTotal', 'carrierNet', 'price'];
   const agreed = (view: Booking): Record<string, unknown> =>
     Object.fromEntries(
-      Object.keys(booking).map((name) => [
-        name,
-        (view as unknown as Record<string, unknown>)[name],
-      ]),
+      Object.keys(booking)
+        .filter((name) => !money.includes(name))
+        .map((name) => [name, (view as unknown as Record<string, unknown>)[name]]),
     );
   assert.deepEqual(agreed(asCarrier), agreed(asShipper));
-  assert.deepEqual(agreed(asCarrier), booking);
+  assert.deepEqual(agreed(asCarrier), agreed(booking));
+  const carrierMoney = asCarrier as unknown as Record<string, unknown>;
+  assert.deepEqual(
+    [carrierMoney.fee, carrierMoney.shipperTotal, carrierMoney.carrierNet],
+    [undefined, undefined, '1250.50'],
+  );
   assert.deepEqual(await bookingsOf(other.person, other.org), []);
   assert.equal((await mineOne(other.person, other.org, theirs.id)).standing, 'not_selected');
   assert.equal((await mineOne(carrier.person, carrier.org, mine.id)).standing, 'accepted');
@@ -814,13 +820,14 @@ test('the fee is exact: half-up at the minor unit, from the settings at the mome
     ['16.49', 300, 'shipper', '0.49', '16.98'], // 0.4947 rounds down
     ['999999999999.99', 300, 'shipper', '30000000000.00', '1029999999999.99'],
     ['100', 0, 'shipper', '0.00', '100.00'],
-    ['1250.50', 250, 'carrier', '31.26', '1250.50'], // 31.2625; the carrier pays
+    ['1250.50', 250, 'shipper', '31.26', '1281.76'], // 31.2625
   ];
+  // Who pays the fee is the shipment's fee payer (slice 25, D-5): here the shipper itself. A
+  // carrier no longer pays it; the organiser case is in price.test.ts.
   for (const [amount, points, payer, fee, total] of cases) {
     const { shipper, shipment, carrier } = await market();
     const made = await quoted(carrier.person, carrier.org, shipment.id, quoteBody({ amount }));
     await setFinancialSettings(owner, { feeBasisPoints: points });
-    await owner.query('UPDATE trucker.security_setting SET booking_fee_payer = $1', [payer]);
     try {
       const reply = await accept(shipper.person, shipper.org, made.id, 1);
       assert.equal(reply.status, 200, reply.text);
@@ -830,12 +837,10 @@ test('the fee is exact: half-up at the minor unit, from the settings at the mome
         [fee, payer, points, total],
         amount,
       );
-      if (payer === 'carrier') assert.equal(booking.carrierNet, '1219.24');
       // Amounts are text end to end.
       assert.ok(!/"(transportAmount|amount|shipperTotal)":\s*[0-9]/.test(reply.text));
     } finally {
       await restoreFinancialSettings(owner);
-      await owner.query(`UPDATE trucker.security_setting SET booking_fee_payer = 'shipper'`);
     }
   }
   // A booking whose fee is not the stated share cannot exist.
@@ -1254,7 +1259,7 @@ test('who may accept: only an administrator of the shipper; the carrier, outside
     'SELECT * FROM trucker.booking_retry_key',
     'SELECT * FROM trucker.acceptance_terms(1, 2, NULL, now())',
     `SELECT trucker.booking_terms_available(true)`,
-    `UPDATE trucker.security_setting SET booking_fee_payer = 'carrier'`,
+    `UPDATE trucker.security_setting SET booking_assignment_hours = 1`,
     'SELECT * FROM trucker.financial_setting_version',
   ])
     await refused(
@@ -1263,7 +1268,7 @@ test('who may accept: only an administrator of the shipper; the carrier, outside
     );
   const closed = await asApiRole(context, (client) =>
     client.query<{ status: string }>(
-      'SELECT status FROM trucker.accept_quotation($1, 1, $2, false)',
+      'SELECT status FROM trucker.accept_quotation($1, 1, $2, NULL, false)',
       [made.id, key()],
     ),
   );

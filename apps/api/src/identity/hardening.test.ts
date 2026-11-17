@@ -207,7 +207,7 @@ const count = async (table: string, where: string, values: unknown[]): Promise<n
 
 /** Functions the API's role may run. Anything else in the schema must be closed to it. */
 const CALLABLE = [
-  'accept_quotation(p_quotation uuid, p_expected_version integer, p_key text, p_allow_fixtures boolean)',
+  'accept_quotation(p_quotation uuid, p_expected_version integer, p_key text, p_freight_method text, p_allow_fixtures boolean)',
   'authority_overview()',
   'become_own_driver()',
   'booking_detail(p_booking uuid, p_allow_fixtures boolean)',

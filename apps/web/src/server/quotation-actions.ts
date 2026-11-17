@@ -36,6 +36,7 @@ function problemCodes(details: Record<string, unknown>): string {
         code?: unknown;
         minutes?: unknown;
         minorUnits?: unknown;
+        max?: unknown;
       }[])
     : [];
   const codes = problems
@@ -46,7 +47,9 @@ function problemCodes(details: Record<string, unknown>): string {
           ? `:${problem.minutes}`
           : typeof problem.minorUnits === 'number'
             ? `:${problem.minorUnits}`
-            : '';
+            : typeof problem.max === 'number'
+              ? `:${problem.max}`
+              : '';
       return `${problem.field as string}:${problem.code as string}${extra}`;
     })
     .filter((code) => /^[A-Za-z0-9_.:]{1,120}$/.test(code));
@@ -108,9 +111,22 @@ function quotationContent(form: FormData, problems: string[]) {
   }
   const amount = text(form, 'amount').trim();
   if (amount === '') problems.unshift('amount:required');
+  // The freight terms as ticked and typed; the database judges them.
+  const methods = ['cash_on_delivery', 'bank_transfer'].filter(
+    (method) => form.get(`freight-${method}`) === 'on',
+  );
+  const days = text(form, 'freightDueDays').trim();
   return {
     amount,
     inclusions,
+    freight: {
+      methods,
+      dueDays: methods.includes('bank_transfer')
+        ? /^[0-9]{1,3}$/.test(days)
+          ? Number(days)
+          : -1
+        : null,
+    },
     validUntil: moment(form, 'validUntil', 'validUntil', problems),
     earliestPickup: moment(form, 'earliestPickup', 'earliestPickup', problems),
     notes: text(form, 'notes'),
@@ -183,6 +199,14 @@ export async function withdrawQuotationAction(form: FormData): Promise<void> {
 }
 
 // The shipper --------------------------------------------------------------------------------
+/** The freight method chosen at acceptance, when the quotation offers more than one. */
+function freightChoice(form: FormData, operation: string): { freightMethod?: string } {
+  const chosen = text(form, 'freightMethod');
+  return operation === 'accept' &&
+    ['cash_on_delivery', 'bank_transfer', 'card_gateway'].includes(chosen)
+    ? { freightMethod: chosen }
+    : {};
+}
 async function shipperCommand(
   form: FormData,
   operation: 'terms' | 'reject' | 'accept',
@@ -208,7 +232,7 @@ async function shipperCommand(
       : await api<{ outcome: string }>(
           'POST',
           `/organisations/${organisationId}/quotations/${quotation}/${operation}`,
-          { token, retryKey, body: { version } },
+          { token, retryKey, body: { version, ...freightChoice(form, operation) } },
         );
   if (reply.ok) redirect(withQuery(here, { qDone: reply.data.outcome }));
   if (reply.status === 401) await signedOut(locale);

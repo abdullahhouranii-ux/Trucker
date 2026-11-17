@@ -24,6 +24,10 @@ interface IncomingRequest {
 const RETRY_KEY = /^[A-Za-z0-9._-]{16,128}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const versioned = z.object({ version: z.number().int().min(1) });
+// The freight method the customer chooses among those the quotation offers (R-26).
+const acceptance = versioned.extend({
+  freightMethod: z.enum(['cash_on_delivery', 'bank_transfer', 'card_gateway']).optional(),
+});
 
 function bearer(request: IncomingRequest): string | undefined {
   const header = request.headers.authorization;
@@ -61,12 +65,16 @@ export class BookingController {
     @Req() request: IncomingRequest,
   ) {
     const caller = await this.caller(request);
-    const parsed = versioned.safeParse(body);
-    if (!parsed.success)
+    const parsed = acceptance.safeParse(body);
+    if (!parsed.success) {
+      const fields = [
+        ...new Set(parsed.error.issues.map((issue) => String(issue.path[0] ?? 'version'))),
+      ];
       throw new ApiError(422, 'validation_failed', 'Some fields are missing or not valid.', {
-        fields: ['version'],
-        problems: [{ field: 'version', code: 'invalid' }],
+        fields,
+        problems: fields.map((field) => ({ field, code: 'invalid' })),
       });
+    }
     if (!key || !RETRY_KEY.test(key))
       throw new ApiError(
         400,
@@ -79,6 +87,7 @@ export class BookingController {
       identifier(quotationId),
       parsed.data.version,
       key,
+      parsed.data.freightMethod ?? null,
     );
   }
 

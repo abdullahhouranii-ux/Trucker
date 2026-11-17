@@ -116,13 +116,26 @@ export class BookingService {
     quotationId: string,
     version: number,
     key: string,
+    freightMethod: string | null,
   ) {
     return this.asCaller(caller, organisationId, async (client, allowFixtures) => {
       const result = await client.query<{ status: string; detail: Detail }>(
-        'SELECT status, detail FROM trucker.accept_quotation($1, $2, $3, $4)',
-        [quotationId, version, key, allowFixtures],
+        'SELECT status, detail FROM trucker.accept_quotation($1, $2, $3, $4, $5)',
+        [quotationId, version, key, freightMethod, allowFixtures],
       );
       const row = result.rows[0]!;
+      if (row.status === 'freight_method') {
+        const problems = (Array.isArray(row.detail) ? row.detail : []) as {
+          field: string;
+          code: string;
+        }[];
+        throw new ApiError(
+          422,
+          'validation_failed',
+          'Choose how the freight will be paid, from the methods this quotation offers.',
+          { fields: ['freightMethod'], problems },
+        );
+      }
       if (row.status === 'accepted') return { outcome: 'accepted', booking: row.detail };
       if (row.status === 'repeated') return { outcome: 'already_accepted', booking: row.detail };
       return refuse(row.status);

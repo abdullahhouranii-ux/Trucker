@@ -792,10 +792,26 @@
       "commission_acceptance_required": "This shipment carries an organiser commission. Check the commission and your net earnings below, tick to accept them, and send again.",
       "commission_currency": "The organiser commission is a fixed amount in another currency, so this shipment cannot be quoted in this currency.",
       "commission_leaves_nothing": "This price does not cover the organiser commission. Enter a higher price.",
-      "commission_contract_required": "This shipment takes the commission of your contract with its organiser, and no contract is in force. Agree one with the organiser to quote."
+      "commission_contract_required": "This shipment takes the commission of your contract with its organiser, and no contract is in force. Agree one with the organiser to quote.",
+      "freight_methods_invalid": "Choose at least one way the freight can be paid.",
+      "freight_methods_card_gateway_not_active": "Card payment through your own gateway is not available yet.",
+      "freight_dueDays_out_of_range": "Enter whole days from 0 to {n}.",
+      "freight_dueDays_not_applicable": "Days apply only to a bank transfer.",
+      "freightMethod_required": "Choose how the freight will be paid.",
+      "freightMethod_not_offered": "Choose one of the ways this quotation offers."
     },
     "carrierIndividual": "Truck owner (an individual)",
-    "carrierCompany": "Transport company"
+    "carrierCompany": "Transport company",
+    "freightTitle": "Freight payment",
+    "freightLead": "The ways you accept the transport price from whoever pays it. Trucker never receives it.",
+    "freightMethods": {
+      "cash_on_delivery": "Cash on delivery",
+      "bank_transfer": "Bank transfer",
+      "card_gateway": "Card payment through your own gateway"
+    },
+    "freightDueDays": "Days after proof of delivery, for a bank transfer",
+    "freightDueDaysHint": "Whole days, from 0 to {max}.",
+    "freightDue": "{method}, within {n} days after proof of delivery"
   },
   "fleet": {
     "title": "Fleet",
@@ -989,7 +1005,8 @@
     "fee": "Trucker's fee ({percent}%)",
     "feePayer": {
       "shipper": "paid by the shipper",
-      "carrier": "paid by the carrier"
+      "carrier": "paid by the carrier",
+      "organiser": "paid by the organiser"
     },
     "shipperTotal": "Total for the shipper",
     "carrierNet": "The carrier receives",
@@ -1020,7 +1037,27 @@
       "assignment_deadline_passed": "The pick-up is too soon for the carrier to assign its resources in time, so this cannot be accepted."
     },
     "unavailable": "The booking could not be loaded. Try again.",
-    "cancelledNote": "This booking has ended. The figures below are the original booking snapshot, not a cancellation charge."
+    "cancelledNote": "This booking has ended. The figures below are the original booking snapshot, not a cancellation charge.",
+    "commissionLine": "Organiser commission, included in the price",
+    "paymentCod": "The freight is paid to the carrier in cash on delivery. Trucker does not hold the transport money.",
+    "paymentAfterProof": "The freight is paid to the carrier by {method} within {n} days of accepting the proof of delivery. Trucker does not hold the transport money.",
+    "freightPayer": {
+      "customer": "The contracting customer pays it.",
+      "sender": "The sender pays it.",
+      "receiver": "The receiver pays it."
+    },
+    "freightMethod": {
+      "cash_on_delivery": "cash on delivery",
+      "bank_transfer": "bank transfer",
+      "card_gateway": "the carrier's card payment"
+    },
+    "freightMethodChoice": {
+      "cash_on_delivery": "Cash on delivery",
+      "bank_transfer": "Bank transfer",
+      "card_gateway": "The carrier's card payment"
+    },
+    "offeredTitle": "The carrier accepts the freight by:",
+    "chooseFreight": "How will the freight be paid?"
   },
   "asg": {
     "open": "Open this booking",
@@ -1287,7 +1324,12 @@
     "isContract": "The commission in each carrier’s own contract with you",
     "carrierContract": "The organiser of this shipment takes the commission in your contract with it:",
     "carrierNoContract": "The organiser of this shipment takes the commission set in a contract with each carrier. You have no contract in force with this organiser, so you cannot quote. Agree one with the organiser first.",
-    "openContracts": "Open your commission contracts"
+    "openContracts": "Open your commission contracts",
+    "bookedTitle": "The booked price",
+    "bookedLead": "As the customer accepted it. The customer is not shown your commission.",
+    "bookedShipping": "Shipping price",
+    "netCarrier": "The carrier's net",
+    "feeYouPay": "Trucker's fee, paid by you"
   },
   "contracts": {
     "link": "Commission contracts",

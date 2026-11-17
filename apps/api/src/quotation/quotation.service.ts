@@ -27,6 +27,7 @@ export interface QuotationInput {
   readonly validUntil: WindowInput;
   readonly earliestPickup: WindowInput;
   readonly notes: string | null;
+  readonly freight?: { readonly methods: readonly string[]; readonly dueDays?: number | null };
   readonly commissionAccepted?: { readonly commission: string; readonly net: string };
 }
 export type QuotationView = Record<string, unknown> & { id: string };

@@ -108,6 +108,7 @@ No legal or tax rule is stated here. Every value that is not approved is a prote
 | Slice 23 | Built with D-1, D-2, D-3 and O-1 as development defaults: `COMMISSION_SLICE_23.md` |
 | Slice 23b | Built with D-3, D-10, C-1 and C-2 as development defaults: `COMMISSION_CONTRACTS_SLICE_23B.md`. C-2 (quotations under an ended contract) is open for Abdullah |
 | Slice 24 | Built with the values in use as the development default version, and F-1 to F-3: `FINANCIAL_SETTINGS_SLICE_24.md`. F-1 (finance privilege) and F-2 (one-person withdrawal) are open for Abdullah |
+| Slice 25 | Built with D-5, D-9, D-11 and P-1 to P-3 as development defaults: `PRICE_BREAKDOWN_SLICE_25.md`. P-1 (who chooses the freight method) and P-2 (gateway activation) are open for Abdullah |
 
 ## 2. Exceptions to the proposed structures
 

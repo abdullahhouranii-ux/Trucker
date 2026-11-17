@@ -31,6 +31,13 @@ const moment = z.object({
 const content = z.object({
   amount: z.string().max(20),
   // The commission and the net the carrier accepts, on a shipment that carries a commission.
+  // The freight payment methods the carrier accepts, and the days after proof of delivery.
+  freight: z
+    .object({
+      methods: z.array(z.string().max(30)).max(3),
+      dueDays: z.union([z.number().int(), z.null()]).optional(),
+    })
+    .optional(),
   commissionAccepted: z
     .object({ commission: z.string().max(20), net: z.string().max(20) })
     .optional(),
