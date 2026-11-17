@@ -25,6 +25,7 @@ export default async function NewOrganisationPage({ params, searchParams }: Prop
   const m = getMessages(locale);
   const t = m.org;
   const search = await searchParams;
+  const personal = search.kind === 'individual';
   const { invalid, problems } = organisationProblems(
     typeof search.error === 'string' ? search.error : undefined,
     t,
@@ -97,10 +98,18 @@ export default async function NewOrganisationPage({ params, searchParams }: Prop
 
   return (
     <div className="page page-narrow">
-      <h1>{t.newTitle}</h1>
+      <h1>{personal ? t.personalTitle : t.newTitle}</h1>
       <ErrorSummary title={m.auth.errors.summary} problems={problems} />
-      <p>{t.newLead}</p>
-      <p className="form-note">{t.shipperOnly}</p>
+      <p>{personal ? t.personalLead : t.newLead}</p>
+      <div className="form-inline">
+        <a
+          className="button"
+          id="switch-kind"
+          href={`/${locale}/organisations/new${personal ? '' : '?kind=individual'}`}
+        >
+          {personal ? t.companyLink : t.personalLink}
+        </a>
+      </div>
       {open.some((country) => country.fixture) ? (
         <p className="notice notice-development" role="note" id="fixture-notice">
           {t.fixtureNotice}
@@ -114,6 +123,7 @@ export default async function NewOrganisationPage({ params, searchParams }: Prop
       >
         <input type="hidden" name="locale" value={locale} />
         <input type="hidden" name="retryKey" value={retryKey} />
+        {personal ? <input type="hidden" name="kind" value="individual" /> : null}
         <OrganisationFields locale={locale} t={t} countries={open} invalid={invalid} />
         <button className="button button-primary" type="submit">
           {t.submitCreate}

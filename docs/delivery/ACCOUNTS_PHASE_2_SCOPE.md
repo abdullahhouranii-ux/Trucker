@@ -1,6 +1,6 @@
 # Trucker: phase two (accounts, permissions and commission agreements), scope and acceptance criteria
 
-Version 0.1, 17 November 2026. Status: **for approval. Nothing here is built.** Model: `docs/specs/ADR_001_COMMERCIAL_MODEL.md` (version 0.3), which this scope does not reopen.
+Version 1.0, 17 November 2026. Status: **slice 21 approved by Abdullah on 17 November 2026, with P2-1 and P2-2 as recommended; built on `feat/individual-accounts` (record: INDIVIDUAL_ACCOUNTS_SLICE_21.md). Slices 22 and 23 are not yet scoped.** Model: `docs/specs/ADR_001_COMMERCIAL_MODEL.md` (version 0.3), which this scope does not reopen.
 
 ## How to read the source of each rule
 

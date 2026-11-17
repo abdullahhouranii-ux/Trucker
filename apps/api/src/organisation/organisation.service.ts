@@ -13,10 +13,13 @@ export interface OrganisationInput {
   readonly registrationNumber: string;
   readonly address: string | null;
   readonly contactName: string | null;
+  /** A personal account when 'individual'. Fixed at creation. */
+  readonly kind?: 'company' | 'individual';
 }
 
 export interface OrganisationView extends OrganisationInput {
   readonly id: string;
+  readonly kind: 'company' | 'individual';
   readonly status: string;
   readonly requestedCapability: string;
   readonly version: number;
@@ -60,6 +63,7 @@ export interface Caller {
 
 interface OrganisationRow {
   id: string;
+  kind: 'company' | 'individual';
   status: string;
   requested_capability: string;
   legal_name: string;
@@ -73,11 +77,12 @@ interface OrganisationRow {
   updated_at: Date;
 }
 
-const COLUMNS = `id, status, requested_capability, legal_name, trading_name, country_code,
+const COLUMNS = `id, kind, status, requested_capability, legal_name, trading_name, country_code,
   registration_number, address, contact_name, version, created_at, updated_at`;
 
 const view = (row: OrganisationRow): OrganisationView => ({
   id: row.id,
+  kind: row.kind,
   status: row.status,
   requestedCapability: row.requested_capability,
   legalName: row.legal_name,
@@ -108,6 +113,8 @@ function creationError(error: unknown): ApiError | undefined {
       // The limit is a protected database setting; the function reports the one it applied.
       { limit: Number(detail) },
     );
+  if (code === 'TR004')
+    return new ApiError(409, 'personal_account_exists', 'You already have a personal account.');
   if (code === 'TR003')
     return new ApiError(422, 'validation_failed', 'Some fields are missing or not valid.', {
       fields: ['countryCode'],
@@ -261,18 +268,30 @@ export class OrganisationService {
       try {
         // A savepoint, so a refusal by the function leaves the transaction usable.
         await client.query('SAVEPOINT creating');
-        const created = await client.query<{ id: string }>(
-          'SELECT trucker.create_organisation($1, $2, $3, $4, $5, $6, $7) AS id',
-          [
-            input.legalName,
-            input.tradingName,
-            input.countryCode,
-            input.registrationNumber,
-            input.address,
-            input.contactName,
-            allowFixtures,
-          ],
-        );
+        const created =
+          input.kind === 'individual'
+            ? await client.query<{ id: string }>(
+                'SELECT trucker.create_personal_account($1, $2, $3, $4, $5) AS id',
+                [
+                  input.legalName,
+                  input.countryCode,
+                  input.registrationNumber,
+                  input.address,
+                  allowFixtures,
+                ],
+              )
+            : await client.query<{ id: string }>(
+                'SELECT trucker.create_organisation($1, $2, $3, $4, $5, $6, $7) AS id',
+                [
+                  input.legalName,
+                  input.tradingName,
+                  input.countryCode,
+                  input.registrationNumber,
+                  input.address,
+                  input.contactName,
+                  allowFixtures,
+                ],
+              );
         createdId = created.rows[0]!.id;
       } catch (error) {
         const refused = creationError(error);

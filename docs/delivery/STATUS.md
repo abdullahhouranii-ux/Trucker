@@ -21,13 +21,15 @@ Each slice has a scope and a record with its evidence in this folder.
 | 14 | Acceptance and booking | PR #20 |
 | 15 | Assignment, reservation and confirmation | PR #21 |
 | 16 | Cancellation before dispatch | PR #22 |
+| — | ADR-001 and the phase two scope (documents) | PR #23 |
+| 21 | Individual accounts and truck owners | `feat/individual-accounts` |
 
 Pull requests #15 to #22 are stacked, open, mergeable and green in CI. None is merged; each needs a dependency review and Abdullah's explicit authorisation.
 
 ## Next
 
-1. ADR-001 phase one: this record and the specification index (documentation pull request).
-2. Phase two scope (accounts, permissions and commission agreements) for approval.
+1. Scope of slice 22 (shipment roles and authority) for approval.
+2. Scope of slice 23 (commission agreements) with phase three pricing.
 3. Dispatch slice 17 once DD-1 to DD-10 are approved; it can run alongside phases two to four.
 
 ## Open decisions

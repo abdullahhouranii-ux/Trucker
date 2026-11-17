@@ -78,8 +78,11 @@ export async function createOrganisationAction(form: FormData): Promise<void> {
   const key = text(form, 'retryKey');
   const retryKey = RETRY_KEY.test(key) ? key : randomUUID();
   const values = details(form);
+  const personal = text(form, 'kind') === 'individual';
   const back = (error: string, extra: Record<string, string | number | undefined> = {}): never =>
-    redirect(`/${locale}/organisations/new${query({ error, retry: retryKey, ...extra })}`);
+    redirect(
+      `/${locale}/organisations/new${query({ kind: personal ? 'individual' : undefined, error, retry: retryKey, ...extra })}`,
+    );
 
   const absent = missing(values);
   if (absent.length > 0) back(absent.join(','));
@@ -87,7 +90,7 @@ export async function createOrganisationAction(form: FormData): Promise<void> {
   const reply = await api<{ organisation: Organisation }>('POST', '/organisations', {
     token,
     retryKey,
-    body: values,
+    body: personal ? { ...values, kind: 'individual' } : values,
   });
   if (reply.ok) redirect(`/${locale}/organisations/${reply.data.organisation.id}?done=created`);
   if (reply.status === 401) {

@@ -9,6 +9,7 @@ import { fill } from '../../../../../i18n/format.ts';
 import { getMessages } from '../../../../../i18n/messages.ts';
 import {
   api,
+  type Capability,
   type Catalogues,
   type Country,
   type VerificationOverview,
@@ -87,7 +88,10 @@ export default async function CarrierPage({ params, searchParams }: Props) {
     open.find((country) => country.code === code)?.name[locale] ?? code;
   const equipmentName = (code: string): string =>
     equipment.find((entry) => entry.code === code)?.name[locale] ?? code;
-  const requirements = v.requirementsFor.carry_as_company;
+  // A truck owner (a personal account) or a transport company: the same page.
+  const carrierCap: Capability =
+    v.organisation.kind === 'individual' ? 'carry_as_owner_operator' : 'carry_as_company';
+  const requirements = v.requirementsFor[carrierCap];
   const requirementName = (type: string): string =>
     requirements.find((item) => item.documentType === type)?.name[locale] ?? type;
 
@@ -127,8 +131,7 @@ export default async function CarrierPage({ params, searchParams }: Props) {
 
   const carrierApps = v.applications.filter(
     (application) =>
-      application.capability === 'carry_as_company' ||
-      (application.revalidates ?? []).includes('carry_as_company'),
+      application.capability === carrierCap || (application.revalidates ?? []).includes(carrierCap),
   );
   const latest = carrierApps[0];
   const anyOpen = v.applications.find(
@@ -138,7 +141,7 @@ export default async function CarrierPage({ params, searchParams }: Props) {
     latest && (latest.status === 'submitted' || latest.status === 'claim_review')
       ? latest
       : undefined;
-  const grant = v.capabilities.find((item) => item.capability === 'carry_as_company');
+  const grant = v.capabilities.find((item) => item.capability === carrierCap);
   const state = underReview
     ? 'under_review'
     : grant?.status === 'granted'
@@ -148,7 +151,7 @@ export default async function CarrierPage({ params, searchParams }: Props) {
       : grant?.status === 'revoked'
         ? 'revoked'
         : 'none';
-  const applying = v.mayApply.carry_as_company;
+  const applying = v.mayApply[carrierCap];
   const service = grant?.status === 'granted' ? grant.service : null;
   const chosenCountries = new Set(service?.countries ?? latest?.service?.countries ?? []);
   const chosenEquipment = new Set(service?.equipmentTypes ?? latest?.service?.equipmentTypes ?? []);
@@ -271,7 +274,7 @@ export default async function CarrierPage({ params, searchParams }: Props) {
               name="kind"
               value={applying === 'initial' ? 'initial' : 'capability'}
             />
-            <input type="hidden" name="capability" value="carry_as_company" />
+            <input type="hidden" name="capability" value={carrierCap} />
             <input type="hidden" name="returnTo" value="carrier" />
             <fieldset
               className="fieldset"

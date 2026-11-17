@@ -82,6 +82,14 @@ No legal or tax rule is stated here. Every value that is not approved is a prote
 | Replaced | DB-5 (company carriers only), DB-1 (recorded bank transfers only), DB-2's timing (fee after delivery), slice 15's confirmation without a payment check, D-001's "same transport price for both sides" for organiser bookings, and the broker proposal BR-1 to BR-8 |
 | Unchanged | D-001 (agent), the reservation model, staged release, cancellation before dispatch, E-1 to E-4 |
 
+## 1F. Instructions of 17 November 2026 (09:12 and 09:27)
+
+| Subject | Status |
+|---|---|
+| Freight payment | **Abdullah's requirement (ADR-001 R-26):** cash on delivery, bank transfer or the carrier's activated card gateway, with the method and due date fixed on each booking |
+| Slice 21 | **Approved**, with P2-1 (one truck, one trailer, the owner as the only driver) and P2-2 (one personal account may organise and carry, never quoting on its own shipment) as recommended. Built on `feat/individual-accounts` |
+| Not approved by these instructions | Any merge, and any production financial policy. Defaults stay in development. Dispatch and proof of delivery stay a parallel workstream |
+
 ## 2. Exceptions to the proposed structures
 
 | ID | Exception | Effect on the build |

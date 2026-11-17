@@ -59,8 +59,9 @@ export interface QueueEntry {
   submittedAt: string;
   capability: Capability;
   revalidates: Capability[] | null;
+  accountKind: 'company' | 'individual';
 }
-export type Capability = 'ship' | 'carry_as_company';
+export type Capability = 'ship' | 'carry_as_company' | 'organise' | 'carry_as_owner_operator';
 /** Declared by the applicant: matching criteria for discovery only, never verified. */
 export interface DeclaredService {
   kind: 'declared_matching_criteria';
@@ -111,6 +112,7 @@ export interface ReviewDetail {
     address: string | null;
     contactName: string | null;
     createdAt: string;
+    kind?: 'company' | 'individual';
     capability: {
       status: 'granted' | 'revoked';
       basis: string;

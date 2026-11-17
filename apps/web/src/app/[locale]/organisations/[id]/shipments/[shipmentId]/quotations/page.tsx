@@ -229,6 +229,11 @@ export default async function ShipmentQuotationsPage({ params, searchParams }: P
                 <p className="field-hint">
                   {quotation.carrier?.verified ? q.carrierVerified : q.carrierNotVerified}
                 </p>
+                <p className="field-hint" data-account-kind={quotation.carrier?.accountKind}>
+                  {quotation.carrier?.accountKind === 'individual'
+                    ? q.carrierIndividual
+                    : q.carrierCompany}
+                </p>
                 <Standing t={q} quotation={quotation} />
                 <QuotationFacts
                   t={q}

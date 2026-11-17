@@ -656,11 +656,11 @@ async function main() {
     mkdirSync(outDir, { recursive: true });
     // At most five pictures, for design review only.
     const shots = {
-      'en:overdue for carrier': 'cancel-form-en-390',
-      'en:cancelled booking': 'cancelled-en-390',
-      'ar:cancelled booking': 'cancelled-ar-390',
-      'ur:cancelled booking': 'cancelled-ur-390',
-      'ar:vehicle changes': 'vehicle-changes-ar-390',
+      'en:personal account form': 'personal-account-en-390',
+      'ar:personal account form': 'personal-account-ar-390',
+      'en:truck owner fleet': 'truck-owner-fleet-en-390',
+      'ar:truck owner fleet': 'truck-owner-fleet-ar-390',
+      'ur:truck owner fleet': 'truck-owner-fleet-ur-390',
     };
     // Fictional numbers: country code 999 is not assigned. Unique per run.
     const stamp = String(Date.now()).slice(-7);
@@ -3743,6 +3743,142 @@ async function main() {
       'the private cancellation note leaked to the other party',
     );
     relay.lost.length = 0;
+
+    // ------------------------------------------------------------------------------------
+    // Individual accounts and truck owners (slice 21): the same person opens a personal
+    // account in the browser, applies as a truck owner, is verified by staff through the
+    // staff API, registers the one truck the account may hold, and becomes its driver.
+    // ------------------------------------------------------------------------------------
+    for (const locale of locales) {
+      await open(`/${locale}/organisations/new?kind=individual`, 390);
+      await inspect(locale, 'personal account form');
+    }
+    await open('/en/organisations/new', 390);
+    await submit('#switch-kind');
+    await page.type('#legalName', 'Individual Fixture Person (fictional)');
+    await page.select('#countryCode', 'XA');
+    await page.type('#registrationNumber', `IND-${stamp}`);
+    await submit('#organisation-new-form button[type=submit]');
+    const personalOrg = /organisations\/([0-9a-f-]{36})/.exec(page.url())?.[1] ?? '';
+    const personalRead = await urApi(`/organisations/${personalOrg}`);
+    check(
+      'individual',
+      personalRead.body.organisation?.kind === 'individual',
+      `creating a personal account led to ${page.url()} with kind ${personalRead.body.organisation?.kind}`,
+    );
+    // A second one is refused, with a message.
+    await open('/en/organisations/new?kind=individual', 390);
+    await page.type('#legalName', 'Individual Fixture Person (fictional)');
+    await page.select('#countryCode', 'XA');
+    await page.type('#registrationNumber', `IND2-${stamp}`);
+    await submit('#organisation-new-form button[type=submit]');
+    check(
+      'individual',
+      ((await text('#error-summary')) ?? '').includes(
+        messagesFor('en').org.errors.personal_account_exists,
+      ),
+      `a second personal account answered ${page.url()}`,
+    );
+    // The carrier page of a personal account applies for the truck-owner capability.
+    const ownerPath = (locale) => `/${locale}/organisations/${personalOrg}/carrier`;
+    await open(ownerPath('en'), 390);
+    await page.type('#ev-identity_evidence-documentNumber', 'ID-OWN-1');
+    await page.type('#ev-owner_operator_permit-documentNumber', 'OP-OWN-2');
+    await page.click('#service-country-XA');
+    await page.click('#service-equipment-curtain_side');
+    await page.click('#declaration');
+    await submit('#submit-carrier');
+    const ownerOverview = (await urApi(`/organisations/${personalOrg}/verification`)).body
+      .verification;
+    check(
+      'individual',
+      ownerOverview.applications.length === 1 &&
+        ownerOverview.applications[0].capability === 'carry_as_owner_operator',
+      `the personal account's carrier page applied for ${ownerOverview.applications[0]?.capability}`,
+    );
+    const ownerQueue = await (
+      await fetch(`${apiOrigin}/staff/verification`, {
+        headers: { authorization: `Bearer ${reviewerToken}` },
+      })
+    ).json();
+    const ownerDecision = await fetch(
+      `${apiOrigin}/staff/verification/${ownerOverview.applications[0].id}/decision`,
+      {
+        method: 'POST',
+        headers: { authorization: `Bearer ${reviewerToken}`, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          version: 1,
+          decision: 'verified',
+          reason: 'evidence_accepted',
+          noConflict: true,
+        }),
+      },
+    );
+    check(
+      'individual',
+      ownerDecision.status === 200 &&
+        ownerQueue.applications.some(
+          (entry) => entry.organisationId === personalOrg && entry.accountKind === 'individual',
+        ),
+      `staff saw and decided the truck owner's application: ${ownerDecision.status}`,
+    );
+    // The fleet of a truck owner: one truck; nobody is invited; the owner is the driver.
+    const ownerFleet = (locale) => `/${locale}/organisations/${personalOrg}/fleet`;
+    const registerOwn = async (plate) => {
+      await open(ownerFleet('en'), 390);
+      await page.select('#kind', 'truck');
+      await page.select('#category', 'fictional_rigid_truck');
+      await page.select('#equipmentType', 'curtain_side');
+      await page.select('#registrationCountry', 'XA');
+      await page.type('#registrationNumber', plate);
+      await submit('#register-vehicle');
+    };
+    await registerOwn(`OW${stamp}`);
+    await registerOwn(`OX${stamp}`);
+    const ownVehicles = (await urApi(`/organisations/${personalOrg}/fleet`)).body.fleet.vehicles;
+    check(
+      'individual',
+      ownVehicles.length === 1 &&
+        ((await text('#error-summary')) ?? '').includes(
+          messagesFor('en').fleet.errors.owner_fleet_limit,
+        ) &&
+        (await page.$('#invite-form')) === null &&
+        (await page.$('#become-own-driver')) !== null,
+      `a truck owner's fleet page holds ${ownVehicles.length} trucks after two registrations`,
+    );
+    // The person still drives for the company carrier: becoming their own driver is refused
+    // with the reason. After leaving, it is recorded, once.
+    await submit('#become-own-driver');
+    const stillCompany = ((await text('#error-summary')) ?? '').includes(
+      messagesFor('en').fleet.errors.driver_affiliation_exists,
+    );
+    const mineNow = (
+      await (
+        await fetch(`${apiOrigin}/me/driver`, { headers: { authorization: `Bearer ${urToken}` } })
+      ).json()
+    ).driver.affiliation;
+    const leftCompany = await post(
+      `/me/driver/affiliations/${mineNow?.id}/leave`,
+      { version: mineNow?.version },
+      'leave-for-own',
+    );
+    await open(ownerFleet('en'), 390);
+    await submit('#become-own-driver');
+    const ownDrivers = (await urApi(`/organisations/${personalOrg}/fleet`)).body.fleet.drivers;
+    check(
+      'individual',
+      stillCompany &&
+        leftCompany.status === 200 &&
+        ownDrivers.length === 1 &&
+        ownDrivers[0].status === 'active' &&
+        (await page.$('#become-own-driver')) === null &&
+        (await page.$('#own-driver')) !== null,
+      `becoming the driver of the own account: refused first ${stillCompany}, left ${leftCompany.status}, drivers ${ownDrivers.length}`,
+    );
+    for (const locale of locales) {
+      await open(ownerFleet(locale), 390);
+      await inspect(locale, 'truck owner fleet');
+    }
 
     // Suspended when the verification is withdrawn by staff (test accounts, migration role).
     const adminToken = `${randomBytes(16).toString('hex')}.${randomBytes(16).toString('hex')}`;

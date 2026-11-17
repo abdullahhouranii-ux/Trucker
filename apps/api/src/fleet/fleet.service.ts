@@ -36,6 +36,22 @@ const ERRORS: Record<string, [number, string, string]> = {
   ],
   exists: [409, 'fleet_record_exists', 'This record already exists in your fleet.'],
   limit: [409, 'fleet_limit', 'A limit for fleet records has been reached.'],
+  owner_limit: [
+    409,
+    'owner_fleet_limit',
+    'A truck owner account holds one truck and one trailer. Retire the current one first.',
+  ],
+  owner_only: [
+    409,
+    'owner_is_only_driver',
+    'The owner is the only driver of a truck owner account.',
+  ],
+  not_individual: [409, 'not_a_personal_account', 'Only a truck owner account can do this.'],
+  affiliated_elsewhere: [
+    409,
+    'driver_affiliation_exists',
+    'You already work with a carrier. Leave it before driving for your own account.',
+  ],
   conflict: [
     409,
     'fleet_record_changed',
@@ -201,6 +217,22 @@ export class FleetService {
         'SELECT status, detail FROM trucker.invite_driver($1, $2)',
         [key, JSON.stringify({ phone })],
         { invited: 'invited', repeated: 'already_invited' },
+      );
+      return { outcome };
+    });
+  }
+
+  /** The owner of a truck owner account becomes its driver. */
+  becomeOwnDriver(caller: Caller, organisationId: string) {
+    return this.asCaller(caller, organisationId, async (client) => {
+      const { outcome } = await this.run(
+        client,
+        'SELECT status FROM trucker.become_own_driver()',
+        [],
+        {
+          affiliated: 'affiliated',
+          exists: 'already_affiliated',
+        },
       );
       return { outcome };
     });

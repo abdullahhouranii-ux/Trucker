@@ -167,6 +167,72 @@
         "ar": "رخصة تشغيل النقل البري (وهمية)",
         "ur": "مال برداری چلانے کا لائسنس (فرضی)"
       }
+    },
+    {
+      "country": "XA",
+      "capability": "organise",
+      "documentType": "identity_evidence",
+      "required": true,
+      "name": {
+        "en": "Registration or identity evidence (fictional)",
+        "ar": "إثبات التسجيل أو الهوية (وهمي)",
+        "ur": "رجسٹریشن یا شناخت کا ثبوت (فرضی)"
+      }
+    },
+    {
+      "country": "XA",
+      "capability": "carry_as_owner_operator",
+      "documentType": "identity_evidence",
+      "required": true,
+      "name": {
+        "en": "Registration or identity evidence (fictional)",
+        "ar": "إثبات التسجيل أو الهوية (وهمي)",
+        "ur": "رجسٹریشن یا شناخت کا ثبوت (فرضی)"
+      }
+    },
+    {
+      "country": "XA",
+      "capability": "carry_as_owner_operator",
+      "documentType": "owner_operator_permit",
+      "required": true,
+      "name": {
+        "en": "Permit to carry goods as a truck owner (fictional)",
+        "ar": "تصريح نقل البضائع لمالك شاحنة (وهمي)",
+        "ur": "ٹرک مالک کے طور پر سامان لے جانے کا اجازت نامہ (فرضی)"
+      }
+    },
+    {
+      "country": "XB",
+      "capability": "organise",
+      "documentType": "identity_evidence",
+      "required": true,
+      "name": {
+        "en": "Registration or identity evidence (fictional)",
+        "ar": "إثبات التسجيل أو الهوية (وهمي)",
+        "ur": "رجسٹریشن یا شناخت کا ثبوت (فرضی)"
+      }
+    },
+    {
+      "country": "XB",
+      "capability": "carry_as_owner_operator",
+      "documentType": "identity_evidence",
+      "required": true,
+      "name": {
+        "en": "Registration or identity evidence (fictional)",
+        "ar": "إثبات التسجيل أو الهوية (وهمي)",
+        "ur": "رجسٹریشن یا شناخت کا ثبوت (فرضی)"
+      }
+    },
+    {
+      "country": "XB",
+      "capability": "carry_as_owner_operator",
+      "documentType": "owner_operator_permit",
+      "required": true,
+      "name": {
+        "en": "Permit to carry goods as a truck owner (fictional)",
+        "ar": "تصريح نقل البضائع لمالك شاحنة (وهمي)",
+        "ur": "ٹرک مالک کے طور پر سامان لے جانے کا اجازت نامہ (فرضی)"
+      }
     }
   ],
   "_catalogues_notice": "FICTIONAL cargo categories and equipment types. Not a statement of what may be carried anywhere (D-006 is undecided). Loaded only into a database marked local-development or test.",

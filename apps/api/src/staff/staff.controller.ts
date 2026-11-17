@@ -85,7 +85,7 @@ const decisionBody = z.object({
   noConflict: z.boolean(),
 });
 const revokeBody = z.object({
-  capability: z.enum(['ship', 'carry_as_company']),
+  capability: z.enum(['ship', 'carry_as_company', 'organise', 'carry_as_owner_operator']),
   reason: z.string().regex(/^[a-z_]{2,40}$/),
   note,
   noConflict: z.boolean(),

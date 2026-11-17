@@ -2,6 +2,7 @@ import { notFound, redirect } from 'next/navigation';
 import { api } from '../../../../../web/src/server/api.ts';
 import { ConsoleHeader, Unavailable, utc } from '../../../components/console-header.tsx';
 import {
+  ACCOUNT_KIND,
   APPLICATION_STATUS,
   CAPABILITY,
   DECISIONS,
@@ -274,6 +275,10 @@ export default async function ApplicationPage({ params, searchParams }: Props) {
               <div>
                 <dt>Legal name</dt>
                 <dd>{organisation.legalName}</dd>
+              </div>
+              <div>
+                <dt>Kind of account</dt>
+                <dd id="account-kind">{ACCOUNT_KIND[organisation.kind ?? 'company']}</dd>
               </div>
               <div>
                 <dt>Trading name</dt>
