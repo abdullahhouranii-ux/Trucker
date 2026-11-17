@@ -30,9 +30,9 @@ Each slice has a scope and a record with its evidence in this folder.
 | 25 | Price breakdown, views by role, fee payer from roles, freight terms on each booking | PR #29 |
 | 26 | Trucker's fee before confirmation: bank transfer verified by two administrators, lapse at the deadline, refund records | PR #30 |
 | 27 | Online payment of the fee through a provider-neutral interface (development stand-in only), receipts | PR #31 |
-| 28 | Refunds of the fee (requested, approved, submitted, completed or failed; partial; never more than the payment) and reconciliation, by independent staff; no real provider, no money moves | Pull request to follow |
+| 28 | Refunds of the fee (requested, approved, submitted, completed or failed; partial; never more than the payment) and reconciliation, by independent staff; no real provider, no money moves | PR #32 |
 
-Pull requests #15 to #31 are stacked, open and green in CI; slice 28 follows as its own pull request. None is merged; each needs a dependency review and Abdullah's explicit authorisation.
+Pull requests #15 to #31 are stacked, open and green in CI; #32 (slice 28) is open. None is merged None is merged; each needs a dependency review and Abdullah's explicit authorisation.
 
 ## Next
 

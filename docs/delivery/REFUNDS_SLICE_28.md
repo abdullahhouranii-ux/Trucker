@@ -1,6 +1,6 @@
 # Trucker: refunds of Trucker's fee, and reconciliation, slice 28 record
 
-Date: 17 November 2026. Branch `feat/refunds`, stacked on PR #31. Last slice of phase four (ADR-001 section 7), built under Abdullah's instruction of 17 November 2026 (20:06). No scope document was approved for this slice; this record states what was built so it can be accepted or corrected. Model: `docs/specs/ADR_001_COMMERCIAL_MODEL.md` (version 0.3): R-11, R-15, R-20 (confirmed), G-11 (design), D-8 (default), O-4 (open). No payment provider is chosen or contacted: the only provider is a development stand-in. **There is no real provider, and no money moves.** Bank refunds are transfers staff make outside Trucker and record here. Nothing here is merged, deployed or approved for production.
+Date: 17 November 2026. Branch `feat/refunds` (PR #32), stacked on PR #31. Last slice of phase four (ADR-001 section 7), built under Abdullah's instruction of 17 November 2026 (20:06). No scope document was approved for this slice; this record states what was built so it can be accepted or corrected. Model: `docs/specs/ADR_001_COMMERCIAL_MODEL.md` (version 0.3): R-11, R-15, R-20 (confirmed), G-11 (design), D-8 (default), O-4 (open). No payment provider is chosen or contacted: the only provider is a development stand-in. **There is no real provider, and no money moves.** Bank refunds are transfers staff make outside Trucker and record here. Nothing here is merged, deployed or approved for production.
 
 ## What changed
 
