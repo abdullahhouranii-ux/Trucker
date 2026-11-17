@@ -34,6 +34,10 @@ Existing organisations become kind `company`; no existing record, quotation or b
 
 The four API tests cover IA-1 to IA-7 and P2-1, P2-2: one account per person under a race; the member and kind guards; capability by kind; the full journey of a truck owner to a confirmed and acknowledged booking and its cancellation; the one-truck limit under a race; the single-affiliation rule in both directions and under a race; an organiser publishing; isolation.
 
+## Defect found afterwards and fixed (17 November 2026)
+
+While slice 22 was being verified, the test of two simultaneous attempts (becoming one's own driver and accepting a company's invitation) failed once in a full run: one request answered with a server error instead of a refusal. Cause, verified in the database log of that run: a deadlock between `become_own_driver` and `respond_driver_invitation`, each waiting on the other's entry in the one-active-affiliation index; PostgreSQL ended one of them. No wrong data resulted: exactly one affiliation was active. Fix in migration 0018: both functions take one lock for the person before deciding, so the second is refused in the ordinary way. With the fix the test passed 25 times in succession. The failure did not recur in 40 isolated runs of the unfixed version, so the test alone does not prove the fix; the cause rests on the log.
+
 ## Not done, and limits
 
 - Shipment roles and authority (slice 22) and commission agreements (slice 23) are not in this slice.

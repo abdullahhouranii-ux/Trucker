@@ -1252,6 +1252,10 @@ BEGIN
     status := 'not_individual';
     RETURN;
   END IF;
+  -- Becoming one's own driver and accepting a company's invitation are decided one at a time
+  -- for a person. Without this, two at the same moment each wait on the other's index entry
+  -- and one is ended as a deadlock instead of being refused.
+  PERFORM pg_advisory_xact_lock(hashtextextended('driver.affiliation:' || entered.actor::text, 0));
   IF EXISTS (SELECT 1 FROM trucker.driver_affiliation x
              WHERE x.person_id = entered.actor AND x.status = 'active') THEN
     status := CASE WHEN EXISTS (SELECT 1 FROM trucker.driver_affiliation x
@@ -1274,6 +1278,81 @@ BEGIN
                               'driver_affiliation', a.id, NULL,
                               jsonb_build_object('status', 'active', 'self', true));
   status := 'affiliated';
+END
+$$;
+
+-- Answering an invitation (replaces 0012's): takes the same lock for the person before it
+-- decides, for the reason given in become_own_driver. Nothing else changes.
+CREATE OR REPLACE FUNCTION trucker.respond_driver_invitation(p_affiliation uuid, p_expected_version integer, p_key text, p_decision text, OUT status text)
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'pg_catalog', 'trucker', 'pg_temp'
+AS $$
+#variable_conflict use_column
+DECLARE
+  actor uuid := trucker.request_person();
+  v_phone text;
+  a trucker.driver_affiliation;
+  seen record;
+  v_at timestamptz;
+  hash text := trucker.content_hash(jsonb_build_object('d', p_decision, 'v', p_expected_version));
+BEGIN
+  IF actor IS NULL THEN
+    status := 'unauthorized';
+    RETURN;
+  END IF;
+  IF p_decision IS NULL OR p_decision NOT IN ('accept', 'decline') THEN
+    status := 'invalid';
+    RETURN;
+  END IF;
+  -- The person's own row is locked first, so that two acceptances by one person run in turn.
+  SELECT p.phone_e164 INTO v_phone FROM trucker.person p WHERE p.id = actor FOR UPDATE;
+  SELECT * INTO a FROM trucker.driver_affiliation x
+  WHERE x.id = p_affiliation AND x.invited_phone = v_phone FOR UPDATE;
+  IF NOT FOUND THEN
+    status := 'not_found';
+    RETURN;
+  END IF;
+  v_at := trucker.clock_now();
+  SELECT * INTO seen FROM trucker.fleet_retry_seen(actor, p_key, 'respond', hash, v_at);
+  IF seen.seen IS NOT NULL THEN
+    status := CASE WHEN seen.seen = 'repeated' AND seen.record_id = a.id THEN 'already_answered' ELSE 'key_conflict' END;
+    RETURN;
+  END IF;
+  IF a.status <> 'invited' THEN
+    status := CASE WHEN a.person_id = actor THEN 'already_answered' ELSE 'not_found' END;
+    RETURN;
+  END IF;
+  IF a.row_version IS DISTINCT FROM p_expected_version THEN
+    status := 'conflict';
+    RETURN;
+  END IF;
+  IF p_decision = 'accept' THEN
+    -- One affiliation at a time for this person: see become_own_driver.
+    PERFORM pg_advisory_xact_lock(hashtextextended('driver.affiliation:' || actor::text, 0));
+    IF EXISTS (SELECT 1 FROM trucker.driver_affiliation x WHERE x.person_id = actor AND x.status = 'active') THEN
+      status := 'affiliation_exists';
+      RETURN;
+    END IF;
+    UPDATE trucker.driver_affiliation x
+    SET status = 'active', person_id = actor, responded_at = v_at, row_version = x.row_version + 1
+    WHERE x.id = a.id;
+    PERFORM trucker.fleet_audit(v_at, actor, NULL, a.organisation_id, 'driver.affiliation_accepted',
+                                'driver_affiliation', a.id, jsonb_build_object('status', 'invited'),
+                                jsonb_build_object('status', 'active'));
+    status := 'accepted';
+  ELSE
+    UPDATE trucker.driver_affiliation x
+    SET status = 'declined', person_id = actor, responded_at = v_at, row_version = x.row_version + 1
+    WHERE x.id = a.id;
+    PERFORM trucker.fleet_audit(v_at, actor, NULL, a.organisation_id, 'driver.invitation_declined',
+                                'driver_affiliation', a.id, jsonb_build_object('status', 'invited'),
+                                jsonb_build_object('status', 'declined'));
+    status := 'declined';
+  END IF;
+  INSERT INTO trucker.fleet_retry_key (person_id, key, operation, request_hash, record_id, created_at)
+  VALUES (actor, p_key, 'respond', hash, a.id, v_at);
 END
 $$;
 
