@@ -1196,7 +1196,10 @@
       "recorded": "Recorded.",
       "already_recorded": "This was already recorded.",
       "cancelled": "Cancellation confirmed. Reservations are released.",
-      "already_cancelled": "Cancellation confirmed. Reservations are released."
+      "already_cancelled": "Cancellation confirmed. Reservations are released.",
+      "dispatched": "The booking is dispatched. The trip has started.",
+      "already_dispatched": "This booking was already dispatched.",
+      "stated": "The estimate is recorded."
     },
     "errors": {
       "unavailable": "This could not be loaded. Try again.",
@@ -1220,7 +1223,16 @@
       "booking_cancelled": "This booking is cancelled.",
       "booking_dispatched": "This booking has been dispatched. Contact operations.",
       "cancel_unconfirmed": "Cancellation was not confirmed. The current booking state is shown below; check again to confirm.",
-      "fee_not_paid": "Trucker's fee was not paid by its deadline. The booking is ending and nothing was reserved."
+      "fee_not_paid": "Trucker's fee was not paid by its deadline. The booking is ending and nothing was reserved.",
+      "dispatch_refused": "This booking cannot be dispatched now. Nothing was changed.",
+      "not_dispatched": "This booking has not been dispatched.",
+      "milestone_out_of_sequence": "That is not the next milestone. Nothing was recorded.",
+      "trip_changed": "The trip changed since this page was opened. Nothing was recorded.",
+      "trip_arrived": "The truck has arrived at delivery: no estimate is taken now.",
+      "retry_key_conflict": "This form was already used for something else. Reload the page.",
+      "dispatch_unconfirmed": "It is not confirmed that the booking was dispatched. Check what is shown below before trying again.",
+      "milestone_unconfirmed": "It is not confirmed that the milestone was recorded. Check what is shown below before trying again.",
+      "estimate_unconfirmed": "It is not confirmed that the estimate was recorded. Check what is shown below before trying again."
     },
     "driver": {
       "title": "Your assignments",
@@ -1233,7 +1245,7 @@
       "cargo": "Cargo",
       "acknowledge": "Acknowledge this assignment",
       "acknowledged": "You acknowledged this assignment.",
-      "note": "Addresses are shown at dispatch, which is not available yet."
+      "note": "Addresses and access notes are shown from dispatch."
     }
   },
   "cancel": {
@@ -1462,5 +1474,59 @@
     "closed": "This payment page is no longer open.",
     "unavailable": "This could not be loaded. Try again.",
     "back": "Back to Trucker"
+  },
+  "trip": {
+    "title": "Trip",
+    "dispatchLead": "Dispatch starts the trip. Trucker checks everything again at that moment. After it, the booking cannot be cancelled and its resources cannot be changed.",
+    "dispatchFrom": "Dispatch is possible from",
+    "dispatch": "Dispatch",
+    "dispatchedAt": "Dispatched",
+    "late": "Dispatched after the planned start.",
+    "noLocation": "Trucker collects no location. Milestones and estimates are stated by people.",
+    "milestonesTitle": "Milestones",
+    "noMilestones": "No milestone is recorded yet.",
+    "milestones": {
+      "departed_for_pickup": "Left for pick-up",
+      "arrived_at_pickup": "Arrived at pick-up",
+      "loading_started": "Loading started",
+      "loaded_departed": "Loaded and left",
+      "arrived_at_delivery": "Arrived at delivery",
+      "unloading_started": "Unloading started"
+    },
+    "observed": "Recorded by the driver as it happened",
+    "reportedBy": "Reported by {by} for {about}",
+    "reasons": {
+      "no_phone": "the driver has no phone",
+      "no_signal": "no signal",
+      "driver_unable": "the driver cannot record it",
+      "correction": "a correction",
+      "other": "other"
+    },
+    "reason": "Reason",
+    "needsReview": "Earlier than the step before it: marked for review.",
+    "noteLabel": "Note",
+    "estimateTitle": "Estimated arrival at delivery",
+    "noEstimate": "No estimate is stated yet.",
+    "statedBy": "Stated by {by} ({as}) at",
+    "statedAs": {
+      "driver": "driver",
+      "carrier": "carrier"
+    },
+    "next": "Next milestone",
+    "record": "Record",
+    "complete": "Every milestone of this stage is recorded. Delivery and its proof come in a later release.",
+    "onBehalfTitle": "Record on the driver's behalf",
+    "onBehalfLead": "Only when the driver cannot record it. The time you give is shown as reported, not observed, with your name and the reason.",
+    "statedAt": "When it happened (UTC)",
+    "note": "Note (needed for Other; seen by your organisation only)",
+    "recordOnBehalf": "Record on the driver's behalf",
+    "estimateLabel": "Estimated arrival (UTC)",
+    "stateEstimate": "Record the estimate",
+    "shipper": "Shipper",
+    "refusals": {
+      "too_early": "It is too early to dispatch. The earliest time is shown in the trip section.",
+      "substitution_open": "A substitution is waiting for the shipper.",
+      "capability_missing": "A party does not hold the verification this needs now."
+    }
   }
 }

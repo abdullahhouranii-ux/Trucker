@@ -39,6 +39,8 @@ export const SECURITY_SETTING_DEFAULTS = {
   // How much longer a booking waits for the provider's word on a checkout it never answered
   // for (db/migrations/0026). Development default.
   payment_unresolved_minutes: 60,
+  // Earliest dispatch before the planned start (db/migrations/0028, DD-2). Development default.
+  dispatch_lead_hours: 12,
   staff_session_idle_minutes: 15,
   staff_session_absolute_hours: 8,
   staff_failure_limit: 5,

@@ -673,6 +673,10 @@ export interface Booking {
   waitDecision: { decidedAt: string } | null;
   assignmentVersion: number;
   dispatch: { ready: boolean; blockers: DispatchBlocker[] };
+  /** The earliest dispatch time (slice 17): ready means nothing blocks it, not that it is time. */
+  dispatchFrom?: string;
+  /** Once dispatched (slice 17). */
+  trip?: Trip | null;
   needsReassignment: boolean;
   atRisk: boolean;
   acknowledgedAt: string | null;
@@ -760,6 +764,40 @@ interface AssignmentPlace {
   from: { at: string };
   until: { at: string };
 }
+export type MilestoneCode =
+  | 'departed_for_pickup'
+  | 'arrived_at_pickup'
+  | 'loading_started'
+  | 'loaded_departed'
+  | 'arrived_at_delivery'
+  | 'unloading_started';
+/** A recorded milestone. Reported ones show who entered them, for whom and why (E-4). */
+export interface TripMilestone {
+  milestone: MilestoneCode;
+  statedAt: string;
+  recordedAt: string;
+  basis: 'observed' | 'reported';
+  about: string;
+  enteredBy: string | null;
+  reason: 'no_phone' | 'no_signal' | 'driver_unable' | 'correction' | 'other' | null;
+  /** The carrier only. */
+  note?: string | null;
+  needsReview: boolean;
+}
+export interface Trip {
+  id: string;
+  version: number;
+  dispatchedAt: string;
+  late: boolean;
+  next: MilestoneCode | null;
+  milestones: TripMilestone[];
+  estimate: {
+    arrivalAt: string;
+    statedAt: string;
+    statedAs: 'driver' | 'carrier';
+    statedBy: string;
+  } | null;
+}
 export interface DriverAssignment {
   bookingId: string;
   version: number;
@@ -771,6 +809,10 @@ export interface DriverAssignment {
   truck: AssignedVehicle | null;
   trailer: AssignedVehicle | null;
   acknowledgedAt: string | null;
+  /** From dispatch on (N-5, DD-8). */
+  trip?: Trip;
+  site?: BookingSite;
+  shipper?: { legalName: string; tradingName: string | null };
 }
 
 /** The roles of a shipment. Names only: no contact detail of any party is held. */

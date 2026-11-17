@@ -8,11 +8,16 @@ import {
   EligibilityTag,
   fleetProblems,
 } from '../../../components/fleet-view.tsx';
-import { ErrorSummary } from '../../../components/form.tsx';
+import { ErrorSummary, Field } from '../../../components/form.tsx';
+import { TripFacts, utcMinute } from '../../../components/trip-view.tsx';
 import { isLocale } from '../../../i18n/config.ts';
 import { getMessages } from '../../../i18n/messages.ts';
 import { api, type Country, type DriverAssignment, type DriverSide } from '../../../server/api.ts';
-import { acknowledgeAssignmentAction } from '../../../server/assignment-actions.ts';
+import {
+  acknowledgeAssignmentAction,
+  driverEstimateAction,
+  driverMilestoneAction,
+} from '../../../server/assignment-actions.ts';
 import {
   leaveAffiliationAction,
   respondInvitationAction,
@@ -22,7 +27,8 @@ import { requirePerson } from '../../../server/session.ts';
 
 // The driver's own page, made for a phone: invitations sent to their number, the carrier they
 // drive for, their documents, and the assignments their carrier has given them, which they
-// acknowledge here. A driver is shown areas and times, never a price or an address.
+// acknowledge here. A driver is shown areas and times, never a price; from dispatch (slice 17a)
+// also the addresses, access notes and the shipper's name, and records the trip's milestones.
 
 type Props = {
   params: Promise<{ locale: string }>;
@@ -190,8 +196,71 @@ export default async function DriverPage({ params, searchParams }: Props) {
                     ) : null,
                   )}
                 </dl>
-                <p className="field-hint">{a.driver.note}</p>
-                {item.acknowledgedAt ? (
+                {item.trip ? (
+                  <div data-trip={item.trip.id}>
+                    {item.shipper ? (
+                      <p data-shipper="yes">
+                        {m.trip.shipper}: <bdi>{nameOf(item.shipper)}</bdi>
+                      </p>
+                    ) : null}
+                    {item.site ? (
+                      <dl className="facts">
+                        {(['pickup', 'delivery'] as const).map((place) => (
+                          <div key={place}>
+                            <dt>{a[place]}</dt>
+                            <dd data-site={place}>
+                              <bdi>{item.site![place].address}</bdi>
+                              <br />
+                              {a.accessNotes}:{' '}
+                              <bdi>{item.site![place].accessNotes ?? a.noAccessNotes}</bdi>
+                            </dd>
+                          </div>
+                        ))}
+                      </dl>
+                    ) : null}
+                    <TripFacts t={m.trip} trip={item.trip} />
+                    {item.trip.next ? (
+                      <form className="form-inline" action={driverMilestoneAction}>
+                        <input type="hidden" name="locale" value={locale} />
+                        <input type="hidden" name="bookingId" value={item.bookingId} />
+                        <input type="hidden" name="version" value={item.trip.version} />
+                        <input type="hidden" name="milestone" value={item.trip.next} />
+                        <button
+                          className="button button-primary"
+                          type="submit"
+                          data-record-milestone={item.trip.next}
+                        >
+                          {m.trip.record}: {m.trip.milestones[item.trip.next]}
+                        </button>
+                      </form>
+                    ) : (
+                      <p data-trip-complete="yes">{m.trip.complete}</p>
+                    )}
+                    {item.trip.milestones.some(
+                      (entry) => entry.milestone === 'arrived_at_delivery',
+                    ) ? null : (
+                      <form className="form card" action={driverEstimateAction}>
+                        <input type="hidden" name="locale" value={locale} />
+                        <input type="hidden" name="bookingId" value={item.bookingId} />
+                        <Field id={`estimate-${item.bookingId}`} label={m.trip.estimateLabel}>
+                          <input
+                            id={`estimate-${item.bookingId}`}
+                            name="arrivalAt"
+                            type="datetime-local"
+                            min={utcMinute(new Date())}
+                            required
+                          />
+                        </Field>
+                        <button className="button" type="submit" data-state-estimate="yes">
+                          {m.trip.stateEstimate}
+                        </button>
+                      </form>
+                    )}
+                  </div>
+                ) : (
+                  <p className="field-hint">{a.driver.note}</p>
+                )}
+                {item.trip ? null : item.acknowledgedAt ? (
                   <p data-acknowledged="yes">{a.driver.acknowledged}</p>
                 ) : (
                   <form className="form-inline" action={acknowledgeAssignmentAction}>

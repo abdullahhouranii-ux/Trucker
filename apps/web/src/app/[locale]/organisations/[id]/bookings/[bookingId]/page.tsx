@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { notFound, redirect } from 'next/navigation';
 import { DraftKeeper } from '../../../../../../components/draft-keeper.tsx';
 import {
@@ -7,6 +8,7 @@ import {
   PayOnline,
 } from '../../../../../../components/booking-view.tsx';
 import { ErrorSummary, Field } from '../../../../../../components/form.tsx';
+import { TripFacts, utcMinute } from '../../../../../../components/trip-view.tsx';
 import { direction, isLocale, type Locale } from '../../../../../../i18n/config.ts';
 import { getMessages, type Messages } from '../../../../../../i18n/messages.ts';
 import {
@@ -21,6 +23,9 @@ import {
   assignResourcesAction,
   cancelBookingAction,
   decideSubstitutionAction,
+  dispatchBookingAction,
+  recordMilestoneOnBehalfAction,
+  stateEstimateAction,
   waitForCarrierAction,
 } from '../../../../../../server/assignment-actions.ts';
 import { requirePerson } from '../../../../../../server/session.ts';
@@ -28,7 +33,8 @@ import { requirePerson } from '../../../../../../server/session.ts';
 // One booking, for its shipper or its carrier. The carrier assigns its resources here; the
 // shipper decides on a proposed substitution and may record that it will wait. What each side
 // is shown of the other's details depends on whether the booking is confirmed. Nothing on
-// this page dispatches, cancels, invoices or pays.
+// this page invoices or pays. From slice 17a the carrier dispatches here; once dispatched the
+// booking shows its trip, and cancelling or changing resources is no longer offered.
 
 type Props = {
   params: Promise<{ locale: string; id: string; bookingId: string }>;
@@ -109,7 +115,9 @@ export default async function BookingPage({ params, searchParams }: Props) {
   const role = booking.role === 'carrier' ? 'carrier' : 'shipper';
   const confirmed = booking.status === 'confirmed';
   const cancelled = booking.status === 'cancelled';
+  const trip = booking.trip ?? null;
   const ct = m.cancel;
+  const tt = m.trip;
 
   // A refusal names, where it can, which resource and why, in words this page already has.
   const reasonText = (reason: string): string | undefined =>
@@ -121,9 +129,19 @@ export default async function BookingPage({ params, searchParams }: Props) {
     const message = (a.errors as Record<string, string>)[error] ?? a.errors.invalid;
     const roleName = (a.roles as Record<string, string>)[one('aRole')];
     const reason = reasonText(one('aReason'));
-    problems.push({
-      message: roleName && reason ? `${message} ${roleName}: ${reason}` : message,
-    });
+    if (error === 'dispatch_refused') {
+      // Why dispatch was refused: the first precondition that failed.
+      const code = one('aReason');
+      const why =
+        (tt.refusals as Record<string, string>)[code] ??
+        (a.blockers as Record<string, string>)[code];
+      const cause = reasonText(one('aCause'));
+      const parts = [message, why, roleName ? `${roleName}${cause ? `: ${cause}` : ''}` : null];
+      problems.push({ message: parts.filter(Boolean).join(' ') });
+    } else
+      problems.push({
+        message: roleName && reason ? `${message} ${roleName}: ${reason}` : message,
+      });
   }
   const done = one('aDone');
   const confirmation = done ? (a.done as Record<string, string>)[done] : undefined;
@@ -191,7 +209,7 @@ export default async function BookingPage({ params, searchParams }: Props) {
           ) : null}
         </section>
       ) : null}
-      {reply.data.open && (!cancelled || error === 'cancel_unconfirmed') ? (
+      {reply.data.open && !trip && (!cancelled || error === 'cancel_unconfirmed') ? (
         <section className="section" id="cancel-booking" aria-labelledby="cancel-title">
           <h2 id="cancel-title">{ct.title}</h2>
           <p>{ct.warning}</p>
@@ -248,8 +266,8 @@ export default async function BookingPage({ params, searchParams }: Props) {
             </button>
           </form>
         ) : null}
-        <h3>{a.dispatchTitle}</h3>
-        {booking.dispatch.ready ? (
+        {trip ? null : <h3>{a.dispatchTitle}</h3>}
+        {trip ? null : booking.dispatch.ready ? (
           <p id="dispatch" data-ready="yes">
             {a.dispatchReady}
           </p>
@@ -275,6 +293,36 @@ export default async function BookingPage({ params, searchParams }: Props) {
           </div>
         )}
       </section>
+
+      {trip || (role === 'carrier' && !cancelled && booking.dispatch.ready) ? (
+        <section className="section" aria-labelledby="trip-title" id="trip">
+          <h2 id="trip-title">{tt.title}</h2>
+          {trip ? (
+            <>
+              <TripFacts t={tt} trip={trip} />
+              {role === 'carrier' ? <CarrierTripForms t={tt} trip={trip} hidden={hidden} /> : null}
+            </>
+          ) : (
+            <form action={dispatchBookingAction} id="dispatch-form">
+              {hidden}
+              <input
+                type="hidden"
+                name="retryKey"
+                value={UUID.test(one('aKey')) ? one('aKey') : randomUUID()}
+              />
+              <p>{tt.dispatchLead}</p>
+              {booking.dispatchFrom ? (
+                <p className="field-hint" id="dispatch-from">
+                  {tt.dispatchFrom} <InstantText at={booking.dispatchFrom} />
+                </p>
+              ) : null}
+              <button className="button button-primary" type="submit" id="dispatch-booking">
+                {tt.dispatch}
+              </button>
+            </form>
+          )}
+        </section>
+      ) : null}
 
       <section className="section" aria-labelledby="resources-title">
         <h2 id="resources-title">{a.resourcesTitle}</h2>
@@ -403,7 +451,7 @@ export default async function BookingPage({ params, searchParams }: Props) {
         </section>
       ) : null}
 
-      {role === 'carrier' && !cancelled ? (
+      {role === 'carrier' && !cancelled && !trip ? (
         <section className="section" aria-labelledby="assign-title" id="assign">
           <h2 id="assign-title">{a.assignTitle}</h2>
           {candidates && !booking.substitution ? (
@@ -507,5 +555,75 @@ function AssignForm({
         {a.save}
       </button>
     </form>
+  );
+}
+
+/** The carrier, once dispatched: a milestone on the driver's behalf, and the estimate. */
+function CarrierTripForms({
+  t,
+  trip,
+  hidden,
+}: {
+  t: Messages['trip'];
+  trip: NonNullable<BookingDetail['booking']['trip']>;
+  hidden: React.ReactNode;
+}) {
+  const now = utcMinute(new Date());
+  const arrived = trip.milestones.some((item) => item.milestone === 'arrived_at_delivery');
+  return (
+    <>
+      {trip.next ? (
+        <form action={recordMilestoneOnBehalfAction} id="on-behalf-form" className="form card">
+          {hidden}
+          <h3>{t.onBehalfTitle}</h3>
+          <p className="field-hint">{t.onBehalfLead}</p>
+          <input type="hidden" name="version" value={trip.version} />
+          <input type="hidden" name="milestone" value={trip.next} />
+          <p id="on-behalf-next">
+            {t.next}: <strong>{t.milestones[trip.next]}</strong>
+          </p>
+          <Field id="on-behalf-at" label={t.statedAt}>
+            <input
+              id="on-behalf-at"
+              name="statedAt"
+              type="datetime-local"
+              defaultValue={now}
+              max={now}
+              required
+            />
+          </Field>
+          <Field id="on-behalf-reason" label={t.reason}>
+            <select id="on-behalf-reason" name="reason" required>
+              {(['no_phone', 'no_signal', 'driver_unable', 'correction', 'other'] as const).map(
+                (code) => (
+                  <option key={code} value={code}>
+                    {t.reasons[code]}
+                  </option>
+                ),
+              )}
+            </select>
+          </Field>
+          <Field id="on-behalf-note" label={t.note}>
+            <textarea id="on-behalf-note" name="note" maxLength={500} />
+          </Field>
+          <button className="button" type="submit" id="record-on-behalf">
+            {t.recordOnBehalf}
+          </button>
+        </form>
+      ) : (
+        <p id="trip-complete">{t.complete}</p>
+      )}
+      {arrived ? null : (
+        <form action={stateEstimateAction} id="estimate-form" className="form card">
+          {hidden}
+          <Field id="estimate-at" label={t.estimateLabel}>
+            <input id="estimate-at" name="arrivalAt" type="datetime-local" min={now} required />
+          </Field>
+          <button className="button" type="submit" id="state-estimate">
+            {t.stateEstimate}
+          </button>
+        </form>
+      )}
+    </>
   );
 }
