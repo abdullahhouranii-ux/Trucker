@@ -36,6 +36,9 @@ export const SECURITY_SETTING_DEFAULTS = {
   // Online payment of the fee (db/migrations/0025). Development defaults.
   checkout_minutes: 30,
   payment_notice_grace_minutes: 15,
+  // How much longer a booking waits for the provider's word on a checkout it never answered
+  // for (db/migrations/0026). Development default.
+  payment_unresolved_minutes: 60,
   staff_session_idle_minutes: 15,
   staff_session_absolute_hours: 8,
   staff_failure_limit: 5,

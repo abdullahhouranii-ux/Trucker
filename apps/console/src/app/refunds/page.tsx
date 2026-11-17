@@ -12,7 +12,7 @@ import {
 } from '../../server/actions.ts';
 import { requireStaff } from '../../server/session.ts';
 
-// Refunds of Trucker's fee and reconciliation (db/migrations/0026). Money owed back is requested
+// Refunds of Trucker's fee and reconciliation (db/migrations/0027). Money owed back is requested
 // by one administrator and approved by another, then submitted: to the payment provider, or as a
 // bank transfer that a different administrator confirms from Trucker's bank statement. A request
 // may be for part of what is owed; requests never add up to more than the payment. Reconciliation

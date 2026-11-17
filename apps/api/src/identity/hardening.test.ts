@@ -234,6 +234,7 @@ const CALLABLE = [
   'end_authority(p_authority uuid, p_expected_version integer)',
   'end_commission_contract(p_contract uuid, p_expected_version integer)',
   'end_driver_affiliation(p_affiliation uuid, p_expected_version integer, p_key text)',
+  'fee_checkout_asked(p_provider text, p_reference text, p_answer text)',
   'fee_checkout_open(p_booking uuid, p_key text, p_provider text)',
   'fee_checkout_refused(p_checkout uuid)',
   'fee_checkout_started(p_checkout uuid, p_provider_reference text, p_url text)',

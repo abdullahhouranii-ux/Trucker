@@ -327,6 +327,7 @@ test('every table has row security: a policy, or no right at all for the API', a
     'fee_checkout',
     'fee_receipt',
     'payment_notification',
+    'fee_checkout_inquiry',
     'fee_payment',
     'fee_refund',
     'refund_request',

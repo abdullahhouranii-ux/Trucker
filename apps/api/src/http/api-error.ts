@@ -74,6 +74,19 @@ export function mapError(error: unknown): MappedError {
       ...(error.details ? { details: error.details } : {}),
     };
   }
+  // Raised by the database when the caller's session ended, or a staff privilege was removed,
+  // while the request waited for a lock: the whole request was undone (db/migrations/0026).
+  const sqlState = (error as { code?: unknown } | null)?.code;
+  if (sqlState === 'TR401') {
+    const [code, message] = STANDARD[401] as readonly [string, string];
+    return { status: 401, code, message };
+  }
+  if (sqlState === 'TR403')
+    return {
+      status: 403,
+      code: 'staff_privilege_required',
+      message: 'Your account does not hold the privilege this needs.',
+    };
   const status = statusOf(error);
   if (status !== undefined && status >= 400 && status <= 499) {
     const [code, message] = STANDARD[status] ?? ['request_error', 'The request was not accepted.'];

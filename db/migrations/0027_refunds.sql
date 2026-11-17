@@ -928,8 +928,14 @@ BEGIN
         FROM trucker.payment_notification n WHERE n.result IN ('mismatch', 'unknown_checkout')
         ORDER BY n.received_at DESC, n.id LIMIT 50) x), '[]'::jsonb),
     'openCheckouts', coalesce((
-      SELECT jsonb_agg(trucker.fee_checkout_values(c) ORDER BY c.expires_at, c.id)
-      FROM trucker.fee_checkout c WHERE c.status IN ('opening', 'open')), '[]'::jsonb),
+      -- In progress, and those whose outcome the provider has not given (R3).
+      SELECT jsonb_agg(trucker.fee_checkout_values(c) || jsonb_build_object(
+               'awaitingProvider', c.status NOT IN ('opening', 'open'),
+               'lastAsked', (SELECT jsonb_build_object('at', q.asked_at, 'answer', q.answer, 'times', q.asked_count)
+                             FROM trucker.fee_checkout_inquiry q WHERE q.checkout_id = c.id))
+             ORDER BY c.expires_at, c.id)
+      FROM trucker.fee_checkout c
+      WHERE c.status IN ('opening', 'open') OR (c.resolved_at IS NULL AND c.provider_reference IS NOT NULL)), '[]'::jsonb),
     'refunds', coalesce((
       SELECT jsonb_agg(trucker.fee_refund_values(r) || jsonb_build_object(
                'reference', (SELECT f.reference FROM trucker.booking_fee f WHERE f.booking_id = r.booking_id))

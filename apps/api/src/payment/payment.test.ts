@@ -23,7 +23,14 @@ import { SECURITY_SETTING_DEFAULTS } from '../database/settings.js';
 import { configureApp } from '../http/configure-app.js';
 import { hashToken } from '../identity/secrets.js';
 import { DEMONSTRATION_TERMS_VERSION } from '../identity/terms.js';
-import { settleFee } from '../testing/fee.js';
+import {
+  decideReceipt,
+  feeDue,
+  matching,
+  recordReceipt,
+  settleFee,
+  type FeePayment,
+} from '../testing/fee.js';
 import { createTestClock } from '../testing/test-clock.js';
 import { createTestDatabase, type TestDatabase } from '../testing/test-database.js';
 
@@ -1515,7 +1522,7 @@ test('PAY-8: money a provider takes on a checkout Trucker had already replaced i
   assert.equal((await receiptsOf(made.booking.id)).length, 1);
 });
 
-test("PAY-9, R-15: with the provider unreachable, nothing settles on the payer's word; once the grace period ends the booking lapses and other bookings still lapse; the notification that arrives later is returned; a captured notice replayed after the signature window is refused", async () => {
+test("PAY-9, R-15: with the provider unreachable, nothing settles on the payer's word; an unanswered payment holds the booking past the grace period for at most the longest wait, then it lapses, and other bookings still lapse; the notification that arrives later is returned; a captured notice replayed after the signature window is refused", async () => {
   const carrier = await verifiedCarrier();
   const made = await booked(carrier);
   const other = await booked(carrier, 1);
@@ -1533,14 +1540,25 @@ test("PAY-9, R-15: with the provider unreachable, nothing settles on the payer's
     await advance(10 * 60 + 60);
     await tick();
     assert.equal((await feeRow(made.booking.id)).status, 'due');
-    // After it, with the provider still silent: the job records the lapse, and the other
-    // booking's lapse is not stopped by the outage.
+    // After it, with the provider still silent: an unanswered payment is not an unpaid one, so
+    // the booking is still held (review R2); the other booking's lapse is not stopped.
     await advance(15 * 60);
     await tick();
     assert.deepEqual(
       [(await feeRow(made.booking.id)).status, (await feeRow(other.booking.id)).status],
-      ['lapsed', 'lapsed'],
+      ['due', 'lapsed'],
     );
+    // Silent to the end of the longest wait: it lapses, and the lapse says the provider never
+    // answered.
+    await advance(D.payment_unresolved_minutes * 60);
+    await tick();
+    assert.equal((await feeRow(made.booking.id)).status, 'lapsed');
+    const lapse = await owner.query<{ unanswered: string }>(
+      `SELECT after_values ->> 'providerUnanswered' AS unanswered FROM trucker.audit_entry
+       WHERE record_id = $1 AND action = 'booking.lapsed' LIMIT 1`,
+      [made.booking.id],
+    );
+    assert.equal(lapse.rows[0]?.unanswered, '1');
   } finally {
     standIn().trouble = 'none';
   }
@@ -1559,4 +1577,298 @@ test("PAY-9, R-15: with the provider unreachable, nothing settles on the payer's
   // The notice exactly as it was first signed, replayed now: outside the window, refused.
   const replayed = await notify(notice.body, notice.headers);
   assert.equal(replayed.status, 400, replayed.text);
+});
+
+// ---------------------------------------------------------------------------------------------
+// After the review of 17 November 2026 (R2 to R5)
+// ---------------------------------------------------------------------------------------------
+/**
+ * Holds a lock, starts the work, waits until that many requests wait for locks, runs what is
+ * to happen meanwhile (for example the clock moving on), then lets go.
+ */
+async function duringWait<T>(
+  sql: string,
+  values: unknown[],
+  waiting: number,
+  work: () => Promise<T>,
+  meanwhile: () => Promise<unknown> = async () => undefined,
+): Promise<T> {
+  const holder = await owner.connect();
+  await holder.query('BEGIN');
+  await holder.query(sql, values);
+  const result = work();
+  try {
+    for (let attempt = 0; ; attempt += 1) {
+      const n = (
+        await owner.query<{ n: number }>(
+          `SELECT count(*)::int AS n FROM pg_locks l JOIN pg_stat_activity a ON a.pid = l.pid
+           WHERE NOT l.granted AND a.datname = current_database()`,
+        )
+      ).rows[0]!.n;
+      if (n >= waiting) break;
+      if (attempt > 400) throw new Error(`only ${n} of ${waiting} requests waited`);
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    await meanwhile();
+  } finally {
+    await holder.query('COMMIT');
+    holder.release();
+  }
+  return result;
+}
+const holdShipment = 'SELECT 1 FROM trucker.shipment_draft WHERE id = $1 FOR UPDATE';
+
+test('PAY-10, R-13, R-15: the provider reporting a payment made in time, the payer asking again and the payer cancelling, all at once past the deadline: the booking never lapses, the payment is applied once and returned once', async () => {
+  let carrier = await verifiedCarrier();
+  for (let round = 0; round < 3; round += 1) {
+    const made = await booked(carrier, round);
+    const dueAt = (await feeRow(made.booking.id)).due_at;
+    await advance(Math.floor((dueAt.getTime() - clock().getTime()) / 1000) - 10 * 60);
+    carrier = await freshParty(carrier);
+    const shipper = await freshParty(made.shipper);
+    const checkout = await opened(shipper, made.booking.id);
+    // Paid in time; the notice is lost; the deadline and the usual wait pass with no job run.
+    assert.equal((await complete(checkout.providerReference!, 'paid', false)).status, 200);
+    await until(dueAt.toISOString(), 16 * 60);
+    const payer = await freshParty(shipper);
+    const [, retried, cancelled] = await duringWait(holdShipment, [made.shipment.id], 3, () =>
+      Promise.all([
+        tick(),
+        openCheckout(payer, made.booking.id),
+        cancel(payer, made.booking.id, 'dates_changed', 0),
+      ]),
+    );
+    const fee = await feeRow(made.booking.id);
+    const refunds = await refundsOf(made.booking.id);
+    assert.notEqual(fee.status, 'lapsed', `round ${round}`);
+    assert.equal(retried.status, 409, retried.text);
+    assert.equal(cancelled.status, 200, cancelled.text);
+    assert.equal(await count('fee_payment', 'booking_id = $1', [made.booking.id]), 1);
+    assert.equal(refunds.length, 1, JSON.stringify(refunds));
+    assert.ok(['cancelled_after_payment', 'booking_ended'].includes(refunds[0]!.reason));
+    assert.equal(
+      await count('booking_cancellation', "booking_id = $1 AND reason = 'fee_not_paid'", [
+        made.booking.id,
+      ]),
+      0,
+    );
+    assert.deepEqual(await consistency(), []);
+  }
+});
+
+test('PAY-11: a request that waited for a lock while its session ended, or while the staff privilege it needs was removed, changes nothing; the payer, the recording administrator and the approving administrator alike', async () => {
+  const carrier = await verifiedCarrier();
+  // The payer: its session ends while the checkout request waits for the booking.
+  const first = await booked(carrier);
+  const late = await duringWait(
+    holdShipment,
+    [first.shipment.id],
+    1,
+    () => openCheckout(first.shipper, first.booking.id),
+    () => advance(D.session_idle_minutes * 60 + 1),
+  );
+  assert.deepEqual([late.status, late.body.code], [401, 'unauthorized']);
+  assert.equal(await count('fee_checkout', 'booking_id = $1', [first.booking.id]), 0);
+
+  // An administrator recording a transfer: the staff session ends during the wait.
+  const second = await booked(await freshParty(carrier), 1);
+  const recorder = await administrator();
+  const due = await feeDue(call, recorder.token, second.booking.id);
+  const recorded = await duringWait(
+    holdShipment,
+    [second.shipment.id],
+    1,
+    () => recordReceipt(call, recorder.token, matching(due)),
+    () => advance(D.staff_session_idle_minutes * 60 + 1),
+  );
+  assert.deepEqual([recorded.status, recorded.body.code], [401, 'unauthorized']);
+  assert.equal(await count('fee_payment', 'booking_id = $1', [second.booking.id]), 0);
+
+  // The approving administrator: the privilege is removed during the wait.
+  const third = await booked(await freshParty(carrier), 2);
+  const writer = await administrator();
+  const approver = await newStaff(['staff_admin']);
+  const thirdDue = await feeDue(call, writer.token, third.booking.id);
+  const written = await recordReceipt(call, writer.token, matching(thirdDue));
+  assert.equal(written.status, 201, written.text);
+  const decided = await duringWait(
+    holdShipment,
+    [third.shipment.id],
+    1,
+    () => decideReceipt(call, approver.token, written.body.payment as FeePayment, 'approve'),
+    () =>
+      owner.query(
+        "DELETE FROM trucker.staff_privilege WHERE staff_id = $1 AND privilege = 'staff_admin'",
+        [approver.id],
+      ),
+  );
+  assert.deepEqual([decided.status, decided.body.code], [403, 'staff_privilege_required']);
+  assert.equal((await feeRow(third.booking.id)).status, 'due');
+  assert.equal(
+    await count('fee_payment', "booking_id = $1 AND status = 'recorded'", [third.booking.id]),
+    1,
+  );
+});
+
+test('PAY-12: a change whose time was taken before its lock (retiring a vehicle) is checked again when it is recorded: a session that ended during the wait changes nothing', async () => {
+  const carrier = await verifiedCarrier();
+  const truck = await registered(carrier.person, carrier.org);
+  const retired = await duringWait(
+    'SELECT 1 FROM trucker.vehicle WHERE id = $1 FOR UPDATE',
+    [truck.id],
+    1,
+    () =>
+      call('POST', fleet(carrier.org, `/vehicles/${truck.id}/retire`), {
+        token: carrier.person.token,
+        key: key(),
+        body: { version: truck.version },
+      }),
+    () => advance(D.session_idle_minutes * 60 + 1),
+  );
+  assert.deepEqual([retired.status, retired.body.code], [401, 'unauthorized']);
+  const kept = await owner.query<{ status: string }>(
+    'SELECT status FROM trucker.vehicle WHERE id = $1',
+    [truck.id],
+  );
+  assert.notEqual(kept.rows[0]!.status, 'retired');
+});
+
+test('PAY-13: checkouts closed here are asked about too; once the provider says none was paid, the booking lapses at the end of the usual wait, not of the longest one', async () => {
+  const carrier = await verifiedCarrier();
+  const made = await booked(carrier);
+  const first = await opened(made.shipper, made.booking.id);
+  // Its time runs out unpaid; a second one replaces it, unpaid too.
+  await until(first.expiresAt, 1);
+  const shipper = await freshParty(made.shipper);
+  const second = await opened(shipper, made.booking.id);
+  assert.notEqual(second.id, first.id);
+  assert.equal(await statusOf('fee_checkout', first.id), 'expired');
+  const dueAt = (await feeRow(made.booking.id)).due_at;
+  await until(dueAt.toISOString(), D.payment_notice_grace_minutes * 60 + 1);
+  await tick();
+  assert.equal((await feeRow(made.booking.id)).status, 'lapsed');
+  const asked = await owner.query<{ id: string; answer: string; resolved: boolean }>(
+    `SELECT c.id, q.answer, c.resolved_at IS NOT NULL AS resolved FROM trucker.fee_checkout c
+     JOIN trucker.fee_checkout_inquiry q ON q.checkout_id = c.id WHERE c.booking_id = $1 ORDER BY c.created_at`,
+    [made.booking.id],
+  );
+  assert.deepEqual(
+    asked.rows.map((row) => [row.id, row.answer, row.resolved]),
+    [
+      [first.id, 'reported', true],
+      [second.id, 'reported', true],
+    ],
+  );
+  const lapse = await owner.query<{ unanswered: string }>(
+    `SELECT after_values ->> 'providerUnanswered' AS unanswered FROM trucker.audit_entry
+     WHERE record_id = $1 AND action = 'booking.lapsed' LIMIT 1`,
+    [made.booking.id],
+  );
+  assert.equal(lapse.rows[0]?.unanswered, '0');
+});
+
+// Independent audit regressions. Added only in the isolated review copy.
+test('AUDIT-1: a lost provider checkout-creation response must not create a second payable checkout', async () => {
+  const carrier = await verifiedCarrier();
+  const { shipper, booking } = await booked(carrier);
+  const provider = standIn();
+  const original = provider.openCheckout.bind(provider);
+  let lost: Awaited<ReturnType<typeof original>> | undefined;
+  provider.openCheckout = async (request) => {
+    lost = await original(request);
+    throw new Error('AUDIT: provider created checkout but response connection was lost');
+  };
+  const requestKey = key();
+  try {
+    const first = await openCheckout(shipper, booking.id, requestKey);
+    assert.equal(first.status, 502, first.text);
+    provider.openCheckout = original;
+    assert.equal(provider.view(lost!.providerReference)!.status, 'open');
+    const same = await openCheckout(shipper, booking.id, requestKey);
+    const replacement = await openCheckout(shipper, booking.id, key());
+    const firstDb = (
+      await owner.query(
+        'SELECT id,status,provider_reference FROM trucker.fee_checkout WHERE booking_id=$1 ORDER BY created_at,id',
+        [booking.id],
+      )
+    ).rows;
+    console.log(
+      'AUDIT-1 OBSERVED',
+      JSON.stringify({
+        sameKeyStatus: same.status,
+        sameKeyCheckout: same.body.checkout,
+        rows: firstDb,
+        providerFirst: provider.view(lost!.providerReference),
+        providerSecond: provider.view((replacement.body.checkout as Checkout).providerReference!),
+      }),
+    );
+    assert.equal(
+      firstDb.length,
+      1,
+      'Retry after an unknown provider outcome created another checkout while the original remains payable',
+    );
+  } finally {
+    provider.openCheckout = original;
+  }
+});
+
+test('AUDIT-2: a payment made in time must be checked with the provider before a retry lapses its booking', async () => {
+  const carrier = await verifiedCarrier();
+  const made = await booked(carrier);
+  const dueAt = (await feeRow(made.booking.id)).due_at;
+  await advance(Math.floor((dueAt.getTime() - clock().getTime()) / 1000) - 10 * 60);
+  const shipper = await freshParty(made.shipper);
+  const checkout = await opened(shipper, made.booking.id);
+  assert.equal((await complete(checkout.providerReference!, 'paid', false)).status, 200);
+  await until(dueAt.toISOString(), 16 * 60);
+  const retry = await openCheckout(shipper, made.booking.id, key());
+  await tick();
+  const fee = await feeRow(made.booking.id);
+  console.log(
+    'AUDIT-2 OBSERVED',
+    JSON.stringify({
+      retryStatus: retry.status,
+      retry: retry.body,
+      feeStatus: fee.status,
+      refunds: await refundsOf(made.booking.id),
+      provider: await standIn().status(checkout.providerReference!),
+    }),
+  );
+  assert.equal(
+    fee.status,
+    'paid',
+    'The retry lapsed an already-paid-in-time booking before querying its provider; later recovery turns payment into a refund',
+  );
+});
+
+test('AUDIT-3: provider status recovery must not stop seeing an expired local checkout when the provider actually took payment', async () => {
+  const carrier = await verifiedCarrier();
+  const made = await booked(carrier);
+  const checkout = await opened(made.shipper, made.booking.id);
+  // Money is taken but its notification never arrives.
+  assert.equal((await complete(checkout.providerReference!, 'paid', false)).status, 200);
+  // A browser retry after checkout expiry but before fee deadline locally expires the old checkout.
+  await until(checkout.expiresAt, 1);
+  const shipper = await freshParty(made.shipper);
+  const next = await openCheckout(shipper, made.booking.id, key());
+  assert.equal(next.status, 201, next.text);
+  await tick();
+  const fee = await feeRow(made.booking.id);
+  const old = (
+    await owner.query('SELECT status FROM trucker.fee_checkout WHERE id=$1', [checkout.id])
+  ).rows[0];
+  console.log(
+    'AUDIT-3 OBSERVED',
+    JSON.stringify({
+      oldStatus: old.status,
+      newCheckout: (next.body.checkout as Checkout).id,
+      feeStatus: fee.status,
+      provider: await standIn().status(checkout.providerReference!),
+    }),
+  );
+  assert.equal(
+    fee.status,
+    'paid',
+    'The recovery query ignores a locally expired checkout even when the provider already collected the fee',
+  );
 });

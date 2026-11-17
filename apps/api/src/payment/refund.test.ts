@@ -1482,3 +1482,67 @@ test('RF-5, D-8: reconciliation is recorded by someone with no hand in the payme
     ['recorded', 'discrepancy'],
   );
 });
+
+/** Holds a lock until a request waits for it, runs what happens meanwhile, then lets go. */
+async function duringWait<T>(
+  sql: string,
+  values: unknown[],
+  work: () => Promise<T>,
+  meanwhile: () => Promise<unknown>,
+): Promise<T> {
+  const holder = await owner.connect();
+  await holder.query('BEGIN');
+  await holder.query(sql, values);
+  const result = work();
+  try {
+    for (let attempt = 0; ; attempt += 1) {
+      const n = (
+        await owner.query<{ n: number }>(
+          `SELECT count(*)::int AS n FROM pg_locks l JOIN pg_stat_activity x ON x.pid = l.pid
+           WHERE NOT l.granted AND x.datname = current_database()`,
+        )
+      ).rows[0]!.n;
+      if (n >= 1) break;
+      if (attempt > 400) throw new Error('the request did not wait');
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    await meanwhile();
+  } finally {
+    await holder.query('COMMIT');
+    holder.release();
+  }
+  return result;
+}
+
+test('RF-6, review R4: a refund step that waited for the payment while the staff session ended, or while the privilege was removed, changes nothing', async () => {
+  const carrier = await verifiedCarrier();
+  const a = await administrator();
+  const b = await secondAdministrator();
+  const { owed } = await owedByTransfer(carrier, 0);
+  const request = await requested(a, owed.id, owed.amount);
+  const late = await duringWait(
+    holdPayment,
+    [owed.paymentId],
+    () => decideRefund(b, request, 'approve'),
+    () => advance(D.staff_session_idle_minutes * 60 + 1),
+  );
+  assert.deepEqual([late.status, late.body.code], [401, 'unauthorized']);
+  assert.equal((await requestRow(request.id)).status, 'requested');
+  assert.deepEqual(
+    (await eventsOf(request.id)).map((item) => item.event),
+    ['requested'],
+  );
+  const c = await newStaff(['staff_admin']);
+  const removed = await duringWait(
+    holdPayment,
+    [owed.paymentId],
+    () => decideRefund(c, request, 'approve'),
+    () =>
+      owner.query(
+        "DELETE FROM trucker.staff_privilege WHERE staff_id = $1 AND privilege = 'staff_admin'",
+        [c.id],
+      ),
+  );
+  assert.deepEqual([removed.status, removed.body.code], [403, 'staff_privilege_required']);
+  assert.equal((await requestRow(request.id)).status, 'requested');
+});

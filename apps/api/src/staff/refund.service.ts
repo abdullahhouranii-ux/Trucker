@@ -7,7 +7,7 @@ import { DB_POOL } from '../tokens.js';
 import type { StaffCaller } from './staff.service.js';
 
 /**
- * Refunds of Trucker's fee and reconciliation, the staff side (db/migrations/0026_refunds.sql).
+ * Refunds of Trucker's fee and reconciliation, the staff side (db/migrations/0027_refunds.sql).
  * The database decides who may do what (requested and approved by different administrators; a
  * bank refund confirmed by someone other than the one who sent it; reconciliation by someone
  * who had no hand in it), that refunds never exceed the payment, and that nothing recorded

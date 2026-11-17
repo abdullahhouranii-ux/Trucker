@@ -76,7 +76,20 @@ interface OpenCheckout {
   currency: string;
   status: string;
   expiresAt: string;
+  /** Closed here, but the provider has not said whether it was paid (review R3). */
+  awaitingProvider: boolean;
+  lastAsked: {
+    at: string;
+    answer: 'reported' | 'open' | 'unknown' | 'unreachable';
+    times: number;
+  } | null;
 }
+const ASKED: Record<string, string> = {
+  open: 'still open',
+  unknown: 'it does not know this payment',
+  unreachable: 'it could not be reached',
+  reported: 'it answered',
+};
 interface Overview {
   staffId: string;
   onlineReview: OnlineReview[];
@@ -473,6 +486,10 @@ export default async function FeesPage({ searchParams }: Props) {
 
               <section className="section" aria-labelledby="open-checkouts-title">
                 <h2 id="open-checkouts-title">Online payments in progress</h2>
+                <p>
+                  Including payments closed here whose outcome the provider has not given yet. A
+                  booking waits for that answer for a limited time before it can lapse.
+                </p>
                 {reply.data.fees.openCheckouts.length === 0 ? (
                   <p id="open-checkouts-empty">No online payment is in progress.</p>
                 ) : (
@@ -489,7 +506,16 @@ export default async function FeesPage({ searchParams }: Props) {
                               {item.amount} {item.currency}
                             </bdi>
                           </li>
-                          <li>Open until {at(item.expiresAt)}</li>
+                          {item.awaitingProvider ? (
+                            <li data-awaiting-provider>
+                              Closed here; waiting for the provider&apos;s answer
+                              {item.lastAsked
+                                ? ` (last asked ${at(item.lastAsked.at)}: ${ASKED[item.lastAsked.answer] ?? item.lastAsked.answer}; asked ${item.lastAsked.times} times)`
+                                : ' (not asked yet)'}
+                            </li>
+                          ) : (
+                            <li>Open until {at(item.expiresAt)}</li>
+                          )}
                         </ul>
                       </li>
                     ))}
