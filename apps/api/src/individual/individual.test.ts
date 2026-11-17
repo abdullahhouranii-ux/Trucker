@@ -1233,6 +1233,42 @@ test('IA-6: one active affiliation per driver holds between a company and the dr
   );
 });
 
+test('IA-6: an acceptance waiting its turn for the person holds no row that another command of the same person needs', async () => {
+  // The order of locks, made visible: the turn for the person is taken before anything else,
+  // so two commands of one person can never each hold what the other waits for.
+  const company = await verifiedCarrier();
+  const other = await newPerson();
+  assert.equal((await invite(company.person, company.org, other.phone)).status, 201);
+  const offer = (await driverSide(other)).invitations[0]!;
+  const holder = await owner.connect();
+  try {
+    await holder.query('BEGIN');
+    await holder.query(
+      "SELECT pg_advisory_xact_lock(hashtextextended('driver.affiliation:' || $1::text, 0))",
+      [other.personId],
+    );
+    const waiting = respond(other, offer.id, offer.version, 'accept');
+    let seen = 0;
+    for (let attempt = 0; attempt < 100 && seen === 0; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      seen = (
+        await owner.query("SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND NOT granted")
+      ).rowCount!;
+    }
+    assert.equal(seen, 1, 'the acceptance is waiting for the person’s turn');
+    // Nothing of the person is held meanwhile: this would wait, and here fail, if it were.
+    await holder.query('SELECT 1 FROM trucker.person WHERE id = $1 FOR UPDATE NOWAIT', [
+      other.personId,
+    ]);
+    await holder.query('COMMIT');
+    const reply = await waiting;
+    assert.equal(reply.status, 200, reply.text);
+  } finally {
+    await holder.query('ROLLBACK').catch(() => undefined);
+    holder.release();
+  }
+});
+
 test('A-11, P2-2, IA-7: an organiser publishes its own shipments once verified; one personal account may organise and carry but never quotes on its own shipment; nothing of a personal account is readable by another', async () => {
   const coordinator = await personalAccount();
   const made = await draft(coordinator.person, coordinator.org);

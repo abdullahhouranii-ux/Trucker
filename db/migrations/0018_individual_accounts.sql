@@ -1306,7 +1306,9 @@ BEGIN
     status := 'invalid';
     RETURN;
   END IF;
-  -- The person's own row is locked first, so that two acceptances by one person run in turn.
+  -- The person's turn is taken before any row is locked, here and in become_own_driver: one
+  -- affiliation at a time, and neither command can hold a row the other is waiting for.
+  PERFORM pg_advisory_xact_lock(hashtextextended('driver.affiliation:' || actor::text, 0));
   SELECT p.phone_e164 INTO v_phone FROM trucker.person p WHERE p.id = actor FOR UPDATE;
   SELECT * INTO a FROM trucker.driver_affiliation x
   WHERE x.id = p_affiliation AND x.invited_phone = v_phone FOR UPDATE;
@@ -1329,8 +1331,6 @@ BEGIN
     RETURN;
   END IF;
   IF p_decision = 'accept' THEN
-    -- One affiliation at a time for this person: see become_own_driver.
-    PERFORM pg_advisory_xact_lock(hashtextextended('driver.affiliation:' || actor::text, 0));
     IF EXISTS (SELECT 1 FROM trucker.driver_affiliation x WHERE x.person_id = actor AND x.status = 'active') THEN
       status := 'affiliation_exists';
       RETURN;
