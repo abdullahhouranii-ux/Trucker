@@ -1,5 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { notFound, redirect } from 'next/navigation';
+import {
+  CarrierCommissionNotice,
+  CommissionAcceptance,
+  CommissionFacts,
+} from '../../../../../../components/commission.tsx';
 import { DraftKeeper } from '../../../../../../components/draft-keeper.tsx';
 import { ErrorSummary } from '../../../../../../components/form.tsx';
 import { CarrierFacts } from '../../../../../../components/publication-view.tsx';
@@ -14,6 +19,8 @@ import { getMessages } from '../../../../../../i18n/messages.ts';
 import {
   api,
   type Catalogues,
+  type CommissionLine,
+  type CommissionView,
   type Country,
   type DiscoveryItem,
   type QuotationContext,
@@ -35,6 +42,9 @@ type Props = {
 };
 const RETRY_KEY = /^[A-Za-z0-9._-]{16,128}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const FIGURE = /^[0-9]{1,13}(\.[0-9]{1,3})?$/;
+const one = (value: string | string[] | undefined): string =>
+  typeof value === 'string' ? value : '';
 
 export default async function DiscoveredShipmentPage({ params, searchParams }: Props) {
   const { locale, id, shipmentId } = await params;
@@ -53,7 +63,7 @@ export default async function DiscoveredShipmentPage({ params, searchParams }: P
   // An unconfirmed session (the API gave no answer) is not an ended one: the requests below
   // either fail as unavailable, shown as such, or are refused with 401 and end it.
   const list = `/${locale}/organisations/${id}/discover`;
-  const [reply, countries, catalogues, quoting] = await Promise.all([
+  const [reply, countries, catalogues, quoting, commission, commissions] = await Promise.all([
     api<{ shipment: DiscoveryItem }>(
       'GET',
       `/organisations/${id}/discovery/shipments/${shipmentId}`,
@@ -66,6 +76,14 @@ export default async function DiscoveredShipmentPage({ params, searchParams }: P
     api<{ quotation: QuotationContext }>(
       'GET',
       `/organisations/${id}/discovery/shipments/${shipmentId}/quotation`,
+      { token: person.token },
+    ),
+    api<CommissionView>('GET', `/organisations/${id}/shipments/${shipmentId}/commission`, {
+      token: person.token,
+    }),
+    api<{ commissions: { quotations: CommissionLine[] } }>(
+      'GET',
+      `/organisations/${id}/commissions`,
       { token: person.token },
     ),
   ]);
@@ -122,6 +140,13 @@ export default async function DiscoveredShipmentPage({ params, searchParams }: P
         error={qError}
         done={qDone}
         keyFor={keyFor}
+        commission={commission.ok ? commission.data.commission : null}
+        lines={commissions.ok ? commissions.data.commissions.quotations : []}
+        figures={
+          FIGURE.test(one(search.cc)) && FIGURE.test(one(search.cn))
+            ? { commission: one(search.cc), net: one(search.cn) }
+            : null
+        }
       />
     </div>
   );
@@ -136,6 +161,9 @@ function QuotationSection({
   error,
   done,
   keyFor,
+  commission,
+  lines,
+  figures,
 }: {
   locale: 'en' | 'ar' | 'ur';
   m: ReturnType<typeof getMessages>;
@@ -145,6 +173,9 @@ function QuotationSection({
   error: string;
   done: string | undefined;
   keyFor: (operation: string) => string;
+  commission: CommissionView['commission'];
+  lines: CommissionLine[];
+  figures: { commission: string; net: string } | null;
 }) {
   const q = m.quo;
   const terms = context?.terms ?? null;
@@ -152,6 +183,7 @@ function QuotationSection({
   const open = context?.quotations.find((item) => item.status === 'submitted');
   const latest = context?.quotations[0];
   const current = open?.versions[0];
+  const ownLine = open ? lines.find((line) => line.quotationId === open.id) : undefined;
   const confirmation = done ? (q.done as Record<string, string>)[done] : undefined;
   const hidden = (operation: string, version?: number) => (
     <>
@@ -185,6 +217,7 @@ function QuotationSection({
         </p>
       ) : (
         <>
+          {commission ? <CarrierCommissionNotice t={m.commission} terms={commission} /> : null}
           <p className="field-hint" id="inclusions-fictional">
             {q.inclusionsFictional}
           </p>
@@ -199,6 +232,7 @@ function QuotationSection({
                 version={current}
                 id="own-quotation-facts"
               />
+              {ownLine ? <CommissionFacts t={m.commission} line={ownLine} /> : null}
               {open.reconfirmationNeeded ? (
                 <form className="form-inline" id="reconfirm-form" action={reconfirmQuotationAction}>
                   {hidden('reconfirm', open.currentVersion)}
@@ -243,6 +277,14 @@ function QuotationSection({
               deadline={context.quotationDeadline.local}
               window={context.pickupWindow}
             />
+            {commission && figures ? (
+              <CommissionAcceptance
+                t={m.commission}
+                commission={figures.commission}
+                net={figures.net}
+                currency={terms.currency}
+              />
+            ) : null}
             <button
               className="button button-primary"
               type="submit"

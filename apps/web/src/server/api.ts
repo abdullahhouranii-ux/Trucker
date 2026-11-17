@@ -696,6 +696,26 @@ export interface ShipmentParties {
   feePayer: 'customer' | 'organiser';
   feeAgreement: 'own_act' | 'authority' | null;
 }
+export interface CommissionTerms {
+  option: 'percentage' | 'fixed';
+  basisPoints: number | null;
+  amount: string | null;
+  currency: string | null;
+}
+export interface CommissionView {
+  commission: CommissionTerms | null;
+  arranged?: boolean;
+  editable?: boolean;
+}
+export interface CommissionLine {
+  quotationId?: string;
+  bookingId?: string;
+  role: 'carrier' | 'organiser';
+  currency: string;
+  shippingPrice: string;
+  commission: string;
+  net: string;
+}
 export interface ShipmentPartiesView {
   parties: ShipmentParties;
   editable: boolean;

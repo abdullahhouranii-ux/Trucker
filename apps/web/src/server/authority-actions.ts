@@ -124,3 +124,35 @@ export async function setShipmentPartiesAction(form: FormData): Promise<void> {
     { done: 'rolesDone', error: 'rolesError' },
   );
 }
+
+/** The organiser's commission on a draft it arranges for a customer. */
+export async function setShipmentCommissionAction(form: FormData): Promise<void> {
+  const org = text(form, 'organisationId');
+  const shipment = text(form, 'shipmentId');
+  const chosen = text(form, 'commissionOption');
+  const option = chosen === 'percentage' || chosen === 'fixed' ? chosen : 'none';
+  // A percentage as typed, to whole basis points, without passing through a binary fraction.
+  const percent = /^([0-9]{1,2})(?:\.([0-9]{1,2}))?$/.exec(text(form, 'commissionPercent').trim());
+  const basisPoints = percent
+    ? Number(percent[1]) * 100 + Number((percent[2] ?? '').padEnd(2, '0'))
+    : 0;
+  await send(
+    form,
+    UUID.test(org) && UUID.test(shipment)
+      ? `/organisations/${org}/shipments/${shipment}/commission`
+      : null,
+    {
+      version: version(form),
+      option,
+      ...(option === 'percentage' ? { basisPoints } : {}),
+      ...(option === 'fixed'
+        ? {
+            amount: text(form, 'commissionAmount').trim().slice(0, 20),
+            currency: text(form, 'commissionCurrency').trim().toUpperCase().slice(0, 3),
+          }
+        : {}),
+    },
+    `/${localeOf(form)}/organisations/${org}/shipments/${shipment}`,
+    { done: 'commDone', error: 'commError' },
+  );
+}

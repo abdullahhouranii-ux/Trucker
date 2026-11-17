@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Inject, Param, Post, Req } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Inject, Param, Post, Query, Req } from '@nestjs/common';
 import { z } from 'zod';
 import { ApiError } from '../http/api-error.js';
 import { IdentityService } from '../identity/identity.service.js';
@@ -27,6 +27,14 @@ const partiesBody = z.object({
   receiver: named,
   freightPayer: z.enum(['customer', 'sender', 'receiver']),
   feePayer: z.enum(['customer', 'organiser']),
+});
+
+const commissionBody = z.object({
+  version,
+  option: z.enum(['none', 'percentage', 'fixed']),
+  basisPoints: z.number().int().optional(),
+  amount: z.string().max(20).optional(),
+  currency: z.string().max(3).optional(),
 });
 
 function parse<T>(schema: z.ZodType<T>, body: unknown): T {
@@ -119,6 +127,52 @@ export class AuthorityController {
       identifier(authorityId),
       parse(endBody, body).version,
     );
+  }
+
+  @Post('shipments/:shipmentId/commission')
+  @HttpCode(200)
+  async setCommission(
+    @Param('organisationId') organisationId: string,
+    @Param('shipmentId') shipmentId: string,
+    @Body() body: unknown,
+    @Req() request: IncomingRequest,
+  ) {
+    const caller = await this.caller(request);
+    const { version: seen, ...content } = parse(commissionBody, body);
+    return this.authorities.setCommission(
+      caller,
+      identifier(organisationId),
+      identifier(shipmentId),
+      seen,
+      content,
+    );
+  }
+
+  @Get('shipments/:shipmentId/commission')
+  async commissionTerms(
+    @Param('organisationId') organisationId: string,
+    @Param('shipmentId') shipmentId: string,
+    @Query('amount') amount: string | undefined,
+    @Query('currency') currency: string | undefined,
+    @Req() request: IncomingRequest,
+  ) {
+    const caller = await this.caller(request);
+    return this.authorities.commissionTerms(
+      caller,
+      identifier(organisationId),
+      identifier(shipmentId),
+      typeof amount === 'string' ? amount.slice(0, 20) : '',
+      typeof currency === 'string' ? currency.slice(0, 3) : '',
+    );
+  }
+
+  @Get('commissions')
+  async commissions(
+    @Param('organisationId') organisationId: string,
+    @Req() request: IncomingRequest,
+  ) {
+    const caller = await this.caller(request);
+    return { commissions: await this.authorities.commissions(caller, identifier(organisationId)) };
   }
 
   @Get('shipments/:shipmentId/parties')

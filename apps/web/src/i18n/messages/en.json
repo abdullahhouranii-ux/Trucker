@@ -788,7 +788,10 @@
       "quotation_needs_reconfirmation": "The shipment changed after this quotation was made. The carrier must confirm or revise it before it can be accepted.",
       "quotation_carrier_not_eligible": "The carrier may not carry this shipment now, so its quotation cannot be accepted.",
       "assignment_deadline_passed": "The pick-up is too soon: the time the carrier needs to assign a truck and a driver has already passed. No booking was created.",
-      "booking_closed": "Accepting is not available here: the commercial terms are not approved for this environment."
+      "booking_closed": "Accepting is not available here: the commercial terms are not approved for this environment.",
+      "commission_acceptance_required": "This shipment carries an organiser commission. Check the commission and your net earnings below, tick to accept them, and send again.",
+      "commission_currency": "The organiser commission is a fixed amount in another currency, so this shipment cannot be quoted in this currency.",
+      "commission_leaves_nothing": "This price does not cover the organiser commission. Enter a higher price."
     },
     "carrierIndividual": "Truck owner (an individual)",
     "carrierCompany": "Transport company"
@@ -1239,6 +1242,44 @@
       "feePayer_not_agreed": "The customer has not agreed to pay Trucker's fee. Name yourself, or ask the customer for a new authority.",
       "freightPayer_required": "Choose who pays the transport price.",
       "receiver_required": "Enter the receiver's name, or leave it empty."
+    }
+  },
+  "commission": {
+    "title": "Your commission",
+    "lead": "Your commission is included in the shipping price each carrier quotes. The customer is shown the shipping price only. It is fixed when the shipment is published.",
+    "option": "Commission",
+    "options": {
+      "none": "No commission",
+      "percentage": "A percentage of the shipping price",
+      "fixed": "A fixed amount"
+    },
+    "percent": "Percentage",
+    "percentHint": "From 0.01 to 25, for example 7.5. Used when you choose a percentage.",
+    "amount": "Fixed amount",
+    "amountHint": "Used when you choose a fixed amount.",
+    "currency": "Currency code",
+    "currencyHint": "Three letters. Carriers must quote in this currency.",
+    "save": "Save the commission",
+    "saved": "Commission saved.",
+    "none": "No commission on this shipment.",
+    "fixed": "The commission is fixed because the shipment has been published.",
+    "isPercentage": "{percent}% of the shipping price",
+    "carrierLead": "The organiser of this shipment takes a commission:",
+    "carrierNote": "It is included in the price you quote. The customer pays your price; your net earnings are the price less the commission.",
+    "accept": "I accept the organiser commission of {commission} {currency} on this price. My net earnings are {net} {currency}.",
+    "acceptHint": "If you change the price, the figures change and you will be asked again.",
+    "commissionLine": "Organiser commission",
+    "netLine": "Your net earnings",
+    "errors": {
+      "invalid": "The commission was not accepted. Check it and try again.",
+      "unconfirmed": "It was not confirmed that this was saved. It may have been. Check before trying again.",
+      "not_found": "This record is not available.",
+      "record_changed": "This changed after the page was loaded. Nothing was changed. Check it and try again.",
+      "shipment_roles_fixed": "The commission is fixed once the shipment has been published.",
+      "commission_own_shipment": "A commission applies only to a shipment you arrange for a customer. Choose the customer first.",
+      "commissionPercentage_out_of_range": "Enter a percentage from 0.01 to 25.",
+      "commissionAmount_invalid": "Enter the fixed amount as a number above zero, in the currency’s units.",
+      "commissionCurrency_unavailable": "This currency is not available."
     }
   }
 }
