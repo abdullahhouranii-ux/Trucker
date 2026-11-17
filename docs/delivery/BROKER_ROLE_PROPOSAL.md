@@ -1,6 +1,6 @@
 # Trucker: a broker role, proposal and decisions
 
-Version 0.1, 15 November 2026. Status: **proposal for Abdullah's decision. Nothing here is built, and it is outside the Release 1 definition until approved.** Raised by Abdullah on 15 November 2026: brokers who already have good relations with truckers and many customers, and already earn commissions, should get their own kind of account to manage their activity and earn a commission under an agreement with Trucker.
+Version 0.1, 15 November 2026. Status: **superseded on 17 November 2026 by `docs/specs/ADR_001_COMMERCIAL_MODEL.md`.** Kept for history. Its commission model (a share of Trucker's fee) is replaced by the organiser commission included in the shipping price; its mandate design (section 3) is reused as ADR-001 G-4 and D-12. Nothing here was built. Raised by Abdullah on 15 November 2026: brokers who already have good relations with truckers and many customers, and already earn commissions, should get their own kind of account to manage their activity and earn a commission under an agreement with Trucker.
 
 No legal, tax or licensing rule is stated here. The questions for advisers are listed in section 7.
 

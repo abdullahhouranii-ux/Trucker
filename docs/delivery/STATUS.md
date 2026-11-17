@@ -1,51 +1,42 @@
 # Trucker delivery status
 
-Date: 13 November 2026
+Date: 17 November 2026. Replaces the status of 13 November 2026, which described the foundation stage.
 
 ## Approved direction
 
-Fresh Plan B project in abdullahhouranii-ux/Trucker. Do not copy TruckLink's implementation.
-Product name: Trucker. Preserve historical reference files as references.
+Trucker is a separate project from TruckLink, in `abdullahhouranii-ux/Trucker`; nothing is copied from TruckLink's implementation. The commercial model is recorded in `docs/specs/ADR_001_COMMERCIAL_MODEL.md`: Trucker acts as an agent and earns a separate fee, paid and verified before a booking is confirmed; an organiser's commission is included in the shipping price and paid by the carrier to the organiser.
 
-## Completed
+## Built
 
-- Fresh-build decision recorded and initial backlog established.
-- Original architecture, repaired prototype and planning references added under docs/reference.
-- First commit pushed to GitHub (documents only).
-- Files moved from the nested Trucker/ folder to the repository root.
-- Provisional Stage 1 baseline and Stage 2 Parts 1-4 and the Stage 3 architecture evaluation saved under docs/specs, the authoritative set (documents only; no tests run).
+Each slice has a scope and a record with its evidence in this folder.
 
-## Scope note
+| Slices | Content | Where |
+|---|---|---|
+| 1 to 10 | Foundation, web foundation, registration and sign-in, organisations, identity hardening, shipment drafts, staff identity, organisation verification, shipment publication | Merged into `staging` (not `main`) |
+| 11 | Carrier onboarding and discovery | PR #15 |
+| 12 | Quotations | PR #16 |
+| SEC-01 | Security fix (release blocker until merged and `staging` is green) | PR #17 |
+| — | Release 1 plan and readiness documents | PR #18 |
+| 13 | Fleet and drivers | PR #19 |
+| 14 | Acceptance and booking | PR #20 |
+| 15 | Assignment, reservation and confirmation | PR #21 |
+| 16 | Cancellation before dispatch | PR #22 |
 
-Seven surfaces: public website, shipper portal, carrier portal, vehicle-owner portal, driver
-application, operations console, partner integration. Five roles; surfaces are not roles.
-Commercial model (D-001), payment approach (D-002) and launch geography (D-003) are undecided.
+Pull requests #15 to #22 are stacked, open, mergeable and green in CI. None is merged; each needs a dependency review and Abdullah's explicit authorisation.
 
-## Current milestone
+## Next
 
-M0: foundation. Foundation slice 1 and its review fixes are merged into staging (not main).
-Foundation slice 2 is on a pull request against staging: standard API error body, request
-identifiers, local helper commands, and CI jobs that exercise the Docker compose database and
-the native Windows setup. Evidence: docs/delivery/FOUNDATION_SLICE_1.md and
-FOUNDATION_SLICE_2.md. Not verified: Docker Desktop on Windows, a Windows desktop machine,
-macOS. Only apps/api exists. No business module, portal or mobile code exists.
-
-## Next executable slice
-
-Decision-independent platform primitives F-07 to F-11 (docs/specs/STAGE_3_ARCHITECTURE.md,
-section 12), each on Abdullah's instruction. The first functional journey (sign-in,
-organisations, shipment create and list) waits for two decisions: launch country and sign-in
-method. Business modules stay gated on their recorded decisions.
-Do not return mock successes or confuse the reference HTML with the hosted product.
+1. ADR-001 phase one: this record and the specification index (documentation pull request).
+2. Phase two scope (accounts, permissions and commission agreements) for approval.
+3. Dispatch slice 17 once DD-1 to DD-10 are approved; it can run alongside phases two to four.
 
 ## Open decisions
 
-- Five-role web plus driver mobile first, versus every native role at initial launch.
-- Hosting, identity, payment, storage, maps and notification suppliers.
-- Approved commercial, cancellation, settlement and location policies.
-- Optional ERP/accounting integration; Odoo is not a mandatory core dependency.
+- ADR-001: defaults D-1 to D-12 and open decisions O-1 to O-7, including merging #15 to #22 (O-6).
+- Dispatch: DD-1 to DD-10 (`DISPATCH_SLICE_17_SCOPE.md`).
+- Launch country and lanes; suppliers (hosting, sign-in messages, file storage, payment provider).
+- Adviser questions: ADR-001 section 8 and the external blockers in `RELEASE_1_GAP_TO_LAUNCH.md`.
 
-## Environment
+## Not claimed
 
-Repository cloned and inspected on 13 November 2026 at commit d8107af.
-tools/dev holds the local database definition; docs/api does not exist yet.
+No production deployment. No real participant data. All commercial values are development defaults. No physical-phone, screen-reader or native Arabic and Urdu review has been done; those are in `FINAL_AUDIT_BACKLOG.md`.
