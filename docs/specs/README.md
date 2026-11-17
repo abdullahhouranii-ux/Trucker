@@ -15,7 +15,7 @@ Commercial model: ADR_001_COMMERCIAL_MODEL.md (agent; organiser commission inclu
 | STAGE_2_PART_3_DISPATCH_TRACKING_EXCEPTIONS.md | 0.2 | Assignment, dispatch authorisation, trip events, offline rules, tracking and consent, exceptions |
 | STAGE_2_PART_4_POD_DISPUTES.md | 0.2 | Proof of delivery, review, disputes, post-dispatch cancellation, adjustment records. Five open design issues (DI-401 to DI-405) in section 13 |
 | STAGE_3_ARCHITECTURE.md | 0.4 | Recommended architecture, modules, data relationships, permission enforcement, offline synchronisation, environments, foundation backlog |
-| ADR_001_COMMERCIAL_MODEL.md | 0.2 | The revised commercial model: participants and shipment roles, organiser commission, Trucker's fee and confirmation, financial settings, settlement. Confirmed requirements, proposed defaults and open decisions are marked. Where it differs from an earlier document, it wins |
+| ADR_001_COMMERCIAL_MODEL.md | 0.3 | The revised commercial model: participants and shipment roles, organiser commission, Trucker's fee and confirmation, financial settings, settlement. Confirmed requirements, proposed defaults and open decisions are marked. Where it differs from an earlier document, it wins |
 
 Not yet written: the detailed payment, settlement and reconciliation specification (phases four and five of ADR-001).
 

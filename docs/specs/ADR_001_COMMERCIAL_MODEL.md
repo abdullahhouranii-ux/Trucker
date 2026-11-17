@@ -1,6 +1,6 @@
 # Trucker ADR-001: revised commercial model, update the existing platform
 
-Version 0.2, 17 November 2026. Decider: Abdullah. Replaces version 0.1 of the same day.
+Version 0.3, 17 November 2026. Decider: Abdullah. Replaces versions 0.1 and 0.2 of the same day. Version 0.3 adds the source of each confirmed requirement and R-26 (freight payment methods); the model is otherwise unchanged.
 
 Source of the model: **"Trucker development plan for partners"** (Abdullah, 17 November 2026; Google Doc `Trucker_Updated_Plan_English`, identical to the uploaded copy). References such as "Plan, Pricing" point to its sections.
 
@@ -10,8 +10,8 @@ No legal, tax, licensing or payment-regulation rule is stated here. Questions fo
 
 | Mark | Meaning | Can change without reopening the model? |
 |---|---|---|
-| **Confirmed** | Stated in Abdullah's plan. Development follows it and does not reopen it | Only by Abdullah's explicit decision |
-| **Default** | My proposed development value or rule, held as a versioned setting or a single rule in code, with no market or legal evidence behind it. Needs approval before production | Yes: changed in settings or one rule, without changing the model or the schema |
+| **Confirmed** | Part of the confirmed model, which development follows and does not reopen. Two sources: **Abdullah** (his own instruction: R-26, and the instructions listed in 3.8) and **Plan** (a recommendation in the Word plan, adopted as the confirmed model by Abdullah's instructions of 17 November 2026: R-1 to R-25) | Only by Abdullah's explicit decision |
+| **Default** | My proposed development value or rule, held as a versioned setting or a single rule in code, with no market or legal evidence behind it. **Confined to development**: the production gate refuses to start on unapproved values, and nothing here approves a production financial policy | Yes: changed in settings or one rule, without changing the model or the schema |
 | **Open** | Not decided. Each has a recommendation and a working default, so development is not blocked while it waits | Yes, by Abdullah's decision |
 | **Design** | How it is built. An engineering choice that carries no business rule | Yes, by review |
 
@@ -68,6 +68,7 @@ No legal, tax, licensing or payment-regulation rule is stated here. Questions fo
 | R-12 | An uploaded transfer slip, or a return from checkout, is **not** proof of payment | Confirmed |
 | R-13 | No duplicate charge or booking when a request is retried or a provider notification repeats | Confirmed |
 | R-14 | A booking is confirmed only when **both** hold: Trucker's fee is paid and verified, and every required eligible resource is assigned and reserved | Confirmed |
+| R-26 | Freight is paid by **cash on delivery, bank transfer, or the carrier's activated card gateway**. The method and the due date are fixed on each booking. (Abdullah, 17 November 2026) | Confirmed |
 | R-15 | Payment and reservation deadlines are defined, with a refund path when payment succeeds but transport cannot be confirmed. A late bank transfer never silently confirms an expired offer or an unavailable truck | Confirmed (values: section 5) |
 
 ### 3.4 Financial settings
@@ -94,6 +95,14 @@ No legal, tax, licensing or payment-regulation rule is stated here. Questions fo
 | R-23 | GCC-ready; enable only the countries, lanes and payment methods that are ready | Confirmed |
 | R-24 | Deferred: wallets, lending, automatic payment splitting, native apps, live GPS | Confirmed |
 | R-25 | Functional, security and data-integrity testing continues throughout; wording, translation and cosmetic work goes to the final audit | Confirmed |
+
+### 3.8 Abdullah's own instructions (as distinct from the Word plan's recommendations)
+
+| Instruction | Date |
+|---|---|
+| Brokers who already earn commissions get their own kind of account to manage their activity and earn commission | 15 November 2026 |
+| The Word plan is the correction to this record; confirmed requirements, defaults and open decisions are marked so account, payment and settlement work can proceed without reopening the model | 17 November 2026 |
+| The confirmed commercial model is not reopened; defaults stay in development until approved; R-26; dispatch and proof of delivery stay a parallel workstream; no pull request is merged and no production financial policy is approved by these instructions | 17 November 2026 |
 
 ### 3.7 Earlier positions this replaces
 
@@ -140,7 +149,7 @@ Development values only, each a versioned setting or a single rule, none approve
 | D-6 | Fee deadline | Within 12 hours of acceptance and never after the assignment deadline (same as CC-5) | Default |
 | D-7 | Unpaid at the deadline | The booking lapses as a recorded cancellation (`fee_not_paid`): reservations released, nothing charged, the shipment can be published again | Default |
 | D-8 | Refunds | Full refund before dispatch in every case (lapse after payment, carrier cancels, carrier misses its deadline, customer cancels) until partial rules are approved (O-4). Each refund approved by a second staff member and recorded within 5 business days | Default |
-| D-9 | Freight settlement | The freight payer pays the carrier within 15 days of proof-of-delivery acceptance (CC-4) | Default |
+| D-9 | Freight due date by method (R-26) | Cash on delivery: due at delivery. Bank transfer or the carrier's card gateway: within 15 days of proof-of-delivery acceptance (CC-4), unless the quotation states an earlier date. The carrier's gateway is the carrier's own; Trucker never receives the freight (G-12) | Default |
 | D-10 | Commission earning and settlement (percentage and fixed options) | Earned when the carrier records receipt of the freight payment; payable within 7 days of that; not earned on a booking cancelled before dispatch. The contract option uses its own terms, chosen from the same list of conditions | Default |
 | D-11 | Who sees what | Contracting customer, freight payer and fee payer: shipping price, fee and total. Carrier: shipping price, commission, net (and the fee only if it pays it). Organiser: price, commission, net. A sender or receiver that is neither customer nor payer: no amounts. Trucker finance: everything | Default |
 | D-12 | Authority to act for another party | A mandate (G-4). Creating and publishing need the mandate; accepting a quotation on the customer's behalf needs an explicit permission with an amount limit | Default |
