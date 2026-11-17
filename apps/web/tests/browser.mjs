@@ -270,6 +270,8 @@ async function main() {
     PORT: String(apiPort),
     SIGN_IN_CODE_DELIVERY: 'development-display',
     REGISTRATION_TERMS: 'demonstration',
+    // The development stand-in for a payment provider (slice 27): it moves no money.
+    PAYMENT_PROVIDER: 'test',
   };
   await run(apiMigrate, ['up'], apiEnv);
   // The resend wait is shortened so the checks do not take minutes. Limits are protected
@@ -656,9 +658,9 @@ async function main() {
     mkdirSync(outDir, { recursive: true });
     // At most five pictures, for design review only.
     const shots = {
-      'en:booking fee due': 'booking-fee-due-en-390',
-      'ar:booking fee due': 'booking-fee-due-ar-390',
-      'ur:booking fee paid': 'booking-fee-paid-ur-390',
+      'en:stand-in checkout': 'stand-in-checkout-en-390',
+      'ar:stand-in checkout': 'stand-in-checkout-ar-390',
+      'en:booking paid online': 'booking-paid-online-en-390',
     };
     // Fictional numbers: country code 999 is not assigned. Unique per run.
     const stamp = String(Date.now()).slice(-7);
@@ -4277,6 +4279,59 @@ async function main() {
         carrierFee.amount === null &&
         !carrierFee.text.includes(feeReference),
       `the customer saw ${JSON.stringify({ ...customerFee, text: undefined })}, the carrier ${JSON.stringify({ ...carrierFee, text: undefined })}`,
+    );
+    // Online payment (slice 27): the customer goes to the provider's page (here the development
+    // stand-in), pays, and comes back. The fee shows paid only because the stand-in's signed
+    // notification was recorded; a receipt is shown. The carrier sees neither.
+    await open(arrangedBookingPath('en', verifyOrg), 390);
+    await submit('#pay-online-button');
+    const standInUrl = page.url();
+    for (const locale of locales) {
+      await open(standInUrl.replace(`${origin}/en/`, `/${locale}/`).replace(origin, ''), 390);
+      await inspect(locale, 'stand-in checkout');
+    }
+    await open(standInUrl.replace(origin, ''), 390);
+    const standInShown =
+      (await page.$('[data-state="stand-in-checkout"][data-status="open"]')) !== null &&
+      ((await text('#stand-in-amount')) ?? '').includes('30.00 XTS');
+    await submit('#stand-in-pay');
+    const backAfterPay = page.url();
+    const paidOnline = await page.evaluate(() => ({
+      status: document.querySelector('.fee-payment')?.dataset.feeStatus ?? null,
+      notice: document.querySelector('#payment-notice')?.dataset.confirmed ?? null,
+      receipts: [...document.querySelectorAll('[data-receipt]')].map(
+        (item) => item.dataset.receipt,
+      ),
+      payButton: document.querySelector('#pay-online-button') !== null,
+    }));
+    await inspect('en', 'booking paid online');
+    const receiptRows = (
+      await owner.query('SELECT number, method FROM trucker.fee_receipt WHERE booking_id = $1', [
+        arrangedBooking,
+      ])
+    ).rows;
+    await open(arrangedBookingPath('en', carrierOrg), 390);
+    const carrierAfter = await page.evaluate(() => document.body.innerText);
+    check(
+      'payment',
+      standInUrl.startsWith(`${origin}/en/payments/test/tchk_`) &&
+        standInShown &&
+        backAfterPay.startsWith(`${origin}${arrangedBookingPath('en', verifyOrg)}?payment=paid`) &&
+        paidOnline.status === 'paid' &&
+        paidOnline.notice === 'true' &&
+        !paidOnline.payButton &&
+        receiptRows.length === 1 &&
+        receiptRows[0].method === 'online' &&
+        JSON.stringify(paidOnline.receipts) === JSON.stringify([receiptRows[0].number]) &&
+        !carrierAfter.includes(receiptRows[0].number),
+      `online payment: stand-in ${standInUrl}, back at ${backAfterPay}, shown ${JSON.stringify(paidOnline)}, receipts ${JSON.stringify(receiptRows)}`,
+    );
+    // The stand-in's page refuses a second payment of the same checkout.
+    await open(standInUrl.replace(origin, ''), 390);
+    check(
+      'payment',
+      (await page.$('#stand-in-closed')) !== null && (await page.$('#stand-in-pay')) === null,
+      'the stand-in offers to pay a checkout already paid',
     );
     // The organiser sees the booked price on its own shipment.
     for (const locale of locales) {

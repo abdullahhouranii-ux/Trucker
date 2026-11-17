@@ -231,8 +231,7 @@ async function main() {
     mkdirSync(outDir, { recursive: true });
     // At most five pictures, for design review only.
     const shots = {
-      fees: 'console-fees-390',
-      'fees refused': 'console-fees-refused-390',
+      'fees online': 'console-fees-online-390',
     };
 
     /** Helpers bound to one page, so that two staff members can be signed in at once. */
@@ -1450,6 +1449,11 @@ async function main() {
       (await one.page.$('#refunds-empty')) !== null &&
       (await one.page.$('#decided-empty')) !== null;
     await one.inspect('fees');
+    // Online payments (slice 27): nothing to review and nothing open in this database.
+    const onlineEmpty =
+      (await one.page.$('#online-review-empty')) !== null &&
+      (await one.page.$('#open-checkouts-empty')) !== null;
+    await one.inspect('fees online');
     await one.page.type('#reference', 'TF-0000000000');
     await one.page.type('#amount', '30.00');
     await one.page.type('#currency', 'XTS');
@@ -1464,7 +1468,7 @@ async function main() {
     await one.inspect('fees refused');
     check(
       'fees',
-      feesEmpty && feeRefused,
+      feesEmpty && feeRefused && onlineEmpty,
       `the fee payments page ended at ${one.page.url()} (empty lists ${feesEmpty})`,
     );
 

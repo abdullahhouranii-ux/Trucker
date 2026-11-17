@@ -33,6 +33,9 @@ export const SECURITY_SETTING_DEFAULTS = {
   booking_assignment_lead_hours: 6,
   reservation_positioning_minutes: 120,
   reservation_completion_minutes: 720,
+  // Online payment of the fee (db/migrations/0025). Development defaults.
+  checkout_minutes: 30,
+  payment_notice_grace_minutes: 15,
   staff_session_idle_minutes: 15,
   staff_session_absolute_hours: 8,
   staff_failure_limit: 5,

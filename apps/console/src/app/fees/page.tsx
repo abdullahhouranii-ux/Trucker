@@ -22,6 +22,7 @@ interface Payment {
   id: string;
   version: number;
   bookingId: string;
+  method: 'bank_transfer' | 'online';
   status: 'recorded' | 'approved' | 'rejected';
   outcome: 'settled' | 'refund_due' | null;
   amount: string;
@@ -30,7 +31,8 @@ interface Payment {
   statementReference: string;
   note: string | null;
   reference: string;
-  recordedBy: Person;
+  /** No one for an online payment: the provider's signed notification recorded it. */
+  recordedBy: Person | null;
   recordedAt: string;
   decidedBy: Person | null;
   decidedAt: string | null;
@@ -56,8 +58,29 @@ interface Refund {
   recordedAt: string;
   reference: string;
 }
+interface OnlineReview {
+  id: string;
+  result: 'mismatch' | 'unknown_checkout';
+  kind: 'notification' | 'status_check';
+  providerReference: string;
+  transactionId: string | null;
+  amount: string | null;
+  currency: string | null;
+  receivedAt: string;
+  reference: string | null;
+}
+interface OpenCheckout {
+  id: string;
+  reference: string;
+  amount: string;
+  currency: string;
+  status: string;
+  expiresAt: string;
+}
 interface Overview {
   staffId: string;
+  onlineReview: OnlineReview[];
+  openCheckouts: OpenCheckout[];
   due: Due[];
   awaitingApproval: Payment[];
   decided: Payment[];
@@ -135,7 +158,15 @@ function PaymentFacts({ payment }: { payment: Payment }) {
         Statement line: <bdi dir="ltr">{payment.statementReference}</bdi>
       </li>
       <li>
-        Recorded by <bdi>{payment.recordedBy.displayName}</bdi> at {at(payment.recordedAt)}
+        {payment.recordedBy ? (
+          <>
+            Recorded by <bdi>{payment.recordedBy.displayName}</bdi> at {at(payment.recordedAt)}
+          </>
+        ) : (
+          <>
+            Paid online: recorded from the provider&apos;s signed notice at {at(payment.recordedAt)}
+          </>
+        )}
       </li>
       {payment.note ? (
         <li>
@@ -306,7 +337,7 @@ export default async function FeesPage({ searchParams }: Props) {
                     {reply.data.fees.awaitingApproval.map((payment) => (
                       <li className="card" key={payment.id} data-payment={payment.id}>
                         <PaymentFacts payment={payment} />
-                        {payment.recordedBy.id === reply.data.fees.staffId ? (
+                        {payment.recordedBy?.id === reply.data.fees.staffId ? (
                           <p className="field-hint" data-own-record>
                             You recorded this transfer. A different administrator approves or
                             rejects it.
@@ -399,6 +430,73 @@ export default async function FeesPage({ searchParams }: Props) {
                 )}
               </section>
 
+              <section className="section" aria-labelledby="online-review-title">
+                <h2 id="online-review-title">Online payments to look into</h2>
+                <p>
+                  Signed notices that settled nothing: an amount or currency that differs from the
+                  checkout, or a checkout Trucker does not know. Reconciliation comes in a later
+                  release.
+                </p>
+                {reply.data.fees.onlineReview.length === 0 ? (
+                  <p id="online-review-empty">Nothing to look into.</p>
+                ) : (
+                  <ol className="organisation-list" id="online-review-list">
+                    {reply.data.fees.onlineReview.map((item) => (
+                      <li className="card" key={item.id} data-review={item.result}>
+                        <ul className="evidence">
+                          <li>
+                            {item.result === 'mismatch'
+                              ? 'The amount or currency differs from the checkout'
+                              : 'No checkout has this provider reference'}
+                          </li>
+                          <li>
+                            Reference: <bdi dir="ltr">{item.reference ?? 'none'}</bdi>
+                          </li>
+                          <li>
+                            Provider reference: <bdi dir="ltr">{item.providerReference}</bdi>
+                          </li>
+                          {item.amount ? (
+                            <li>
+                              Amount reported:{' '}
+                              <bdi dir="ltr">
+                                {item.amount} {item.currency}
+                              </bdi>
+                            </li>
+                          ) : null}
+                          <li>Received at {at(item.receivedAt)}</li>
+                        </ul>
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </section>
+
+              <section className="section" aria-labelledby="open-checkouts-title">
+                <h2 id="open-checkouts-title">Online payments in progress</h2>
+                {reply.data.fees.openCheckouts.length === 0 ? (
+                  <p id="open-checkouts-empty">No online payment is in progress.</p>
+                ) : (
+                  <ol className="organisation-list" id="open-checkouts-list">
+                    {reply.data.fees.openCheckouts.map((item) => (
+                      <li className="card" key={item.id} data-checkout={item.id}>
+                        <ul className="evidence">
+                          <li>
+                            Reference: <bdi dir="ltr">{item.reference}</bdi>
+                          </li>
+                          <li>
+                            Amount:{' '}
+                            <bdi dir="ltr">
+                              {item.amount} {item.currency}
+                            </bdi>
+                          </li>
+                          <li>Open until {at(item.expiresAt)}</li>
+                        </ul>
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </section>
+
               <section className="section" aria-labelledby="refunds-title">
                 <h2 id="refunds-title">Money to return</h2>
                 <p>Refunds are recorded here. Processing them comes in a later release.</p>
@@ -447,7 +545,12 @@ export default async function FeesPage({ searchParams }: Props) {
                             : payment.outcome === 'settled'
                               ? 'Approved: it settled the fee'
                               : 'Approved: to be returned'}{' '}
-                          by <bdi>{payment.decidedBy?.displayName}</bdi>
+                          {payment.decidedBy ? (
+                            <>
+                              {' '}
+                              by <bdi>{payment.decidedBy.displayName}</bdi>
+                            </>
+                          ) : null}
                           {payment.decidedAt ? ` at ${at(payment.decidedAt)}` : ''}
                           {payment.decisionNote ? (
                             <>

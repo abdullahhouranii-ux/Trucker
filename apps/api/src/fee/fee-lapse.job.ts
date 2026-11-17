@@ -2,6 +2,7 @@ import { Inject, Injectable, type OnModuleDestroy, type OnModuleInit } from '@ne
 import type pg from 'pg';
 import type { AppConfig } from '../config/config.js';
 import { jsonLogger } from '../http/logger.js';
+import { PaymentService } from '../payment/payment.service.js';
 import { APP_CONFIG, DB_POOL } from '../tokens.js';
 
 /** How many bookings one tick lapses at most; the rest wait for the next tick. */
@@ -12,6 +13,7 @@ const PER_TICK = 100;
  * database lapses at most one booking, in its own transaction, so a tick never holds the locks
  * of two bookings at once. Every command that could act on such a booking also lapses it
  * first, so this job only keeps the records current; it never decides anything itself.
+ * Before lapsing, it asks the payment provider about checkouts that closed with no word.
  *
  * FEE_LAPSE_INTERVAL_MS sets the period; 0 turns it off. Unset, it runs every minute, except
  * under test, where the tests run it themselves.
@@ -24,6 +26,7 @@ export class FeeLapseJob implements OnModuleInit, OnModuleDestroy {
   constructor(
     @Inject(DB_POOL) private readonly pool: pg.Pool,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
+    @Inject(PaymentService) private readonly payments: PaymentService,
   ) {}
 
   onModuleInit(): void {
@@ -45,6 +48,9 @@ export class FeeLapseJob implements OnModuleInit, OnModuleDestroy {
     this.running = true;
     let lapsed = 0;
     try {
+      // First what the provider says of checkouts whose time ran out: a payment it took in time
+      // settles the fee rather than letting the booking lapse.
+      await this.payments.checkExpiredCheckouts();
       for (let i = 0; i < PER_TICK; i += 1) {
         const row = (
           await this.pool.query<{ result: string }>('SELECT trucker.lapse_overdue_fee() AS result')

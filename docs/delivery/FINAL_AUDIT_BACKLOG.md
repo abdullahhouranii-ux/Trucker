@@ -150,3 +150,12 @@ All Arabic and Urdu text in the repository is a draft written without a native r
 - Console: the reference, amount and currency are typed by hand; choosing the fee from the list of fees due would avoid mistakes.
 - Wording of the fee, lapse and refund messages in English, Arabic and Urdu.
 
+## Slice 27 (online payment and receipts)
+
+- Web: after payment the fee block still says "Amount to pay"; "Amount paid" would be right once paid.
+- Web: the notice after coming back from the provider sits below the booking card; at the top of the page it would be seen first.
+- Web: the receipt line runs number, amount, method and time together; a small table or separate lines would read better.
+- Stand-in page: "Open until" and the layout are a development page's; a real provider's page replaces it.
+- Console: online payments show the provider's transaction as the statement line; a label of its own would be clearer.
+- Wording of the payment, receipt and stand-in messages in English, Arabic and Urdu.
+

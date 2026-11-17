@@ -29,12 +29,13 @@ Each slice has a scope and a record with its evidence in this folder.
 | 24 | Financial settings: versions, second-administrator approval, effective time | PR #28 |
 | 25 | Price breakdown, views by role, fee payer from roles, freight terms on each booking | PR #29 |
 | 26 | Trucker's fee before confirmation: bank transfer verified by two administrators, lapse at the deadline, refund records | PR #30 |
+| 27 | Online payment of the fee through a provider-neutral interface (development stand-in only), receipts | `feat/online-payment` |
 
-Pull requests #15 to #30 are stacked and open; #15 to #29 are green in CI. None is merged; each needs a dependency review and Abdullah's explicit authorisation.
+Pull requests #15 to #30 are stacked, open and green in CI; slice 27 follows as its own pull request. None is merged; each needs a dependency review and Abdullah's explicit authorisation.
 
 ## Next
 
-1. Phase four, continued: slice 27, online payment through a provider-neutral interface with a test stand-in, and receipts; slice 28, refund approval and payment, and reconciliation. Then phase five (dispatch, proof of delivery, settlement, closure). Each as its own unmerged pull request, on development defaults, under the instruction of 17 November 2026 (11:46).
+1. Phase four, last slice: slice 28, refund approval and payment, and reconciliation. Then phase five (dispatch, proof of delivery, settlement, closure). Each as its own unmerged pull request, on development defaults, under the instruction of 17 November 2026 (11:46).
 2. Dispatch slice 17, with DD-1 to DD-10 as development defaults unless Abdullah says otherwise; it can run alongside phase four.
 
 ## Open decisions

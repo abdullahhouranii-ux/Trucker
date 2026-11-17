@@ -1062,7 +1062,33 @@
         "duplicate_payment": "To be returned: paid twice",
         "cancelled_after_payment": "To be returned in full: the booking was cancelled after payment"
       },
-      "refundPending": "refund not yet processed"
+      "refundPending": "refund not yet processed",
+      "payOnline": "Pay online",
+      "continuePayment": "Continue the payment",
+      "payOnlineNote": "You will go to the payment provider's page. The fee counts as paid only when the provider confirms it to Trucker.",
+      "inProgress": "A payment was started and has not finished. Continuing it does not start a second one.",
+      "receiptLine": "Receipt",
+      "receiptNote": "A receipt acknowledges the payment. It is not a tax invoice.",
+      "method": {
+        "bank_transfer": "bank transfer",
+        "online": "online"
+      },
+      "returned": {
+        "confirmed": "The payment provider has confirmed the payment. The fee is paid.",
+        "pending": "The payment provider has not confirmed a payment yet. Coming back from its page does not confirm it. Reload this page in a moment.",
+        "declined": "No payment was made. You can try again.",
+        "closed": "That payment page was no longer open. Nothing was paid on it."
+      },
+      "errors": {
+        "invalid": "This could not be started. Reload the page and try again.",
+        "not_found": "This could not be started. Reload the page and try again.",
+        "fee_not_due": "Trucker's fee is not due on this booking.",
+        "fee_deadline_passed": "The deadline to pay the fee has passed. Nothing was started.",
+        "online_payment_unavailable": "Online payment is not available here. Pay by bank transfer, quoting the reference.",
+        "payment_provider_unavailable": "The payment provider did not answer. Nothing was charged. Try again.",
+        "retry_key_conflict": "This form was already used. Reload the page and try again.",
+        "pay_unconfirmed": "It is not confirmed that a payment was started. Check what is shown before trying again."
+      }
     },
     "commissionLine": "Organiser commission, included in the price",
     "paymentCod": "The freight is paid to the carrier in cash on delivery. Trucker does not hold the transport money.",
@@ -1418,5 +1444,17 @@
       "currency_unavailable": "This currency is not available.",
       "settlementDays_out_of_range": "Enter a number of days within the limit shown."
     }
+  },
+  "payTest": {
+    "title": "Payment (development stand-in)",
+    "notice": "This page stands in for a payment provider during development. No money moves and no card details are asked for.",
+    "amount": "Amount",
+    "reference": "Reference",
+    "expires": "Open until",
+    "pay": "Pay (stand-in)",
+    "decline": "Decline (stand-in)",
+    "closed": "This payment page is no longer open.",
+    "unavailable": "This could not be loaded. Try again.",
+    "back": "Back to Trucker"
   }
 }

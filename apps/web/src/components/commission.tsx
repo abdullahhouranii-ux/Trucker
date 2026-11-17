@@ -9,7 +9,7 @@ import {
   type CommissionView,
 } from '../server/api.ts';
 import { setShipmentCommissionAction } from '../server/authority-actions.ts';
-import { FeePaymentFacts } from './booking-view.tsx';
+import { FeePaymentFacts, PaymentNotice, PayOnline } from './booking-view.tsx';
 import { Ltr } from './ltr.tsx';
 
 type T = Messages['commission'];
@@ -46,6 +46,7 @@ export async function CommissionSection({
   locale,
   t,
   book,
+  payment,
   organisationId,
   shipmentId,
   version,
@@ -57,6 +58,8 @@ export async function CommissionSection({
   t: T;
   /** For Trucker's fee, when the organiser pays it. */
   book: Messages['book'];
+  /** Whether the fee can be paid online here, and what came back from the provider's page. */
+  payment?: { online: boolean; returned: string; error: string };
   organisationId: string;
   shipmentId: string;
   version: number;
@@ -134,6 +137,25 @@ export async function CommissionSection({
             ) : null}
           </ul>
           <FeePaymentFacts t={book} fee={reply.data.feePayment} />
+          {reply.data.feePayment?.bookingId && payment ? (
+            <>
+              <PaymentNotice
+                t={book}
+                fee={reply.data.feePayment}
+                payment={payment.returned}
+                payError={payment.error}
+              />
+              <PayOnline
+                t={book}
+                locale={locale}
+                fee={reply.data.feePayment}
+                online={payment.online}
+                organisationId={organisationId}
+                bookingId={reply.data.feePayment.bookingId}
+                returnTo={`/${locale}/organisations/${organisationId}/shipments/${shipmentId}`}
+              />
+            </>
+          ) : null}
         </div>
       ) : null}
       {editable ? (
