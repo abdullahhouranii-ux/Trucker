@@ -658,9 +658,8 @@ async function main() {
     mkdirSync(outDir, { recursive: true });
     // At most five pictures, for design review only.
     const shots = {
-      'en:stand-in checkout': 'stand-in-checkout-en-390',
-      'ar:stand-in checkout': 'stand-in-checkout-ar-390',
-      'en:booking paid online': 'booking-paid-online-en-390',
+      'en:booking refund': 'booking-refund-en-390',
+      'ar:booking refund': 'booking-refund-ar-390',
     };
     // Fictional numbers: country code 999 is not assigned. Unique per run.
     const stamp = String(Date.now()).slice(-7);
@@ -4332,6 +4331,69 @@ async function main() {
       'payment',
       (await page.$('#stand-in-closed')) !== null && (await page.$('#stand-in-pay')) === null,
       'the stand-in offers to pay a checkout already paid',
+    );
+    // Refunds (slice 28): money owed back on this booking (a fictional record that it was paid
+    // twice) is partly returned through the stand-in by two administrators. The customer sees
+    // how much is back; the carrier sees nothing of it.
+    const owedRow = (
+      await owner.query(
+        `INSERT INTO trucker.fee_refund
+           (booking_id, payment_id, reason, currency_code, minor_units, amount, status, recorded_at)
+         SELECT p.booking_id, p.id, 'duplicate_payment', p.currency_code, p.minor_units, p.amount,
+                'pending', now()
+         FROM trucker.fee_payment p WHERE p.booking_id = $1 AND p.status = 'approved'
+         RETURNING id`,
+        [arrangedBooking],
+      )
+    ).rows[0];
+    const asker = await feeAdmin();
+    const approver = await feeAdmin();
+    const refundAsked = await asStaff(
+      asker,
+      'POST',
+      '/staff/refunds',
+      {
+        refundId: owedRow?.id,
+        amount: '10.00',
+        method: 'provider',
+        note: 'Paid twice (fictional)',
+      },
+      `refund-${randomUUID()}`,
+    );
+    const approvedRefund = await asStaff(
+      approver,
+      'POST',
+      `/staff/refunds/${refundAsked.body.refund?.id}/decision`,
+      { version: refundAsked.body.refund?.version, decision: 'approve' },
+    );
+    const sentRefund = await asStaff(
+      asker,
+      'POST',
+      `/staff/refunds/${refundAsked.body.refund?.id}/submit`,
+      {
+        version: approvedRefund.body.refund?.version,
+      },
+    );
+    for (const locale of locales) {
+      await open(arrangedBookingPath(locale, verifyOrg), 390);
+      await inspect(locale, 'booking refund');
+    }
+    await open(arrangedBookingPath('en', verifyOrg), 390);
+    const refundLine = (await text('[data-fee-refunds]')) ?? '';
+    await open(arrangedBookingPath('en', carrierOrg), 390);
+    const carrierRefund = await page.$('[data-fee-refunds]');
+    const feeMessages = messagesFor('en').book.feePayment;
+    check(
+      'refund',
+      refundAsked.status === 201 &&
+        approvedRefund.status === 200 &&
+        sentRefund.status === 200 &&
+        sentRefund.body.outcome === 'completed' &&
+        refundLine.includes(feeMessages.refundStatus.partly_refunded) &&
+        refundLine.includes(feeMessages.refundedSoFar) &&
+        refundLine.includes('10.00') &&
+        carrierRefund === null,
+      `refund: ${refundAsked.status}/${approvedRefund.status}/${sentRefund.status} ${sentRefund.body.outcome}; the customer saw "${refundLine}"; the carrier saw it: ${carrierRefund !== null}`,
     );
     // The organiser sees the booked price on its own shipment.
     for (const locale of locales) {

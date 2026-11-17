@@ -552,3 +552,170 @@ export async function decideFeeAction(form: FormData): Promise<void> {
   if (reply.code === 'validation_failed') redirect(`/fees?error=note_required&payment=${id}`);
   redirect(`/fees?error=${FEE_REFUSALS.includes(reply.code) ? reply.code : 'refused'}`);
 }
+
+// ---------------------------------------------------------------------------------------------
+// Refunds and reconciliation (slice 28)
+// ---------------------------------------------------------------------------------------------
+const REFUND_REFUSALS = [
+  'staff_privilege_required',
+  'different_person_required',
+  'independent_person_required',
+  'refund_not_open',
+  'record_changed',
+  'retry_key_conflict',
+  'already_reconciled',
+  'refund_unconfirmed',
+  'online_payment_unavailable',
+  'not_found',
+];
+const problemCodes = (
+  reply: Extract<ApiReply<unknown>, { ok: false }>,
+  fallback: string,
+): string => {
+  const problems = Array.isArray(reply.details.problems)
+    ? (reply.details.problems as { field: string; code: string }[])
+    : [];
+  const codes = problems
+    .map((problem) => `${problem.field}:${problem.code}`)
+    .filter((code) => /^[A-Za-z]{1,40}:[a-z_]{1,40}$/.test(code));
+  return (codes.length > 0 ? codes : [fallback]).join(',');
+};
+const refundRefused = (reply: Extract<ApiReply<unknown>, { ok: false }>): never =>
+  redirect(`/refunds?error=${REFUND_REFUSALS.includes(reply.code) ? reply.code : 'refused'}`);
+
+/** Ask for (part of) money owed to be paid back. A different administrator approves it. */
+export async function requestRefundAction(form: FormData): Promise<void> {
+  const token = await signedIn();
+  const key = text(form, 'retryKey');
+  const retryKey = RETRY_KEY.test(key) ? key : randomUUID();
+  const refundId = text(form, 'refundId');
+  const reply = await api<{ outcome: string }>('POST', '/staff/refunds', {
+    token,
+    retryKey,
+    body: {
+      refundId: refundId.slice(0, 40),
+      amount: text(form, 'amount').trim().slice(0, 20),
+      method: text(form, 'method') === 'provider' ? 'provider' : 'bank_transfer',
+      note: text(form, 'note').trim().slice(0, 2000),
+    },
+  });
+  if (reply.ok) redirect(`/refunds?done=${reply.data.outcome}`);
+  if (reply.status === 401) await sessionEnded();
+  if (unknown(reply)) redirect(`/refunds?error=unconfirmed&retry=${retryKey}`);
+  if (reply.code === 'validation_failed')
+    redirect(
+      `/refunds?error=validation_failed&owed=${UUID.test(refundId) ? refundId : ''}&fields=${problemCodes(reply, 'amount:invalid')}&retry=${retryKey}`,
+    );
+  refundRefused(reply);
+}
+
+/** Approve a request, or withdraw it with the reason. */
+export async function decideRefundAction(form: FormData): Promise<void> {
+  const token = await signedIn();
+  const id = text(form, 'refundRequestId');
+  const decision = text(form, 'decision');
+  if (!UUID.test(id) || !['approve', 'withdraw'].includes(decision))
+    redirect('/refunds?error=not_found');
+  const note = text(form, 'note').trim();
+  const reply = await api<{ outcome: string }>('POST', `/staff/refunds/${id}/decision`, {
+    token,
+    body: {
+      version: Number(text(form, 'version')),
+      decision,
+      note: note === '' ? null : note.slice(0, 2000),
+    },
+  });
+  if (reply.ok) redirect(`/refunds?done=${reply.data.outcome}`);
+  if (reply.status === 401) await sessionEnded();
+  if (unknown(reply)) redirect('/refunds?error=unconfirmed');
+  if (reply.code === 'validation_failed') redirect(`/refunds?error=withdraw_note&request=${id}`);
+  refundRefused(reply);
+}
+
+/** Submit an approved refund: to the provider, or as the bank transfer staff made. */
+export async function submitRefundAction(form: FormData): Promise<void> {
+  const token = await signedIn();
+  const id = text(form, 'refundRequestId');
+  if (!UUID.test(id)) redirect('/refunds?error=not_found');
+  const bankReference = text(form, 'bankReference').trim();
+  const reply = await api<{ outcome: string }>('POST', `/staff/refunds/${id}/submit`, {
+    token,
+    body: {
+      version: Number(text(form, 'version')),
+      bankReference: bankReference === '' ? null : bankReference.slice(0, 200),
+    },
+  });
+  if (reply.ok) redirect(`/refunds?done=submitted_${reply.data.outcome}`);
+  if (reply.status === 401) await sessionEnded();
+  if (reply.code === 'refund_unconfirmed') redirect('/refunds?error=refund_unconfirmed');
+  if (unknown(reply)) redirect('/refunds?error=unconfirmed');
+  if (reply.code === 'validation_failed') redirect(`/refunds?error=bank_reference&request=${id}`);
+  refundRefused(reply);
+}
+
+/** A bank refund's outcome, by someone other than the one who sent it. */
+export async function refundOutcomeAction(form: FormData): Promise<void> {
+  const token = await signedIn();
+  const id = text(form, 'refundRequestId');
+  const outcome = text(form, 'outcome');
+  if (!UUID.test(id) || !['completed', 'failed'].includes(outcome))
+    redirect('/refunds?error=not_found');
+  const line = text(form, 'statementReference').trim();
+  const note = text(form, 'note').trim();
+  const reply = await api<{ outcome: string }>('POST', `/staff/refunds/${id}/outcome`, {
+    token,
+    body: {
+      version: Number(text(form, 'version')),
+      outcome,
+      statementReference: line === '' ? null : line.slice(0, 200),
+      note: note === '' ? null : note.slice(0, 2000),
+    },
+  });
+  if (reply.ok) redirect(`/refunds?done=${reply.data.outcome}`);
+  if (reply.status === 401) await sessionEnded();
+  if (unknown(reply)) redirect('/refunds?error=unconfirmed');
+  if (reply.code === 'validation_failed')
+    redirect(
+      `/refunds?error=${outcome === 'completed' ? 'statement_line' : 'failure_note'}&request=${id}`,
+    );
+  refundRefused(reply);
+}
+
+/** What Trucker's bank statement or the provider's report shows. A correction names the entry. */
+export async function reconcileAction(form: FormData): Promise<void> {
+  const token = await signedIn();
+  const key = text(form, 'retryKey');
+  const retryKey = RETRY_KEY.test(key) ? key : randomUUID();
+  const subjectId = text(form, 'subjectId');
+  const supersedes = text(form, 'supersedes');
+  const note = text(form, 'note').trim();
+  const reply = await api<{ outcome: string; entry?: { outcome?: string } }>(
+    'POST',
+    '/staff/reconciliations',
+    {
+      token,
+      retryKey,
+      body: {
+        subjectType: text(form, 'subjectType') === 'refund' ? 'refund' : 'payment',
+        subjectId: subjectId.slice(0, 40),
+        source: text(form, 'source') === 'provider_report' ? 'provider_report' : 'bank_statement',
+        sourceReference: text(form, 'sourceReference').trim().slice(0, 400),
+        amount: text(form, 'amount').trim().slice(0, 20),
+        currency: text(form, 'currency').trim().toUpperCase().slice(0, 3),
+        note: note === '' ? null : note.slice(0, 2000),
+        supersedes: UUID.test(supersedes) ? supersedes : null,
+      },
+    },
+  );
+  if (reply.ok)
+    redirect(
+      `/refunds?done=reconciled_${reply.data.entry?.outcome === 'discrepancy' ? 'discrepancy' : 'matched'}`,
+    );
+  if (reply.status === 401) await sessionEnded();
+  if (unknown(reply)) redirect(`/refunds?error=unconfirmed&retry=${retryKey}`);
+  if (reply.code === 'validation_failed')
+    redirect(
+      `/refunds?error=validation_failed&subject=${UUID.test(subjectId) ? subjectId : ''}&fields=${problemCodes(reply, 'amount:invalid')}&retry=${retryKey}`,
+    );
+  refundRefused(reply);
+}

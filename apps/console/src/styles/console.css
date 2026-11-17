@@ -170,3 +170,11 @@ input[type='password'] {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* A disclosure (a refund's history): a target large enough to tap. */
+.page details > summary {
+  display: list-item;
+  min-height: var(--target-min);
+  padding-block: var(--s-1);
+  cursor: pointer;
+}

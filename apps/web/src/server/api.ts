@@ -619,7 +619,9 @@ export interface FeePayment {
     reason: 'booking_ended' | 'duplicate_payment' | 'cancelled_after_payment';
     amount: string;
     currency: string;
-    status: 'pending';
+    /** How far it has been paid back (slice 28). */
+    status: 'pending' | 'in_progress' | 'partly_refunded' | 'refunded';
+    refunded: string;
   }[];
   /** An online payment in progress, to be resumed rather than started again (slice 27). */
   checkout?: FeeCheckout | null;

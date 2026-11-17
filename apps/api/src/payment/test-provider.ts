@@ -6,6 +6,8 @@ import {
   type OpenedCheckout,
   type PaymentProvider,
   type ProviderReport,
+  type RefundAnswer,
+  type RefundRequest,
   type VerifiedNotification,
 } from './provider.js';
 import { SIGNATURE_HEADER, sign, signatureValid } from './signature.js';
@@ -51,7 +53,11 @@ export class TestPaymentProvider implements PaymentProvider {
    * Tests only: how the stand-in misbehaves. `lose-next-answer` opens the checkout and then
    * fails as if the answer were lost; `refuse-next` refuses to open one; `outage` answers nothing.
    */
-  trouble: 'none' | 'lose-next-answer' | 'refuse-next' | 'outage' = 'none';
+  trouble: 'none' | 'lose-next-answer' | 'refuse-next' | 'fail-next-refund' | 'outage' = 'none';
+  private readonly refunds = new Map<
+    string,
+    RefundAnswer & { transactionId: string; amount: string }
+  >();
 
   constructor(
     private readonly secret: string,
@@ -185,6 +191,69 @@ export class TestPaymentProvider implements PaymentProvider {
         ...(text(event.paidAt) ? { paidAt: text(event.paidAt)! } : {}),
       },
     };
+  }
+
+  async refund(request: RefundRequest): Promise<RefundAnswer> {
+    if (this.trouble === 'outage') throw new Error('the stand-in is unreachable');
+    const known = this.refunds.get(request.refundId);
+    if (known) return this.answer(known);
+    const session = this.sessions.get(request.providerReference);
+    const minor = (value: string): number => Math.round(Number(value) * 1000);
+    const already = [...this.refunds.values()]
+      .filter((item) => item.transactionId === request.transactionId && item.status === 'succeeded')
+      .reduce((sum, item) => sum + minor(item.amount), 0);
+    let status: RefundAnswer['status'] = 'succeeded';
+    let reason: string | undefined;
+    if (!session || session.status !== 'paid' || session.transactionId !== request.transactionId) {
+      status = 'failed';
+      reason = 'no such payment';
+    } else if (
+      request.currency !== session.currency ||
+      already + minor(request.amount) > minor(session.amount)
+    ) {
+      status = 'failed';
+      reason = 'more than was paid';
+    } else if (this.trouble === 'fail-next-refund') {
+      this.trouble = 'none';
+      status = 'failed';
+      reason = 'declined by the stand-in';
+    }
+    const record = {
+      status,
+      providerRefundReference: token('tref'),
+      ...(reason ? { reason } : {}),
+      transactionId: request.transactionId,
+      amount: request.amount,
+    };
+    this.refunds.set(request.refundId, record);
+    if (this.trouble === 'lose-next-answer') {
+      this.trouble = 'none';
+      throw new Error('the answer was lost');
+    }
+    return this.answer(record);
+  }
+
+  private answer(record: RefundAnswer): RefundAnswer {
+    return {
+      status: record.status,
+      providerRefundReference: record.providerRefundReference,
+      ...(record.reason ? { reason: record.reason } : {}),
+    };
+  }
+
+  async refundStatus(refundId: string): Promise<RefundAnswer | { readonly status: 'unknown' }> {
+    if (this.trouble === 'outage') throw new Error('the stand-in is unreachable');
+    const known = this.refunds.get(refundId);
+    return known ? this.answer(known) : { status: 'unknown' };
+  }
+
+  /** Tests only: how much the stand-in has paid back on a transaction. */
+  refundedOn(transactionId: string): number {
+    return (
+      [...this.refunds.values()]
+        .filter((item) => item.transactionId === transactionId && item.status === 'succeeded')
+        .reduce((sum, item) => sum + Math.round(Number(item.amount) * 1000), 0) / 1000
+    );
   }
 
   async status(providerReference: string): Promise<CheckoutStatus> {

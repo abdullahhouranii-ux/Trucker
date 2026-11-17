@@ -200,7 +200,13 @@ export function FeePaymentFacts({ t, fee }: { t: B; fee: FeePayment | null | und
           {fee.refunds.map((refund) => (
             <li key={refund.id} data-refund={refund.reason}>
               {f.refund[refund.reason]}: <Money amount={refund.amount} currency={refund.currency} />{' '}
-              ({f.refundPending})
+              ({f.refundStatus[refund.status]}
+              {refund.status === 'partly_refunded' ? (
+                <>
+                  ; {f.refundedSoFar}: <Money amount={refund.refunded} currency={refund.currency} />
+                </>
+              ) : null}
+              )
             </li>
           ))}
         </ul>

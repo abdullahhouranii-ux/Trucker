@@ -12,6 +12,9 @@ Date: 17 November 2026. Written after the review of slice 27. No payment provide
 | Money taken twice for one fee is recorded and the second payment returned | PAY-8 | That a provider never takes it twice: Trucker cannot prevent that (item 2) |
 | A payment taken in time whose notification is late still settles the fee | PAY-4, within the 15-minute wait or by the status check | Beyond the wait with the provider unreachable, the booking lapses and the payment is returned (PAY-9). It is not protected |
 | An outage at the provider does not stop other bookings lapsing | PAY-9 | — |
+| Refunds never add up to more than the payment, however requests arrive | RF-2 (Trucker's records, including simultaneous and direct writes) | That the provider refuses more than was paid: only the stand-in is shown to |
+| A refund retried after a lost answer, or with the provider unreachable, is asked for with the same identifier, and Trucker records it once | RF-3 | That the provider refunds once: only if it honours the refund identifier (item 8) |
+| A provider answer that contradicts a final one is recorded and not applied | RF-4 | — |
 
 So Trucker does not guarantee that a payer is never charged twice, nor that a late notification never costs a booking. It guarantees that every payment it is told of is recorded, applied at most once, and either settles the fee or is recorded as money to return.
 
@@ -26,8 +29,8 @@ So Trucker does not guarantee that a payer is never charged twice, nor that a la
 | 5 | A server-side status lookup by the provider's checkout reference, giving the amount, currency, payment time and transaction | Found when a notification is lost (PAY-4) | A lost notification is only found if it is redelivered within the wait |
 | 6 | The payment time in notifications and status is the time the money was taken | OP-3 (proposed): in time means taken by the fee's deadline | OP-3 cannot be applied as proposed |
 | 7 | The amount taken equals the checkout's amount, in its currency and minor units; no partial capture | G-10 | Anything else settles nothing and waits for reconciliation |
-| 8 | Refunds by API, partial and full, idempotent on Trucker's refund identifier, with their own status (submitted, completed, failed) and notifications | Slice 28 | Refunds are carried out by hand and recorded by staff |
-| 9 | Settlement reports or an API listing payments and refunds, for reconciliation | Slice 28 | Reconciliation is by hand against the bank statement |
+| 8 | Refunds by API, partial and full, idempotent on Trucker's refund identifier (kept at least as long as Trucker may retry), refusing more than was captured, with a status lookup by that identifier and their own status (pending, succeeded, failed) | Slice 28 sends the same identifier on every retry (RF-3) | A retry after a lost answer could refund twice, and Trucker would record it once; refunds would have to be made by hand and recorded by staff |
+| 9 | Settlement reports or an API listing payments and refunds, for reconciliation | Slice 28 records reconciliation by hand from a statement or report (RF-5) | Reconciliation stays by hand against the bank statement |
 | 10 | Hosted checkout: card details never reach Trucker | Keeps card data out of Trucker's systems | Not acceptable without a separate security assessment |
 
 Choosing a provider, its contract and its fees are Abdullah's decision (O-5); none is contacted from here.

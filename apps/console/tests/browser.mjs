@@ -37,7 +37,7 @@ function check(group, ok, message) {
 
 // The console reaches the API through a stand-in, so the checks can lose an answer on its way
 // back: the API did the work, the console never hears.
-const relay = { mode: 'pass', lost: [] };
+const relay = { mode: 'pass', lost: [], canned: {} };
 const LOSABLE = [
   ['POST', /^\/staff\/accounts\/[^/]+\/privileges$/],
   ['POST', /^\/staff\/sign-out$/],
@@ -46,6 +46,12 @@ const LOSABLE = [
 function startRelay() {
   const server = http.createServer((request, response) => {
     if (relay.mode === 'down') return request.socket.destroy();
+    // A fixed answer for a page whose records this database cannot hold (fictional data).
+    const canned = relay.canned[`${request.method} ${request.url.split('?')[0]}`];
+    if (canned) {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      return response.end(JSON.stringify(canned));
+    }
     const upstream = http.request(
       {
         host: '127.0.0.1',
@@ -231,7 +237,8 @@ async function main() {
     mkdirSync(outDir, { recursive: true });
     // At most five pictures, for design review only.
     const shots = {
-      'fees online': 'console-fees-online-390',
+      refunds: 'console-refunds-390',
+      'refunds refused': 'console-refunds-refused-390',
     };
 
     /** Helpers bound to one page, so that two staff members can be signed in at once. */
@@ -1470,6 +1477,200 @@ async function main() {
       'fees',
       feesEmpty && feeRefused && onlineEmpty,
       `the fee payments page ended at ${one.page.url()} (empty lists ${feesEmpty})`,
+    );
+
+    // ------------------------------------------------------------------------------------
+    // Refunds (slice 28). This database holds no payment, so the page is first shown with a
+    // fixed, fictional list in every state, its forms checked for keyboard, layout and rules.
+    // A request sent from it goes to the real API, which refuses it: no such refund.
+    // ------------------------------------------------------------------------------------
+    await one.open('/refunds');
+    const refundsEmpty =
+      (await one.page.$('[data-state="refunds"]')) !== null &&
+      (await one.page.$('#refunds-limitation')) !== null &&
+      (await one.page.$('#owed-empty')) !== null &&
+      (await one.page.$('#open-empty')) !== null &&
+      (await one.page.$('#reconcile-empty')) !== null &&
+      (await one.page.$('#discrepancies-empty')) !== null &&
+      (await one.page.$('#ended-empty')) !== null &&
+      (await one.page.$('nav a[href="/refunds"]')) !== null;
+    await one.inspect('refunds empty');
+    const me = (
+      await db.query('SELECT id FROM trucker.staff_account WHERE email = $1', [adminEmail])
+    ).rows[0].id;
+    const other = { id: '00000000-0000-4000-8000-000000000002', displayName: 'Fictional Admin B' };
+    const self = { id: me, displayName: 'You' };
+    const ids = (n) => `00000000-0000-4000-8000-0000000001${String(n).padStart(2, '0')}`;
+    const at = '2026-06-01T08:00:00.000Z';
+    const step = (event, by) => ({ event, at, by, detail: {} });
+    const request = (n, method, status, extra = {}) => ({
+      id: ids(n),
+      version: 2,
+      refundId: ids(90),
+      paymentId: ids(91),
+      method,
+      amount: '10.00',
+      currency: 'XTS',
+      status,
+      note: 'Paid twice (fictional)',
+      bookingId: ids(92),
+      reference: `TF-00000000${String(n).padStart(2, '0')}`,
+      requestedBy: other,
+      requestedAt: at,
+      approvedBy: status === 'requested' ? null : self,
+      approvedAt: status === 'requested' ? null : at,
+      submittedBy: null,
+      submittedAt: null,
+      bankReference: null,
+      providerRefundReference: null,
+      completedBy: null,
+      completedAt: null,
+      statementReference: null,
+      failedAt: null,
+      failureReason: null,
+      withdrawnAt: null,
+      withdrawalNote: null,
+      reconciliation: null,
+      history: [step('requested', other)],
+      ...extra,
+    });
+    relay.canned['GET /staff/refunds'] = {
+      refunds: {
+        staffId: me,
+        owed: [
+          {
+            id: ids(90),
+            bookingId: ids(92),
+            paymentId: ids(91),
+            reason: 'duplicate_payment',
+            amount: '30.00',
+            currency: 'XTS',
+            status: 'partly_refunded',
+            refunded: '10.00',
+            inProgress: '0.00',
+            remaining: '20.00',
+            recordedAt: at,
+            method: 'online',
+            reference: 'TF-0000000090',
+          },
+        ],
+        open: [
+          request(1, 'bank_transfer', 'requested'),
+          request(2, 'bank_transfer', 'requested', { requestedBy: self }),
+          request(3, 'bank_transfer', 'approved', { approvedBy: other }),
+          request(4, 'provider', 'approved', { approvedBy: other }),
+          request(5, 'provider', 'submitted', {
+            approvedBy: other,
+            submittedBy: self,
+            submittedAt: at,
+            history: [step('requested', other), step('submitted', self)],
+          }),
+          request(6, 'bank_transfer', 'submitted', {
+            approvedBy: self,
+            submittedBy: other,
+            submittedAt: at,
+            bankReference: 'TRF-0006',
+          }),
+        ],
+        ended: [
+          request(7, 'provider', 'completed', {
+            approvedBy: other,
+            submittedBy: other,
+            submittedAt: at,
+            completedAt: at,
+            providerRefundReference: 'tref_fictional',
+            reconciliation: { outcome: 'matched', at },
+            history: [step('requested', other), step('completed', null)],
+          }),
+          request(8, 'bank_transfer', 'failed', {
+            approvedBy: other,
+            submittedBy: other,
+            submittedAt: at,
+            bankReference: 'TRF-0008',
+            failedAt: at,
+            failureReason: 'Returned by the bank (fictional)',
+          }),
+        ],
+        toReconcile: {
+          payments: [
+            {
+              id: ids(93),
+              method: 'bank_transfer',
+              amount: '30.00',
+              currency: 'XTS',
+              valueDate: '2026-06-01',
+              statementReference: 'STMT-IN-93',
+              reference: 'TF-0000000093',
+              recordedBy: other,
+              decidedBy: { id: ids(94), displayName: 'Fictional Admin C' },
+              decidedAt: at,
+            },
+          ],
+          refunds: [
+            request(9, 'bank_transfer', 'completed', {
+              approvedBy: self,
+              submittedBy: other,
+              submittedAt: at,
+              bankReference: 'TRF-0009',
+              completedBy: other,
+              completedAt: at,
+              statementReference: 'STMT-OUT-9',
+            }),
+          ],
+        },
+        discrepancies: [
+          {
+            id: ids(95),
+            subjectType: 'payment',
+            subjectId: ids(96),
+            source: 'bank_statement',
+            sourceReference: 'STMT-IN-96',
+            amount: '29.00',
+            currency: 'XTS',
+            expectedAmount: '30.00 XTS',
+            reference: 'TF-0000000096',
+            outcome: 'discrepancy',
+            note: 'Bank charged a fee (fictional)',
+            supersedes: null,
+            reconciledBy: other,
+            reconciledAt: at,
+          },
+        ],
+      },
+    };
+    await one.open('/refunds');
+    const refundsShown = await one.page.evaluate(() => ({
+      owed: document.querySelectorAll('[data-owed]').length,
+      open: document.querySelectorAll('#open-list [data-refund-request]').length,
+      own: document.querySelector('[data-own-request]') !== null,
+      notIndependent: document.querySelector('[data-not-independent]') !== null,
+      discrepancies: document.querySelectorAll('[data-discrepancy]').length,
+      remaining: document.querySelector('[data-remaining]')?.textContent.trim() ?? null,
+      amount: document.querySelector('[data-owed] input[name="amount"]')?.value ?? null,
+    }));
+    await one.inspect('refunds');
+    // Requesting from it: the real API answers that no such refund exists, named in the summary.
+    await one.page.type(`#note-${ids(90)}`, 'Paid twice (fictional)');
+    await one.submit(`[data-owed="${ids(90)}"] button[type="submit"]`);
+    const refundRefused =
+      one.page.url().includes('error=validation_failed') &&
+      ((await one.text('#error-summary')) ?? '').includes('not found') &&
+      (await one.page.$(`#error-summary a[href="#amount-${ids(90)}"]`)) !== null &&
+      (await db.query('SELECT count(*)::int AS n FROM trucker.refund_request')).rows[0].n === 0;
+    await one.inspect('refunds refused');
+    delete relay.canned['GET /staff/refunds'];
+    check(
+      'refunds',
+      refundsEmpty &&
+        refundsShown.owed === 1 &&
+        refundsShown.open === 6 &&
+        refundsShown.own &&
+        refundsShown.notIndependent &&
+        refundsShown.discrepancies === 1 &&
+        refundsShown.remaining === '20.00 XTS' &&
+        refundsShown.amount === '20.00' &&
+        refundRefused,
+      `the refunds page ended at ${one.page.url()} (empty ${refundsEmpty}, shown ${JSON.stringify(refundsShown)})`,
     );
 
     // ------------------------------------------------------------------------------------

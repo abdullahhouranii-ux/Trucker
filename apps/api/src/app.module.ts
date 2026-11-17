@@ -44,6 +44,7 @@ import { PaymentService } from './payment/payment.service.js';
 import { PAYMENT_PROVIDER } from './payment/provider.js';
 import { TestPaymentProvider } from './payment/test-provider.js';
 import { FeeService } from './staff/fee.service.js';
+import { RefundService } from './staff/refund.service.js';
 import { FinanceService } from './staff/finance.service.js';
 import { ReviewService } from './staff/review.service.js';
 import { StaffController } from './staff/staff.controller.js';
@@ -122,6 +123,7 @@ export class AppModule {
         ReviewService,
         FinanceService,
         FeeService,
+        RefundService,
         FeeLapseJob,
         VerificationService,
       ],

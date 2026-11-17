@@ -159,3 +159,13 @@ All Arabic and Urdu text in the repository is a draft written without a native r
 - Console: online payments show the provider's transaction as the statement line; a label of its own would be clearer.
 - Wording of the payment, receipt and stand-in messages in English, Arabic and Urdu.
 
+## Slice 28 (refunds and reconciliation)
+
+- Web: the refund line runs reason, amount and progress together in brackets; separate lines would read better, and "partly returned" could give the amount left too.
+- Web: the refund line has no time; the date it was returned is not shown to the payer.
+- Console: the Refunds page is long; each request carries every form its step allows. Filters or one page per request would scale better.
+- Console: the reconciliation form asks for the amount and currency by hand; offering the expected values to confirm would avoid typing mistakes, at the cost of making a blind check easier.
+- Console: history entries show the step and person but not the detail (for example the transfer reference) recorded with it.
+- Console: only discrepancies are offered for correction; a matched entry has no correction form.
+- Test coverage: the payer's refund line is checked in the browser on one booking with a fictional record of a double payment; the other states are checked in the API tests only.
+- Wording of the refund and reconciliation messages in English, Arabic and Urdu.
