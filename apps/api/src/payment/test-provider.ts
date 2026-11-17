@@ -1,11 +1,12 @@
 import { randomBytes } from 'node:crypto';
-import type {
-  CheckoutRequest,
-  CheckoutStatus,
-  OpenedCheckout,
-  PaymentProvider,
-  ProviderReport,
-  VerifiedNotification,
+import {
+  ProviderRefused,
+  type CheckoutRequest,
+  type CheckoutStatus,
+  type OpenedCheckout,
+  type PaymentProvider,
+  type ProviderReport,
+  type VerifiedNotification,
 } from './provider.js';
 import { SIGNATURE_HEADER, sign, signatureValid } from './signature.js';
 
@@ -46,6 +47,11 @@ export class TestPaymentProvider implements PaymentProvider {
   readonly name = 'test' as const;
   private readonly sessions = new Map<string, Session>();
   private readonly byCheckout = new Map<string, string>();
+  /**
+   * Tests only: how the stand-in misbehaves. `lose-next-answer` opens the checkout and then
+   * fails as if the answer were lost; `refuse-next` refuses to open one; `outage` answers nothing.
+   */
+  trouble: 'none' | 'lose-next-answer' | 'refuse-next' | 'outage' = 'none';
 
   constructor(
     private readonly secret: string,
@@ -53,6 +59,11 @@ export class TestPaymentProvider implements PaymentProvider {
   ) {}
 
   async openCheckout(request: CheckoutRequest): Promise<OpenedCheckout> {
+    if (this.trouble === 'outage') throw new Error('the stand-in is unreachable');
+    if (this.trouble === 'refuse-next') {
+      this.trouble = 'none';
+      throw new ProviderRefused('the stand-in refused the checkout');
+    }
     const known = this.byCheckout.get(request.checkoutId);
     if (known) return { providerReference: known, url: null };
     const providerReference = token('tchk');
@@ -66,7 +77,16 @@ export class TestPaymentProvider implements PaymentProvider {
       status: 'open',
     });
     this.byCheckout.set(request.checkoutId, providerReference);
+    if (this.trouble === 'lose-next-answer') {
+      this.trouble = 'none';
+      throw new Error('the answer was lost');
+    }
     return { providerReference, url: null };
+  }
+
+  /** Tests only: how many checkouts the stand-in holds for a fee reference. */
+  checkoutsFor(reference: string): number {
+    return [...this.sessions.values()].filter((session) => session.reference === reference).length;
   }
 
   private state(session: Session): TestCheckoutView['status'] {
@@ -168,6 +188,7 @@ export class TestPaymentProvider implements PaymentProvider {
   }
 
   async status(providerReference: string): Promise<CheckoutStatus> {
+    if (this.trouble === 'outage') throw new Error('the stand-in is unreachable');
     const session = this.sessions.get(providerReference);
     if (!session) return { status: 'unknown' };
     const state = this.state(session);

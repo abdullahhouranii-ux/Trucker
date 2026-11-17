@@ -3,7 +3,12 @@ import type pg from 'pg';
 import { AccessGuard } from '../database/access.js';
 import { ApiError } from '../http/api-error.js';
 import { DB_POOL } from '../tokens.js';
-import { PAYMENT_PROVIDER, type PaymentProvider, type ProviderReport } from './provider.js';
+import {
+  PAYMENT_PROVIDER,
+  ProviderRefused,
+  type PaymentProvider,
+  type ProviderReport,
+} from './provider.js';
 
 /**
  * Online payment of Trucker's fee (db/migrations/0025_online_payment.sql). The database decides
@@ -115,10 +120,14 @@ export class PaymentService {
           currency: checkout.currency,
           expiresAt: new Date(checkout.expiresAt),
         });
-      } catch {
-        await this.asCaller(caller, organisationId, (client) =>
-          client.query('SELECT trucker.fee_checkout_refused($1)', [checkout.id]),
-        );
+      } catch (error) {
+        // Only a refusal closes it. When the answer is lost the provider may have opened a
+        // checkout: it stays in progress, and asking again asks the provider again with the same
+        // identifier, which reaches that same checkout rather than a second one.
+        if (error instanceof ProviderRefused)
+          await this.asCaller(caller, organisationId, (client) =>
+            client.query('SELECT trucker.fee_checkout_refused($1)', [checkout.id]),
+          );
         throw new ApiError(
           502,
           'payment_provider_unavailable',
@@ -188,7 +197,14 @@ export class PaymentService {
     let recorded = 0;
     for (const item of due) {
       if (item.provider !== this.provider.name) continue;
-      const answer = await this.provider.status(item.provider_reference);
+      let answer;
+      try {
+        answer = await this.provider.status(item.provider_reference);
+      } catch {
+        // Unreachable now: asked again on the next run. The hold on the booking still ends at
+        // its time, so an outage never keeps a booking open indefinitely.
+        continue;
+      }
       // Still open, or forgotten by the provider: nothing to record.
       if (!('providerReference' in answer)) continue;
       const report: ProviderReport = answer;

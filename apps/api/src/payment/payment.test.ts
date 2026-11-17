@@ -1434,3 +1434,129 @@ test('PAY-6, R-13: the same notice delivered twice at once, or a notice and a st
   );
   assert.deepEqual(await consistency(), []);
 });
+
+// ---------------------------------------------------------------------------------------------
+// Review of slice 27: what is and is not shown about double charges and late notifications
+// ---------------------------------------------------------------------------------------------
+test("PAY-7, R-13: simultaneous requests, and a retry after the provider's answer was lost, open one provider checkout; only a refusal lets a new one be opened", async () => {
+  const carrier = await verifiedCarrier();
+  const { shipper, booking } = await booked(carrier);
+  const reference = (await viewOf(shipper, booking.id)).feePayment.reference!;
+
+  // Two requests at once, each with its own retry key.
+  const both = await whileHeld(booking.shipmentId, 2, () =>
+    Promise.all([openCheckout(shipper, booking.id), openCheckout(shipper, booking.id)]),
+  );
+  assert.deepEqual(
+    both.map((reply) => reply.status),
+    [201, 201],
+  );
+  const ids = both.map((reply) => (reply.body.checkout as Checkout).id);
+  assert.equal(ids[0], ids[1]);
+  assert.deepEqual(both.map((reply) => reply.body.outcome).sort(), ['created', 'resumed']);
+  assert.equal(standIn().checkoutsFor(reference), 1);
+
+  // The provider opens a checkout but its answer is lost: the payer is told nothing was
+  // started for certain, and asking again reaches the same provider checkout.
+  const second = await booked(carrier, 1);
+  const secondReference = (await viewOf(second.shipper, second.booking.id)).feePayment.reference!;
+  standIn().trouble = 'lose-next-answer';
+  const lost = await openCheckout(second.shipper, second.booking.id);
+  assert.deepEqual([lost.status, lost.body.code], [502, 'payment_provider_unavailable']);
+  const retried = await openCheckout(second.shipper, second.booking.id);
+  assert.equal(retried.status, 201, retried.text);
+  assert.equal((retried.body.checkout as Checkout).status, 'open');
+  assert.equal(standIn().checkoutsFor(secondReference), 1);
+  assert.equal(await count('fee_checkout', 'booking_id = $1', [second.booking.id]), 1);
+
+  // A refusal is an answer: that checkout failed, and the next request opens a new one.
+  const third = await booked(carrier, 2);
+  standIn().trouble = 'refuse-next';
+  const refusedOpen = await openCheckout(third.shipper, third.booking.id);
+  assert.equal(refusedOpen.status, 502, refusedOpen.text);
+  const afterRefusal = await openCheckout(third.shipper, third.booking.id);
+  assert.deepEqual([afterRefusal.status, afterRefusal.body.outcome], [201, 'created']);
+  assert.equal(
+    await count('fee_checkout', "booking_id = $1 AND status = 'failed'", [third.booking.id]),
+    1,
+  );
+});
+
+test('PAY-8: money a provider takes on a checkout Trucker had already replaced is recorded; the second payment for the fee is returned, never kept', async () => {
+  const carrier = await verifiedCarrier();
+  const made = await booked(carrier);
+  const first = await opened(made.shipper, made.booking.id);
+  // The first checkout's time runs out; the payer starts again.
+  await advance(31 * 60);
+  const shipper = await freshParty(made.shipper);
+  const replacement = await opened(shipper, made.booking.id);
+  assert.notEqual(replacement.id, first.id);
+  assert.equal(await statusOf('fee_checkout', first.id), 'expired');
+  // A provider that took money on the first one after all (the stand-in itself refuses to):
+  const late = signed({
+    id: `tevt_${randomBytes(8).toString('hex')}`,
+    type: 'checkout.paid',
+    checkout: first.providerReference,
+    transaction: `ttx_${randomBytes(8).toString('hex')}`,
+    amount: first.amount,
+    currency: first.currency,
+    paidAt: clock().toISOString(),
+  });
+  const onFirst = await notify(late.body, late.headers);
+  assert.deepEqual([onFirst.status, onFirst.body.result], [200, 'settled']);
+  // And the payer also pays on the replacement: both payments are recorded, one is returned.
+  const onSecond = await complete(replacement.providerReference!, 'paid');
+  assert.deepEqual([onSecond.status, onSecond.body.result], [200, 'refund_due']);
+  assert.deepEqual(
+    (await refundsOf(made.booking.id)).map((item) => [item.reason, item.amount]),
+    [['duplicate_payment', replacement.amount]],
+  );
+  assert.equal(await count('fee_payment', 'booking_id = $1', [made.booking.id]), 2);
+  assert.equal((await receiptsOf(made.booking.id)).length, 1);
+});
+
+test("PAY-9, R-15: with the provider unreachable, nothing settles on the payer's word; once the grace period ends the booking lapses and other bookings still lapse; the notification that arrives later is returned; a captured notice replayed after the signature window is refused", async () => {
+  const carrier = await verifiedCarrier();
+  const made = await booked(carrier);
+  const other = await booked(carrier, 1);
+  const dueAt = (await feeRow(made.booking.id)).due_at;
+  await advance(Math.floor((dueAt.getTime() - clock().getTime()) / 1000) - 10 * 60);
+  const shipper = await freshParty(made.shipper);
+  const checkout = await opened(shipper, made.booking.id);
+  // Paid in time on the provider's page; its notice does not arrive, and then the provider
+  // cannot be reached at all.
+  assert.equal((await complete(checkout.providerReference!, 'paid', false)).status, 200);
+  const notice = standIn().notice(checkout.providerReference!)!;
+  standIn().trouble = 'outage';
+  try {
+    // Inside the grace period: held.
+    await advance(10 * 60 + 60);
+    await tick();
+    assert.equal((await feeRow(made.booking.id)).status, 'due');
+    // After it, with the provider still silent: the job records the lapse, and the other
+    // booking's lapse is not stopped by the outage.
+    await advance(15 * 60);
+    await tick();
+    assert.deepEqual(
+      [(await feeRow(made.booking.id)).status, (await feeRow(other.booking.id)).status],
+      ['lapsed', 'lapsed'],
+    );
+  } finally {
+    standIn().trouble = 'none';
+  }
+  // The notice, sent again by the provider with a fresh signature, now only records money to
+  // return: a delayed notification does not revive a lapsed booking.
+  const resent = notice.body;
+  const late = await notify(resent, {
+    [SIGNATURE_HEADER]: sign(DEVELOPMENT_PAYMENT_TEST_SECRET, resent, clock()),
+  });
+  assert.deepEqual([late.status, late.body.result], [200, 'refund_due']);
+  assert.deepEqual(
+    (await refundsOf(made.booking.id)).map((item) => item.reason),
+    ['booking_ended'],
+  );
+  assert.equal(await count('booking_confirmation', 'booking_id = $1', [made.booking.id]), 0);
+  // The notice exactly as it was first signed, replayed now: outside the window, refused.
+  const replayed = await notify(notice.body, notice.headers);
+  assert.equal(replayed.status, 400, replayed.text);
+});

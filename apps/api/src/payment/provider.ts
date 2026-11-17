@@ -50,3 +50,9 @@ export interface PaymentProvider {
 }
 
 export const PAYMENT_PROVIDER = Symbol('PAYMENT_PROVIDER');
+
+/**
+ * The provider answered, and its answer is no: no checkout exists. Any other failure (a timeout,
+ * a lost connection) leaves it unknown whether the provider opened one.
+ */
+export class ProviderRefused extends Error {}

@@ -9,11 +9,11 @@ Date: 17 November 2026. Branch `feat/online-payment`, stacked on PR #30. Second 
 | Provider-neutral interface (G-10) | The API talks to a payment provider through one interface: open a checkout, verify a signed notification, ask for a checkout's status. A real provider is a new implementation of it, chosen and contracted separately |
 | Development stand-in | `PAYMENT_PROVIDER=test`: a stand-in that opens checkouts, shows a page with "Pay (stand-in)" and "Decline (stand-in)", and then sends a signed notification as a provider would. It asks for no card and moves no money. Refused in production and with a remote database; closed by default |
 | Paying online (R-10, R-11) | The payer (the customer, or the organiser where it pays) chooses "Pay online" on its booking or shipment page and goes to the provider's page. The checkout carries the fee's amount and currency, and stays open 30 minutes, never past the fee's deadline |
-| No double charge (R-13) | Asking again, by retry or by a second click, resumes the checkout in progress; one checkout per booking at a time. Each notification is stored once by its identifier, and each provider transaction is applied once, whether it arrives by notification or by status check, and however often |
+| Against double charges (R-13) | Asking again, by retry, by a second click or at the same moment, resumes the checkout in progress; one checkout per booking at a time. Each notification is stored once by its identifier, and each provider transaction is applied once, whether it arrives by notification or by status check, and however often. This does not stop a provider from taking money twice (for example on an expired checkout): a second payment is recorded and returned. See `PAYMENT_PROVIDER_REQUIREMENTS.md` |
 | What counts as proof (R-12, G-10) | Only a notification whose signature the provider's rules accept (HMAC over the exact bytes, at most 5 minutes old), or the provider's answer to a status check made by the server. Coming back from the provider's page proves nothing: the booking page says so until the notification is recorded |
 | Amount and currency must match (G-10) | A signed notification with another amount or currency, or naming an unknown checkout, settles nothing; it is listed for staff on the console's fee payments page |
 | Settlement and confirmation | A matching payment settles the fee and, when every resource is reserved, confirms the booking in the same transaction, recorded as confirmed by online payment |
-| Deadline (R-15) | A checkout opened before the fee's deadline holds the booking until the checkout closes and 15 minutes more for the provider's word. Before lapsing anything, the fee job asks the provider about checkouts that closed with no word, so a payment taken in time and whose notification was lost still settles the fee |
+| Deadline (R-15) | A checkout opened before the fee's deadline holds the booking until the checkout closes and 15 minutes more for the provider's word. Before lapsing anything, the fee job asks the provider about checkouts that closed with no word, so a payment taken in time and whose notification was lost still settles the fee if the provider answers within that time. If it does not, the booking lapses and the payment, when it is reported, is returned |
 | Money to return (G-11) | Money taken for a booking that ended (lapsed or cancelled) or for a fee already paid becomes a refund record, as for transfers |
 | Receipts (R-11) | Every payment that settles a fee, online or by verified transfer, gets a receipt numbered `TR-` and eight digits, shown to the payer only. It acknowledges payment; it is not a tax invoice. Transfers settled in slice 26 get theirs in the migration |
 | Console | The fee payments page lists online payments to look into and online payments in progress; decided payments show when the provider's signed notice recorded them |
@@ -39,13 +39,25 @@ The API verifies a notification's signature before the database is called; the d
 
 | Check | Result |
 |---|---|
-| `npm run verify` | Passed: API 365 pass, 0 fail (6 new tests in `payment/payment.test.ts`, 1 in `config/config.test.ts`); web 24; console 9 |
+| `npm run verify` | Passed: API 365 pass, 0 fail (6 new tests in `payment/payment.test.ts`, 1 in `config/config.test.ts`); web 24; console 9. After the review: API 368 pass, 0 fail (PAY-7 to PAY-9 added) |
 | Builds | Passed |
 | Web browser checks | All passed, including 2 new: paying online through the stand-in's page, coming back to the fee shown paid with its receipt (and not shown to the carrier); the stand-in refusing to take a paid checkout twice |
 | Console browser checks | All passed, including the two new sections of the fee payments page |
 | Deliberate faults | Nine faults, seven in the migration and two in the signature check, put in one at a time. Eight were caught at once. One was missed: a notification that arrives while the same one is being applied, without the second look after the locks. The concurrency test now holds the lock until both requests wait, and catches it |
 
 Found while testing and fixed: a check in the slice 23 tests looked for "1980" in a reply and failed when a random identifier contained those digits; it now looks for the amount "1980.00", which is what it meant. The stand-in page's back link was too small a target; it is now a button-sized link.
+
+## Review of 17 November 2026
+
+Abdullah asked for the claims about double charges and late notifications to be shown or withdrawn. Three tests were added (`payment/payment.test.ts`):
+
+| Test | What it shows | Result before the fix |
+|---|---|---|
+| PAY-7 | Simultaneous requests open one provider checkout; a retry after the provider's answer was lost reaches the same provider checkout; only a refusal lets a new one be opened | Failed: a lost answer marked the checkout failed, and the retry opened a second provider checkout. Fixed: only a refusal closes it |
+| PAY-8 | Money taken on a checkout Trucker had replaced is recorded; the second payment for the fee is returned | Passed |
+| PAY-9 | With the provider unreachable, nothing settles; after the wait the booking lapses and other bookings still lapse; the late notification is returned; a captured notice replayed after the signature window is refused | Failed: a provider outage stopped the fee job, so no booking lapsed. Fixed: an unreachable provider is skipped and asked again next time |
+
+The claims above are reworded to what these tests show. What a real provider must do, which the stand-in cannot prove, is in `PAYMENT_PROVIDER_REQUIREMENTS.md`. There is still no real provider, and no money moves.
 
 ## Not done, and limits
 
@@ -59,6 +71,6 @@ Found while testing and fixed: a check in the slice 23 tests looked for "1980" i
 
 ## Decisions needed (none blocks the next slice)
 
-- **OP-3.** What makes an online payment in time: the provider's payment time by the deadline (built), or Trucker receiving the word by the deadline? I recommend the provider's time, with the 15-minute wait, so a payer who paid in time never loses the booking to a slow notification.
+- **OP-3 (proposed, not decided).** What makes an online payment in time: the provider's payment time by the deadline (built), or Trucker receiving the word by the deadline? I recommend the provider's time, with the 15-minute wait. It protects a payer whose notification is late only while the provider answers within the wait; beyond it the booking lapses and the payment is returned (PAY-9).
 - **OP-5.** Whether receipts must follow a legal numbering or format in the launch country (for example as tax documents). Built as acknowledgements only; a tax adviser should answer.
 - O-5: the payment provider itself, and the production values of OP-1, OP-2 and OP-6.

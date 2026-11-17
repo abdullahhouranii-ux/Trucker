@@ -49,8 +49,15 @@ export class FeeLapseJob implements OnModuleInit, OnModuleDestroy {
     let lapsed = 0;
     try {
       // First what the provider says of checkouts whose time ran out: a payment it took in time
-      // settles the fee rather than letting the booking lapse.
-      await this.payments.checkExpiredCheckouts();
+      // settles the fee rather than letting the booking lapse. A failure there never stops lapses.
+      try {
+        await this.payments.checkExpiredCheckouts();
+      } catch (error) {
+        jsonLogger.error({
+          event: 'payment_status_check_failed',
+          code: (error as { code?: string }).code ?? null,
+        });
+      }
       for (let i = 0; i < PER_TICK; i += 1) {
         const row = (
           await this.pool.query<{ result: string }>('SELECT trucker.lapse_overdue_fee() AS result')
