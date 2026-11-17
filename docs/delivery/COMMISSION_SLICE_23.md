@@ -35,6 +35,7 @@ Migration `0020_commission.sql`, forward-only. Tables `shipment_commission`, `qu
 | Builds | Passed |
 | Web browser checks | All passed on the first run, including 5 new commission checks |
 | Console browser checks | All passed |
+| CI on GitHub | **Did not run.** All three jobs of the run for this branch ended in two seconds with GitHub's message: "The job was not started because recent account payments have failed or your spending limit needs to be increased." The runs for #24 and #25 a few minutes earlier passed. The local results above are the only evidence for this branch until Actions can run |
 | Deliberate faults | Eleven faults put into the migration one at a time. Ten were caught at once. One was missed: "the customer can read the terms when it is also a carrier". A test for that case (CM-5) was added and now catches it |
 
 ## Found during this slice
@@ -48,7 +49,7 @@ The slice 21 deadlock (becoming one's own driver while accepting a company's inv
 - When the commission is earned and paid (D-10) belongs to settlement. Nothing is paid or owed by this slice.
 - A fixed commission in a currency other than the quotation's is refused. This is tested at the database function only, because the test data has one currency.
 - The organiser has no web page listing its commissions yet; they are available from the API.
-- On the web, after the refusal the form is refilled by the page's draft keeper. Without JavaScript the carrier retypes it.
+- On the web, after the refusal the carrier fills the quotation form again before ticking the acceptance. The page's draft keeper may refill it; that was not checked in this slice.
 - The acceptance hint sits beside the tick box label rather than under it at 390 px: in the final-audit backlog with the wording of the new messages.
 - No physical-phone, screen-reader or native Arabic and Urdu review.
 
