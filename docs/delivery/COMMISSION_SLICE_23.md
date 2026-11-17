@@ -35,7 +35,7 @@ Migration `0020_commission.sql`, forward-only. Tables `shipment_commission`, `qu
 | Builds | Passed |
 | Web browser checks | All passed on the first run, including 5 new commission checks |
 | Console browser checks | All passed |
-| CI on GitHub | **Did not run.** All three jobs of the run for this branch ended in two seconds with GitHub's message: "The job was not started because recent account payments have failed or your spending limit needs to be increased." The runs for #24 and #25 a few minutes earlier passed. The local results above are the only evidence for this branch until Actions can run |
+| CI on GitHub | The first two runs did not start (GitHub: account payment or spending limit). After the billing was resolved, the jobs of the second run were started again at 13:06 Muscat time and all three passed (verify, windows, compose) on commit `1df5ad0` |
 | Deliberate faults | Eleven faults put into the migration one at a time. Ten were caught at once. One was missed: "the customer can read the terms when it is also a carrier". A test for that case (CM-5) was added and now catches it |
 
 ## Found during this slice
