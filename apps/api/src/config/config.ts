@@ -36,6 +36,11 @@ const schema = z.object({
   /** How long a migration statement waits for a table lock before failing. */
   MIGRATION_STATEMENT_LOCK_TIMEOUT_MS: milliseconds(100, 3_600_000, 10_000),
   MIGRATIONS_DIR: z.string().min(1).optional(),
+  /**
+   * How often bookings whose fee is overdue are lapsed (src/fee/fee-lapse.job.ts). 0 turns it
+   * off. Unset: every minute, except under test, where the tests run it themselves.
+   */
+  FEE_LAPSE_INTERVAL_MS: z.coerce.number().int().min(0).max(3_600_000).optional(),
 
   /**
    * Key for the keyed hashes of one-time codes and for deriving session tokens. Development and

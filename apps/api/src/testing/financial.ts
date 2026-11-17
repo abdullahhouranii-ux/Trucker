@@ -6,6 +6,7 @@ export interface FinancialChanges {
   readonly commissionOptions?: readonly string[];
   readonly commissionMaxBasisPoints?: number;
   readonly commissionSettlementMaxDays?: number;
+  readonly feePaymentHours?: number;
 }
 
 /**
@@ -21,10 +22,11 @@ export async function setFinancialSettings(
   await owner.query(
     `INSERT INTO trucker.financial_setting_version
        (status, development_default, fee_basis_points, commission_options, commission_max_basis_points,
-        commission_settlement_max_days, freight_due_days, note, effective_at, drafted_at)
+        commission_settlement_max_days, freight_due_days, fee_payment_hours, note, effective_at, drafted_at)
      SELECT 'approved', true, coalesce($1, f.fee_basis_points), coalesce($2::text[], f.commission_options),
             coalesce($3, f.commission_max_basis_points), coalesce($4, f.commission_settlement_max_days),
-            coalesce($5, f.freight_due_days), 'Test settings', trucker.clock_now(), trucker.clock_now()
+            coalesce($5, f.freight_due_days), coalesce($6, f.fee_payment_hours), 'Test settings',
+            trucker.clock_now(), trucker.clock_now()
      FROM trucker.financial_settings_at(trucker.clock_now()) f`,
     [
       changes.feeBasisPoints ?? null,
@@ -32,6 +34,7 @@ export async function setFinancialSettings(
       changes.commissionMaxBasisPoints ?? null,
       changes.commissionSettlementMaxDays ?? null,
       changes.freightDueDays ?? null,
+      changes.feePaymentHours ?? null,
     ],
   );
 }
@@ -41,9 +44,9 @@ export async function restoreFinancialSettings(owner: Pick<pg.Pool, 'query'>): P
   await owner.query(
     `INSERT INTO trucker.financial_setting_version
        (status, development_default, fee_basis_points, commission_options, commission_max_basis_points,
-        commission_settlement_max_days, freight_due_days, note, effective_at, drafted_at)
+        commission_settlement_max_days, freight_due_days, fee_payment_hours, note, effective_at, drafted_at)
      SELECT 'approved', true, d.fee_basis_points, d.commission_options, d.commission_max_basis_points,
-            d.commission_settlement_max_days, d.freight_due_days, 'Test settings restored',
+            d.commission_settlement_max_days, d.freight_due_days, d.fee_payment_hours, 'Test settings restored',
             trucker.clock_now(), trucker.clock_now()
      FROM trucker.financial_setting_version d
      WHERE d.development_default ORDER BY d.version_no LIMIT 1`,

@@ -37,6 +37,8 @@ import { AssignmentService } from './assignment/assignment.service.js';
 import { FleetService } from './fleet/fleet.service.js';
 import { QuotationController } from './quotation/quotation.controller.js';
 import { QuotationService } from './quotation/quotation.service.js';
+import { FeeLapseJob } from './fee/fee-lapse.job.js';
+import { FeeService } from './staff/fee.service.js';
 import { FinanceService } from './staff/finance.service.js';
 import { ReviewService } from './staff/review.service.js';
 import { StaffController } from './staff/staff.controller.js';
@@ -102,6 +104,8 @@ export class AppModule {
         StaffService,
         ReviewService,
         FinanceService,
+        FeeService,
+        FeeLapseJob,
         VerificationService,
       ],
     };

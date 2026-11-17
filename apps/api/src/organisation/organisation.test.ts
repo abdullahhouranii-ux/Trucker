@@ -323,6 +323,9 @@ test('every table has row security: a policy, or no right at all for the API', a
   const closed = [
     'booking_price',
     'financial_setting_version',
+    'booking_fee',
+    'fee_payment',
+    'fee_refund',
     'commission_contract',
     'booking_commission',
     'quotation_commission',

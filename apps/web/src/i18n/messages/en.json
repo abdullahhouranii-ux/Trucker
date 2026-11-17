@@ -994,10 +994,12 @@
     "bookingTitle": "Booking",
     "status": {
       "awaiting_resources": "Awaiting the carrier's resources",
+      "awaiting_fee": "Awaiting Trucker's fee",
       "confirmed": "Confirmed",
       "cancelled": "Cancelled"
     },
-    "statusNote": "Not confirmed. A booking is confirmed only when the carrier has assigned and reserved every resource it needs. Nothing is assigned yet.",
+    "statusNote": "Not confirmed. A booking is confirmed only when Trucker's fee is verified and the carrier has assigned and reserved every resource it needs.",
+    "awaitingFeeNote": "Not confirmed yet. The carrier has assigned and reserved every resource; the booking is confirmed when Trucker's fee is verified.",
     "provisional": "The fee, payment period, assignment deadline and reservation times are development values. They are not approved for real use.",
     "shipper": "Shipper",
     "carrier": "Carrier",
@@ -1038,6 +1040,30 @@
     },
     "unavailable": "The booking could not be loaded. Try again.",
     "cancelledNote": "This booking has ended. The figures below are the original booking snapshot, not a cancellation charge.",
+    "feePayment": {
+      "title": "Trucker's fee",
+      "status": {
+        "due": "Due",
+        "overdue": "Not paid by the deadline. The booking is ending.",
+        "paid": "Paid and verified",
+        "lapsed": "Not paid by the deadline. The booking lapsed.",
+        "closed": "No longer due: the booking was cancelled.",
+        "not_required": "Nothing to pay"
+      },
+      "amount": "Amount to pay",
+      "reference": "Reference to quote",
+      "dueBy": "Pay by",
+      "paidAt": "Verified",
+      "howToPay": "Pay by bank transfer and quote this reference exactly. The booking is confirmed only after Trucker's staff find the money on Trucker's bank statement; a transfer slip is not proof. Trucker's bank account details are not set up in this environment yet.",
+      "notPayer": "The booking is confirmed only after this fee is paid and verified.",
+      "verifying": "A transfer has been received and is being verified by a second member of Trucker's staff.",
+      "refund": {
+        "booking_ended": "To be returned: the booking had ended when this money was verified",
+        "duplicate_payment": "To be returned: paid twice",
+        "cancelled_after_payment": "To be returned in full: the booking was cancelled after payment"
+      },
+      "refundPending": "refund not yet processed"
+    },
     "commissionLine": "Organiser commission, included in the price",
     "paymentCod": "The freight is paid to the carrier in cash on delivery. Trucker does not hold the transport money.",
     "paymentAfterProof": "The freight is paid to the carrier by {method} within {n} days of accepting the proof of delivery. Trucker does not hold the transport money.",
@@ -1079,7 +1105,8 @@
       "resource_occupied": "A resource is still on another trip.",
       "resource_overrunning": "A resource is still on another trip past its planned end. This booking is at risk.",
       "acknowledgement_missing": "The driver has not acknowledged the assignment.",
-      "booking_cancelled": "This booking is cancelled."
+      "booking_cancelled": "This booking is cancelled.",
+      "fee_not_paid": "Trucker's fee is not paid and verified yet."
     },
     "roles": {
       "truck": "Truck",
@@ -1160,7 +1187,8 @@
       "invalid": "The request was not valid. Nothing was changed.",
       "booking_cancelled": "This booking is cancelled.",
       "booking_dispatched": "This booking has been dispatched. Contact operations.",
-      "cancel_unconfirmed": "Cancellation was not confirmed. The current booking state is shown below; check again to confirm."
+      "cancel_unconfirmed": "Cancellation was not confirmed. The current booking state is shown below; check again to confirm.",
+      "fee_not_paid": "Trucker's fee was not paid by its deadline. The booking is ending and nothing was reserved."
     },
     "driver": {
       "title": "Your assignments",
@@ -1186,6 +1214,7 @@
     "done": "Cancellation confirmed. Reservations are released.",
     "again": "Open shipment to publish again",
     "party": "Cancelled by",
+    "byPlatform": "Trucker, at the fee deadline",
     "at": "Cancellation time",
     "status": "Cancelled",
     "statusNote": "This booking has ended. The figures below are the original booking snapshot, not a cancellation charge.",
@@ -1197,7 +1226,8 @@
       "carrier_did_not_assign": "Carrier did not assign resources",
       "resource_unavailable": "Resources unavailable",
       "cannot_meet_window": "Cannot meet the time window",
-      "other": "Other"
+      "other": "Other",
+      "fee_not_paid": "Trucker's fee was not paid by the deadline"
     }
   },
   "roles": {

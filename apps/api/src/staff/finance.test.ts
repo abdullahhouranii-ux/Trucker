@@ -746,6 +746,7 @@ interface Setting {
   commissionMaxBasisPoints: number;
   commissionSettlementMaxDays: number;
   freightDueDays: number;
+  feePaymentHours: number;
   effectiveAt: string | null;
 }
 interface Overview {
@@ -764,6 +765,7 @@ const values = (over: Record<string, unknown> = {}): Record<string, unknown> => 
   commissionMaxBasisPoints: 2000,
   commissionSettlementMaxDays: 30,
   freightDueDays: 20,
+  feePaymentHours: 8,
   note: 'Test change (fictional)',
   effectiveFrom: null,
   ...over,
@@ -850,8 +852,9 @@ test('FS-1: one administrator drafts and another approves; bookings from then us
       start.inForce.state,
       start.inForce.feeBasisPoints,
       start.inForce.freightDueDays,
+      start.inForce.feePaymentHours,
     ],
-    [true, 'in_force', 300, 15],
+    [true, 'in_force', 300, 15, 12],
   );
   assert.equal(await ready(), false);
   const before = await offer();
@@ -871,6 +874,7 @@ test('FS-1: one administrator drafts and another approves; bookings from then us
       commissionMaxBasisPoints: 0,
       commissionSettlementMaxDays: 366,
       freightDueDays: -1,
+      feePaymentHours: 169,
       note: '   ',
       effectiveFrom: '2026-06-01 09:00',
     }),
@@ -882,6 +886,7 @@ test('FS-1: one administrator drafts and another approves; bookings from then us
     'commissionSettlementMaxDays:out_of_range',
     'effectiveFrom:invalid',
     'feeBasisPoints:out_of_range',
+    'feePaymentHours:out_of_range',
     'freightDueDays:out_of_range',
     'note:required',
   ]);

@@ -142,7 +142,10 @@ export default async function BookingPage({ params, searchParams }: Props) {
         <section className="section" id="cancellation-record" aria-labelledby="cancellation-title">
           <h2 id="cancellation-title">{ct.status}</h2>
           <p>
-            {ct.party}: {m.book.asRole[booking.cancellation.party]}
+            {ct.party}:{' '}
+            {booking.cancellation.party === 'platform'
+              ? ct.byPlatform
+              : m.book.asRole[booking.cancellation.party]}
           </p>
           <p>
             {ct.at}: <InstantText at={booking.cancellation.at} />

@@ -19,6 +19,7 @@ import { SECURITY_SETTING_DEFAULTS } from '../database/settings.js';
 import { configureApp } from '../http/configure-app.js';
 import { hashToken } from '../identity/secrets.js';
 import { DEMONSTRATION_TERMS_VERSION } from '../identity/terms.js';
+import { settleFee } from '../testing/fee.js';
 import { createTestClock } from '../testing/test-clock.js';
 import { blockedRequests } from '../testing/blocked-request.js';
 import { createTestDatabase, type TestDatabase } from '../testing/test-database.js';
@@ -472,6 +473,9 @@ async function verifiedCarrier(service: Service = SERVICE) {
 let adminCounter: Staff | undefined;
 const administrator = async (): Promise<Staff> =>
   fresh(adminCounter ?? (adminCounter = await newStaff(['staff_admin'])));
+let secondAdmin: Staff | undefined;
+const secondAdministrator = async (): Promise<Staff> =>
+  fresh(secondAdmin ?? (secondAdmin = await newStaff(['staff_admin'])));
 const revokeCapability = async (org: string, capability: string): Promise<Reply> =>
   call('POST', `/staff/verification/organisations/${org}/revoke`, {
     token: (await administrator()).token,
@@ -858,7 +862,15 @@ async function booked(carrier: Party, shift = 0, anchor = clock()) {
   );
   const reply = await accept(shipper.person, shipper.org, quotation.id, 1);
   assert.equal(reply.status, 200, reply.text);
-  return { shipper, shipment, booking: reply.body.booking as Booking, anchor };
+  const booking = reply.body.booking as Booking;
+  // Trucker's fee, verified by two administrators: confirmation then follows full assignment.
+  await settleFee(
+    call,
+    (await administrator()).token,
+    (await secondAdministrator()).token,
+    booking.id,
+  );
+  return { shipper, shipment, booking, anchor };
 }
 
 interface Member {

@@ -449,6 +449,7 @@ export default async function ShipmentPage({ params, searchParams }: Props) {
       <CommissionSection
         locale={locale}
         t={m.commission}
+        book={m.book}
         organisationId={id}
         shipmentId={shipmentId}
         version={shipment.version}

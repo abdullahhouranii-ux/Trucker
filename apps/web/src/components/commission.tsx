@@ -9,6 +9,7 @@ import {
   type CommissionView,
 } from '../server/api.ts';
 import { setShipmentCommissionAction } from '../server/authority-actions.ts';
+import { FeePaymentFacts } from './booking-view.tsx';
 import { Ltr } from './ltr.tsx';
 
 type T = Messages['commission'];
@@ -44,6 +45,7 @@ export function CommissionPhrase({ t, terms }: { t: T; terms: CommissionTerms })
 export async function CommissionSection({
   locale,
   t,
+  book,
   organisationId,
   shipmentId,
   version,
@@ -53,6 +55,8 @@ export async function CommissionSection({
 }: {
   locale: Locale;
   t: T;
+  /** For Trucker's fee, when the organiser pays it. */
+  book: Messages['book'];
   organisationId: string;
   shipmentId: string;
   version: number;
@@ -129,6 +133,7 @@ export async function CommissionSection({
               </li>
             ) : null}
           </ul>
+          <FeePaymentFacts t={book} fee={reply.data.feePayment} />
         </div>
       ) : null}
       {editable ? (

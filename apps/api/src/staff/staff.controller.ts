@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { z } from 'zod';
 import { ApiError } from '../http/api-error.js';
+import { FeeService } from './fee.service.js';
 import { FinanceService } from './finance.service.js';
 import { ReviewService, type QueueEntry } from './review.service.js';
 import {
@@ -103,8 +104,23 @@ const financialDraftBody = z.object({
   commissionMaxBasisPoints: z.number().int(),
   commissionSettlementMaxDays: z.number().int(),
   freightDueDays: z.number().int(),
+  feePaymentHours: z.number().int(),
   note: z.string().max(2000),
   effectiveFrom: z.union([z.string().max(40), z.null()]),
+});
+// A receipt on Trucker's bank statement, matched to a fee by its reference.
+const feeReceiptBody = z.object({
+  reference: z.string().max(40),
+  amount: z.string().max(20),
+  currency: z.string().max(3),
+  valueDate: z.string().max(10),
+  statementReference: z.string().max(200),
+  note: z.union([z.string().max(2000), z.null()]).optional(),
+});
+const feeDecisionBody = z.object({
+  version: z.number().int().min(1),
+  decision: z.enum(['approve', 'reject']),
+  note: z.union([z.string().max(2000), z.null()]).optional(),
 });
 const financialMoveBody = z.object({
   version: z.number().int().min(1),
@@ -143,6 +159,7 @@ export class StaffController {
     @Inject(StaffService) private readonly staff: StaffService,
     @Inject(ReviewService) private readonly review: ReviewService,
     @Inject(FinanceService) private readonly finance: FinanceService,
+    @Inject(FeeService) private readonly fees: FeeService,
   ) {}
 
   private caller(request: IncomingRequest): Promise<StaffCaller> {
@@ -380,6 +397,33 @@ export class StaffController {
     const caller = await this.caller(request);
     const { version, move } = parse(financialMoveBody, body);
     return this.finance.move(caller, identifier(id), version, move);
+  }
+
+  // Trucker's fee: a bank transfer recorded by one administrator, approved by another.
+  @Get('fee-payments')
+  async feePayments(@Req() request: IncomingRequest) {
+    const caller = await this.caller(request);
+    return { fees: await this.fees.overview(caller) };
+  }
+
+  @Post('fee-payments')
+  async feeRecord(
+    @Body() body: unknown,
+    @Headers('idempotency-key') key: string | undefined,
+    @Req() request: IncomingRequest,
+  ) {
+    const caller = await this.caller(request);
+    if (typeof key !== 'string' || !RETRY_KEY.test(key))
+      throw new ApiError(400, 'retry_key_required', 'An Idempotency-Key header is required.');
+    return this.fees.record(caller, key, parse(feeReceiptBody, body));
+  }
+
+  @Post('fee-payments/:id/decision')
+  @HttpCode(200)
+  async feeDecide(@Param('id') id: string, @Body() body: unknown, @Req() request: IncomingRequest) {
+    const caller = await this.caller(request);
+    const { version, decision, note } = parse(feeDecisionBody, body);
+    return this.fees.decide(caller, identifier(id), version, decision, note ?? null);
   }
 
   @Post('verification/organisations/:organisationId/revoke')

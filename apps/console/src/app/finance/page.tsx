@@ -29,6 +29,7 @@ interface Setting {
   commissionMaxBasisPoints: number;
   commissionSettlementMaxDays: number;
   freightDueDays: number;
+  feePaymentHours: number;
   note: string;
   effectiveFrom: string | null;
   effectiveAt: string | null;
@@ -85,6 +86,7 @@ const FIELDS: Record<string, [string, string]> = {
     'Longest commission settlement period: from 1 to 365 days.',
   ],
   freightDueDays: ['freightDueDays', 'Freight due: from 0 to 365 days.'],
+  feePaymentHours: ['feePaymentHours', 'Time to pay the fee: from 1 to 168 hours.'],
   note: ['note', 'Reason: say why this change is made.'],
   effectiveFrom: ['effectiveDate', 'Effective time: a date and time in UTC, later than now.'],
 };
@@ -124,6 +126,10 @@ function Values({ setting, id }: { setting: Setting; id?: string }) {
       </li>
       <li>Longest commission settlement period: {setting.commissionSettlementMaxDays} days</li>
       <li>Freight due: {setting.freightDueDays} days</li>
+      <li>
+        Time to pay Trucker&apos;s fee: {setting.feePaymentHours} hours after acceptance, never
+        after the assignment deadline
+      </li>
     </ul>
   );
 }
@@ -295,6 +301,24 @@ export default async function FinancePage({ searchParams }: Props) {
                       maxLength={6}
                       aria-describedby="freightDueDays-hint"
                       defaultValue={reply.data.settings.inForce.freightDueDays}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="feePaymentHours">
+                      Time to pay Trucker&apos;s fee, in hours
+                    </label>
+                    <p className="field-hint" id="feePaymentHours-hint">
+                      After acceptance, and never after the assignment deadline. An unpaid fee
+                      lapses the booking. From 1 to 168.
+                    </p>
+                    <input
+                      id="feePaymentHours"
+                      name="feePaymentHours"
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={6}
+                      aria-describedby="feePaymentHours-hint"
+                      defaultValue={reply.data.settings.inForce.feePaymentHours}
                     />
                   </div>
                   <div className="field">

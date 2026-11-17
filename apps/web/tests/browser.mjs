@@ -656,11 +656,9 @@ async function main() {
     mkdirSync(outDir, { recursive: true });
     // At most five pictures, for design review only.
     const shots = {
-      'en:quotation freight': 'quotation-freight-en-390',
-      'ar:freight choice': 'freight-choice-ar-390',
-      'en:booking customer price': 'booking-customer-price-en-390',
-      'en:booking carrier price': 'booking-carrier-price-en-390',
-      'ar:booked price': 'booked-price-ar-390',
+      'en:booking fee due': 'booking-fee-due-en-390',
+      'ar:booking fee due': 'booking-fee-due-ar-390',
+      'ur:booking fee paid': 'booking-fee-paid-ur-390',
     };
     // Fictional numbers: country code 999 is not assigned. Unique per run.
     const stamp = String(Date.now()).slice(-7);
@@ -3296,6 +3294,86 @@ async function main() {
     const bookingId = (await bookings())[0].id;
     const bookingPath = (locale, org, id = bookingId) =>
       `/${locale}/organisations/${org}/bookings/${id}`;
+
+    // Trucker's fee (slice 26) is verified by two administrators through the staff API before
+    // the assignment below, so that the assignment confirms the booking. The console journey
+    // covers the staff screens.
+    const feeAdmin = async () => {
+      const token = `${randomBytes(16).toString('hex')}.${randomBytes(16).toString('hex')}`;
+      const id = (
+        await owner.query(
+          `INSERT INTO trucker.staff_account
+             (email, display_name, status, enrolled_at, password_hash, totp_secret, participant_link,
+              created_at, updated_at)
+           VALUES ($1, 'Browser Test Administrator', 'active', now(), 'not-a-real-hash', '\\x00',
+                   'declared_none', now(), now())
+           RETURNING id`,
+          [`fee-${randomUUID()}@example.test`],
+        )
+      ).rows[0].id;
+      await owner.query(
+        `INSERT INTO trucker.staff_privilege (staff_id, privilege, granted_by, granted_at)
+         VALUES ($1, 'staff_admin', NULL, now())`,
+        [id],
+      );
+      await owner.query(
+        `INSERT INTO trucker.staff_session (id, staff_id, token_hash, created_at, last_used_at, absolute_expires_at)
+         VALUES (gen_random_uuid(), $1, $2, now(), now(), now() + interval '1 hour')`,
+        [id, createHash('sha256').update(token).digest('hex')],
+      );
+      return token;
+    };
+    const asStaff = async (token, method, route, body, key) => {
+      const response = await fetch(`${apiOrigin}${route}`, {
+        method,
+        headers: {
+          authorization: `Bearer ${token}`,
+          ...(body ? { 'content-type': 'application/json' } : {}),
+          ...(key ? { 'idempotency-key': key } : {}),
+        },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      });
+      return { status: response.status, body: await response.json() };
+    };
+    const settleFee = async (booking) => {
+      const recorder = await feeAdmin();
+      const approver = await feeAdmin();
+      const due = (await asStaff(recorder, 'GET', '/staff/fee-payments')).body.fees.due.find(
+        (item) => item.bookingId === booking,
+      );
+      const recorded = await asStaff(
+        recorder,
+        'POST',
+        '/staff/fee-payments',
+        {
+          reference: due.reference,
+          amount: due.amount,
+          currency: due.currency,
+          valueDate: due.dueAt.slice(0, 10),
+          statementReference: `STMT-${randomBytes(5).toString('hex').toUpperCase()}`,
+        },
+        `fee-${randomUUID()}`,
+      );
+      const approved = await asStaff(
+        approver,
+        'POST',
+        `/staff/fee-payments/${recorded.body.payment.id}/decision`,
+        { version: recorded.body.payment.version, decision: 'approve' },
+      );
+      return `${recorded.status}/${approved.status}`;
+    };
+    const feeSettled = await settleFee(bookingId);
+    check('fee', feeSettled === '201/200', `the fee of the booking was settled with ${feeSettled}`);
+    for (const locale of locales) {
+      await open(bookingPath(locale, verifyOrg), 390);
+      await inspect(locale, 'booking fee paid');
+    }
+    check(
+      'fee',
+      (await page.$eval('.fee-payment', (item) => item.dataset.feeStatus)) === 'paid' &&
+        (await page.$('[data-fee-due]')) === null,
+      'the shipper sees the fee paid',
+    );
     const asgRows = async (table, where = 'booking_id = $1', id = bookingId) =>
       (await owner.query(`SELECT * FROM trucker.${table} WHERE ${where}`, [id])).rows;
     const activeReservations = async (id = bookingId) =>
@@ -4162,6 +4240,43 @@ async function main() {
         carrierMoney.fee === undefined &&
         carrierMoney.total === undefined,
       `the customer saw ${JSON.stringify(customerMoney)}, the carrier ${JSON.stringify(carrierMoney)}`,
+    );
+    // Trucker's fee (slice 26): the customer, who pays it, is shown the amount, the reference
+    // to quote and the deadline; the carrier only whether it is settled, never the reference.
+    const feeReference = (
+      await owner.query('SELECT reference FROM trucker.booking_fee WHERE booking_id = $1', [
+        arrangedBooking,
+      ])
+    ).rows[0]?.reference;
+    const feeShown = () =>
+      page.evaluate(() => ({
+        status: document.querySelector('.fee-payment')?.dataset.feeStatus ?? null,
+        reference: document.querySelector('[data-fee-reference]')?.textContent.trim() ?? null,
+        amount: document.querySelector('[data-fee-amount]')?.textContent.trim() ?? null,
+        due: document.querySelector('[data-fee-due]') !== null,
+        text: document.body.innerText,
+      }));
+    for (const locale of locales) {
+      await open(arrangedBookingPath(locale, verifyOrg), 390);
+      await inspect(locale, 'booking fee due');
+    }
+    await open(arrangedBookingPath('en', verifyOrg), 390);
+    const customerFee = await feeShown();
+    await open(arrangedBookingPath('en', carrierOrg), 390);
+    const carrierFee = await feeShown();
+    check(
+      'fee',
+      typeof feeReference === 'string' &&
+        customerFee.status === 'due' &&
+        customerFee.reference === feeReference &&
+        customerFee.amount === '30.00 XTS' &&
+        customerFee.due &&
+        customerFee.text.includes(messagesFor('en').book.feePayment.howToPay) &&
+        carrierFee.status === 'due' &&
+        carrierFee.reference === null &&
+        carrierFee.amount === null &&
+        !carrierFee.text.includes(feeReference),
+      `the customer saw ${JSON.stringify({ ...customerFee, text: undefined })}, the carrier ${JSON.stringify({ ...carrierFee, text: undefined })}`,
     );
     // The organiser sees the booked price on its own shipment.
     for (const locale of locales) {
