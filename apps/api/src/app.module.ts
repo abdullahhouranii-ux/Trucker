@@ -24,6 +24,8 @@ import {
   FleetController,
   FleetStaffController,
 } from './fleet/fleet.controller.js';
+import { AuthorityController } from './authority/authority.controller.js';
+import { AuthorityService } from './authority/authority.service.js';
 import { BookingController, BookingStaffController } from './booking/booking.controller.js';
 import { BookingService } from './booking/booking.service.js';
 import {
@@ -70,6 +72,7 @@ export class AppModule {
         AssignmentController,
         AssignmentStaffController,
         DriverAssignmentController,
+        AuthorityController,
         BookingController,
         BookingStaffController,
         FleetController,
@@ -92,6 +95,7 @@ export class AppModule {
         DiscoveryService,
         QuotationService,
         AssignmentService,
+        AuthorityService,
         BookingService,
         FleetService,
         StaffService,

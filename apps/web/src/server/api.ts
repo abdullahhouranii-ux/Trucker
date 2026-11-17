@@ -684,3 +684,41 @@ export interface DriverAssignment {
   trailer: AssignedVehicle | null;
   acknowledgedAt: string | null;
 }
+
+/** The roles of a shipment. Names only: no contact detail of any party is held. */
+export interface ShipmentParties {
+  organiser: { id: string; legalName: string; kind: string } | null;
+  authorityId: string | null;
+  customer: { id: string; legalName: string; kind: string };
+  sender: { is: 'customer' | 'named' | 'not_named'; name?: string };
+  receiver: { is: 'customer' | 'named' | 'not_named'; name?: string };
+  freightPayer: 'customer' | 'sender' | 'receiver';
+  feePayer: 'customer' | 'organiser';
+  feeAgreement: 'own_act' | 'authority' | null;
+}
+export interface ShipmentPartiesView {
+  parties: ShipmentParties;
+  editable: boolean;
+  customers: {
+    authorityId: string;
+    legalName: string;
+    mayPublish: boolean;
+    feePayerAgreed: boolean;
+  }[];
+}
+export interface AuthorityItem {
+  id: string;
+  version: number;
+  status: 'requested' | 'active' | 'declined' | 'ended';
+  role: 'customer' | 'organiser';
+  mayPublish: boolean;
+  feePayerAgreed: boolean;
+  customer: { legalName: string; kind: string };
+  organiser: { legalName: string; kind: string };
+}
+export interface AuthorityOverview {
+  accountCode: string;
+  organiser: boolean;
+  authorities: AuthorityItem[];
+  arranged: { id: string; status: string; reference: string | null; parties: ShipmentParties }[];
+}

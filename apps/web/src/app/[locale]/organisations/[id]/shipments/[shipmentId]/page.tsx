@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { notFound, redirect } from 'next/navigation';
+import { ShipmentPartiesSection } from '../../../../../../components/shipment-parties.tsx';
 import { DraftKeeper } from '../../../../../../components/draft-keeper.tsx';
 import { ErrorSummary } from '../../../../../../components/form.tsx';
 import { Ltr } from '../../../../../../components/ltr.tsx';
@@ -434,6 +435,16 @@ export default async function ShipmentPage({ params, searchParams }: Props) {
           </form>
         </section>
       ) : null}
+      <ShipmentPartiesSection
+        locale={locale}
+        t={m.roles}
+        organisationId={id}
+        shipmentId={shipmentId}
+        version={shipment.version}
+        token={person.token}
+        done={one('rolesDone')}
+        error={one('rolesError')}
+      />
       {open ? (
         <section className="section" aria-labelledby="publish-title">
           <h2 id="publish-title">{m.pub.sectionTitle}</h2>

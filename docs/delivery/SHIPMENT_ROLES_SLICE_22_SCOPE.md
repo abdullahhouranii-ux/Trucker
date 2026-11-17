@@ -1,6 +1,6 @@
 # Trucker: shipment roles and authority, slice 22, scope and acceptance criteria
 
-Version 0.1, 17 November 2026. Status: **for approval. Nothing here is built.** Second slice of phase two (`ACCOUNTS_PHASE_2_SCOPE.md`). Model: `docs/specs/ADR_001_COMMERCIAL_MODEL.md`, not reopened here. Sources are marked as in the phase two scope: **Abdullah**, **Plan**, **Default** (development only).
+Version 1.0, 17 November 2026. Status: **approved by Abdullah on 17 November 2026 (10:36) with S22-1 to S22-3 as recommended; built on `feat/shipment-roles`. Where the build differs from this text (S-8 and four smaller points), the record SHIPMENT_ROLES_SLICE_22.md says how and why.** Second slice of phase two (`ACCOUNTS_PHASE_2_SCOPE.md`). Model: `docs/specs/ADR_001_COMMERCIAL_MODEL.md`, not reopened here. Sources are marked as in the phase two scope: **Abdullah**, **Plan**, **Default** (development only).
 
 ## 1. What this slice is
 

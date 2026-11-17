@@ -90,6 +90,13 @@ No legal or tax rule is stated here. Every value that is not approved is a prote
 | Slice 21 | **Approved**, with P2-1 (one truck, one trailer, the owner as the only driver) and P2-2 (one personal account may organise and carry, never quoting on its own shipment) as recommended. Built on `feat/individual-accounts` |
 | Not approved by these instructions | Any merge, and any production financial policy. Defaults stay in development. Dispatch and proof of delivery stay a parallel workstream |
 
+## 1G. Instructions of 17 November 2026 (10:36)
+
+| Subject | Status |
+|---|---|
+| Slice 22 | **Approved** with S22-1, S22-2 and S22-3 as recommended. Added tests: two organisers serving one customer; shipment-specific access; revocation while a command waits; explicit fee-payer agreement; preserved booking snapshots; first-time broker onboarding. The organiser is recorded on its own shipments as well as those arranged for a customer. Built on `feat/shipment-roles` |
+| Not authorised | Merging, deployment, and DD-1 to DD-10 |
+
 ## 2. Exceptions to the proposed structures
 
 | ID | Exception | Effect on the build |
