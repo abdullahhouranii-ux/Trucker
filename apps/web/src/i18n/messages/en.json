@@ -1085,7 +1085,7 @@
         "fee_not_due": "Trucker's fee is not due on this booking.",
         "fee_deadline_passed": "The deadline to pay the fee has passed. Nothing was started.",
         "online_payment_unavailable": "Online payment is not available here. Pay by bank transfer, quoting the reference.",
-        "payment_provider_unavailable": "The payment provider did not answer. Nothing was charged. Try again.",
+        "payment_provider_unavailable": "The payment provider did not confirm the payment page, so you were not taken to it and nothing was paid through it. Try again.",
         "retry_key_conflict": "This form was already used. Reload the page and try again.",
         "pay_unconfirmed": "It is not confirmed that a payment was started. Check what is shown before trying again."
       }

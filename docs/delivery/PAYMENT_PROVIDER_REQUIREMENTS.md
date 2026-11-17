@@ -10,7 +10,7 @@ Date: 17 November 2026. Written after the review of slice 27. No payment provide
 | A retry after a lost answer reaches the same provider checkout | PAY-7 | Only if the provider honours Trucker's idempotency key (item 1) |
 | A notification or status answer is applied once | PAY-2, PAY-6 | — |
 | Money taken twice for one fee is recorded and the second payment returned | PAY-8 | That a provider never takes it twice: Trucker cannot prevent that (item 2) |
-| A payment taken in time whose notification is late still settles the fee | PAY-4, within the 15-minute wait or by the status check | Beyond the wait with the provider unreachable, the booking lapses and the payment is returned (PAY-9). It is not protected |
+| A payment taken in time whose notification is late still settles the fee | PAY-4, AUDIT-2, AUDIT-3, PAY-10: whenever the provider answers a status check before the longest wait (OP-7) ends, including for a checkout closed or replaced here | Beyond the longest wait with the provider unreachable, the booking lapses and the payment is returned (PAY-9). It is not protected |
 | An outage at the provider does not stop other bookings lapsing | PAY-9 | — |
 
 So Trucker does not guarantee that a payer is never charged twice, nor that a late notification never costs a booking. It guarantees that every payment it is told of is recorded, applied at most once, and either settles the fee or is recorded as money to return.

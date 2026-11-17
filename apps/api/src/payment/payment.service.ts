@@ -124,14 +124,21 @@ export class PaymentService {
         // Only a refusal closes it. When the answer is lost the provider may have opened a
         // checkout: it stays in progress, and asking again asks the provider again with the same
         // identifier, which reaches that same checkout rather than a second one.
-        if (error instanceof ProviderRefused)
+        if (error instanceof ProviderRefused) {
           await this.asCaller(caller, organisationId, (client) =>
             client.query('SELECT trucker.fee_checkout_refused($1)', [checkout.id]),
           );
+          throw new ApiError(
+            502,
+            'payment_provider_unavailable',
+            'The payment provider refused to open a checkout. Try again.',
+          );
+        }
+        // Whether the provider opened it is not known; the payer was not sent to it.
         throw new ApiError(
           502,
           'payment_provider_unavailable',
-          'The payment provider did not open a checkout. Nothing was charged. Try again.',
+          'The payment provider did not answer, so the payer was not sent to its payment page and paid nothing through it. Asking again asks for the same checkout.',
         );
       }
       const row = await this.asCaller(
@@ -187,6 +194,15 @@ export class PaymentService {
    * Asks the provider about checkouts whose time ran out with no word from it, and records
    * what it answers. Run by the fee job before it lapses anything. Returns how many it recorded.
    */
+  /** Records when the fee job asked about a checkout and what it heard, so none waits behind others. */
+  private async asked(item: { provider: string; provider_reference: string }, answer: string) {
+    await this.pool.query('SELECT trucker.fee_checkout_asked($1, $2, $3)', [
+      item.provider,
+      item.provider_reference,
+      answer,
+    ]);
+  }
+
   async checkExpiredCheckouts(): Promise<number> {
     if (!this.provider) return 0;
     const due = (
@@ -202,17 +218,22 @@ export class PaymentService {
         answer = await this.provider.status(item.provider_reference);
       } catch {
         // Unreachable now: asked again on the next run. The hold on the booking still ends at
-        // its time, so an outage never keeps a booking open indefinitely.
+        // the end of the longest wait, so an outage never keeps a booking open indefinitely.
+        await this.asked(item, 'unreachable');
         continue;
       }
-      // Still open, or forgotten by the provider: nothing to record.
-      if (!('providerReference' in answer)) continue;
+      // Still open, or unknown to the provider: no outcome yet, asked again later.
+      if (!('providerReference' in answer)) {
+        await this.asked(item, answer.status === 'open' ? 'open' : 'unknown');
+        continue;
+      }
       const report: ProviderReport = answer;
       const id =
         report.status === 'paid'
           ? `status:${report.transactionId}`
           : `status:${item.provider_reference}:${report.status}`;
       const row = await this.report(id, 'status_check', report);
+      await this.asked(item, 'reported');
       if (row.status === 'recorded') recorded += 1;
     }
     return recorded;

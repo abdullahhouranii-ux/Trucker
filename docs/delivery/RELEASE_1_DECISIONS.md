@@ -110,7 +110,7 @@ No legal or tax rule is stated here. Every value that is not approved is a prote
 | Slice 24 | Built with the values in use as the development default version, and F-1 to F-3: `FINANCIAL_SETTINGS_SLICE_24.md`. F-1 (finance privilege) and F-2 (one-person withdrawal) are open for Abdullah |
 | Slice 25 | Built with D-5, D-9, D-11 and P-1 to P-3 as development defaults: `PRICE_BREAKDOWN_SLICE_25.md`. P-1 (who chooses the freight method) and P-2 (gateway activation) are open for Abdullah |
 | Slice 26 | Built with D-6, D-7, part of D-8 and FD-1 to FD-4 as development defaults: `FEE_PAYMENT_SLICE_26.md`. FD-1 (what counts as in time), FD-2 (transfers that do not match) and FD-4 (Trucker's bank details) are open for Abdullah |
-| Slice 27 | Built with OP-1 to OP-6 as development defaults and a development stand-in as the only payment provider: `ONLINE_PAYMENT_SLICE_27.md`. OP-3 (what makes an online payment in time), OP-5 (receipt rules) and O-5 (the provider) are open for Abdullah |
+| Slice 27 | Built with OP-1 to OP-6 as development defaults and a development stand-in as the only payment provider: `ONLINE_PAYMENT_SLICE_27.md`. OP-3 (what makes an online payment in time), OP-5 (receipt rules) and O-5 (the provider) are open for Abdullah. After the independent review: OP-7 (how long a booking waits for an unanswered payment) added as a development default |
 
 ## 2. Exceptions to the proposed structures
 
