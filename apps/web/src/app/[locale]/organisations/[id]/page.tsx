@@ -139,6 +139,13 @@ export default async function OrganisationPage({ params, searchParams }: Props) 
         </a>
         <a
           className="button"
+          id="open-cargo-cases"
+          href={`/${locale}/organisations/${organisation.id}/cargo-cases`}
+        >
+          {m.cargo.casesTitle}
+        </a>
+        <a
+          className="button"
           id="open-contracts"
           href={`/${locale}/organisations/${organisation.id}/contracts`}
         >

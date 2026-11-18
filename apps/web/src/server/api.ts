@@ -818,13 +818,181 @@ export interface DeliveryOutcome {
   reason: 'no_phone' | 'no_signal' | 'driver_unable' | 'correction' | 'other' | null;
   note?: string | null;
 }
+/** Undeliverable or refused cargo (slice 18d, R-406). */
+export type CargoAction =
+  | 'retry_delivery'
+  | 'alternate_destination'
+  | 'temporary_storage'
+  | 'return_to_sender'
+  | 'return_destination';
+export type ShortfallReason =
+  | 'wrong_address'
+  | 'receiver_absent'
+  | 'site_not_ready'
+  | 'site_closed'
+  | 'receiver_refused'
+  | 'cargo_damaged'
+  | 'document_problem'
+  | 'carrier_delay'
+  | 'other';
+export type CostKind =
+  | 'waiting'
+  | 'handling'
+  | 'unloading'
+  | 'storage'
+  | 'retry'
+  | 'alternate_transport'
+  | 'return'
+  | 'other';
+export interface CargoCost {
+  id: string;
+  kind: CostKind;
+  description: string | null;
+  quantity: string;
+  unit: 'hour' | 'day' | 'trip' | 'item' | 'lump_sum';
+  unitAmount: string;
+  amount: string;
+  currency: string;
+  offeredAt: string;
+  termsVersion: number | null;
+  interimPayer: 'not_set' | 'instructing_party' | 'carrier';
+  provisionalLiability: 'per_contract' | 'pending';
+  finalLiability: string | null;
+  finalSource: 'contract' | 'settlement' | 'competent_decision' | null;
+  finalReference: string | null;
+  held: boolean;
+}
+export interface CargoInstruction {
+  id: string;
+  version: number;
+  action: CargoAction;
+  destination: string | null;
+  details: string | null;
+  state:
+    | 'requested'
+    | 'offered'
+    | 'approved'
+    | 'executing'
+    | 'completed'
+    | 'failed'
+    | 'declined'
+    | 'not_feasible'
+    | 'withdrawn';
+  emergency: boolean;
+  issuedAt: string;
+  issuer: string | null;
+  feasible: boolean | null;
+  offerEta: string | null;
+  offerNote: string | null;
+  decidedAt: string | null;
+  approvalBasis: 'authorised_party' | 'emergency_plan' | null;
+  approvedTotal: string | null;
+  startedAt: string | null;
+  endedAt: string | null;
+  executionNote: string | null;
+  /** Not shown to the driver. */
+  costs: CargoCost[] | null;
+}
+export interface CargoHandover {
+  id: string;
+  kind: string;
+  handedBy: string;
+  handedByStanding: string | null;
+  receivedBy: string;
+  receivedByStanding: string | null;
+  handedAt: string;
+  place: string;
+  quantity: string | number | null;
+  quantityUnit: string | null;
+  condition: string | null;
+  evidenceNote: string | null;
+  receipt: { state: 'confirmed' | 'rejected'; reference: string; confirmedAt: string } | null;
+}
+export interface CargoLeg {
+  id: string;
+  kind: string;
+  destination: string | null;
+  state: 'planned' | 'departed' | 'arrived' | 'completed';
+  departedAt: string | null;
+  arrivedAt: string | null;
+  completedAt: string | null;
+  quantityDelivered: string | number | null;
+  receiverName: string | null;
+}
+export interface InstructionAuthority {
+  id: string;
+  holder: string | null;
+  holderRole: 'contracting_customer' | 'organiser';
+  basis: 'customer_declared_contract' | 'customer_mandate';
+  basisNote: string | null;
+  actions: CargoAction[];
+  spendLimit: string;
+  currency: string;
+  validUntil: string | null;
+  /** Not shown to the carrier. */
+  alternateContact?: string | null;
+  declaredAt: string;
+  endedAt: string | null;
+  endReason: string | null;
+}
+export interface TripCargo {
+  /** Not shown to the driver. */
+  authorities: InstructionAuthority[] | null;
+  onVehicle: string | number;
+  case: {
+    id: string;
+    version: number;
+    cargoClass: 'general' | 'temperature_controlled' | 'dangerous';
+    openedAt: string;
+    responseDueAt: string;
+    escalateAt: string;
+    escalatedAt: string | null;
+    authorityOrder: string | null;
+    authorityAllowedActions: CargoAction[] | null;
+    closedAt: string | null;
+    shortfall: {
+      reason: ShortfallReason;
+      refusalReason: string | null;
+      location: string;
+      cargoCondition: string;
+      quantityUnit: string;
+      quantityDelivered: string | number;
+      quantityRemaining: string | number;
+      contactAttempts: number;
+      contactNote: string | null;
+      evidenceNote: string | null;
+    } | null;
+    instructions: CargoInstruction[];
+    handovers: CargoHandover[];
+    legs: CargoLeg[];
+    claims:
+      | { id: string; raisedAt: string; description: string; costIds: string[]; state: string }[]
+      | null;
+    holds:
+      | {
+          id: string;
+          ownerKind: 'cost_dispute' | 'carrier_claim';
+          costIds: string[];
+          releasedAt: string | null;
+        }[]
+      | null;
+  } | null;
+}
 export interface TripDelivery {
   outcome: DeliveryOutcome | null;
   earlier: DeliveryOutcome[];
   custody: {
     open: boolean;
     handover: {
-      kind: 'returned_to_shipper' | 'delivered_elsewhere' | 'replacement_vehicle';
+      kind:
+        | 'returned_to_shipper'
+        | 'delivered_elsewhere'
+        | 'replacement_vehicle'
+        | 'warehouse'
+        | 'alternate_carrier'
+        | 'consignee';
+      /** Whether the receiving side confirmed it (slice 18d): until then custody has not moved. */
+      receipt?: 'confirmed' | 'rejected' | null;
       handedBy: string;
       receivedBy: string;
       handedAt: string;
@@ -869,6 +1037,8 @@ export interface Trip {
   cases?: TripCase[];
   /** The delivery outcome, custody and releases (slice 18a). */
   delivery?: TripDelivery;
+  /** Undeliverable or refused cargo (slice 18d). */
+  cargo?: TripCargo;
   estimate: {
     arrivalAt: string;
     statedAt: string;

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { notFound, redirect } from 'next/navigation';
 import { InstantText } from '../../../components/booking-view.tsx';
+import { CargoPanel } from '../../../components/cargo-panel.tsx';
 import { DraftKeeper } from '../../../components/draft-keeper.tsx';
 import {
   DocumentFields,
@@ -21,6 +22,7 @@ import { getMessages } from '../../../i18n/messages.ts';
 import { api, type Country, type DriverAssignment, type DriverSide } from '../../../server/api.ts';
 import {
   acknowledgeAssignmentAction,
+  cargoAction,
   driverDeliveryAction,
   driverEstimateAction,
   driverReportProblemAction,
@@ -92,12 +94,23 @@ export default async function DriverPage({ params, searchParams }: Props) {
   const assignmentError = one('aError');
   if (assignmentError)
     summary.push({
-      message: (a.errors as Record<string, string>)[assignmentError] ?? a.errors.invalid,
+      message:
+        (a.errors as Record<string, string>)[assignmentError] ??
+        (m.cargo.errors as Record<string, string>)[assignmentError] ??
+        a.errors.invalid,
     });
   const done = one('fDone');
+  const aDone = one('aDone');
   const confirmation = done
     ? (t.done as Record<string, string>)[done]
-    : (a.done as Record<string, string>)[one('aDone')];
+    : aDone.startsWith('cargo_')
+      ? (m.cargo.done as Record<string, string>)[aDone.slice('cargo_'.length)]
+      : (a.done as Record<string, string>)[aDone];
+  // A cargo command whose answer never arrived is sent again with the same key (slice 18d).
+  const cargoKey = (): string =>
+    assignmentError === 'cargo_unconfirmed' && /^[A-Za-z0-9._-]{16,128}$/.test(one('aKey'))
+      ? one('aKey')
+      : randomUUID();
   const types = (side.registers.documentTypes ?? []).filter((type) => type.subject === 'driver');
   const nameOf = (carrier: { legalName: string; tradingName: string | null }): string =>
     carrier.tradingName ?? carrier.legalName;
@@ -243,6 +256,7 @@ export default async function DriverPage({ params, searchParams }: Props) {
                     !item.trip.hold ? (
                       <DeliveryForm
                         d={m.delivery}
+                        c={m.cargo}
                         t={m.trip}
                         id={`delivery-${item.bookingId}`}
                         action={driverDeliveryAction}
@@ -253,6 +267,23 @@ export default async function DriverPage({ params, searchParams }: Props) {
                           </>
                         }
                         onBehalf={false}
+                      />
+                    ) : null}
+                    {item.trip.cargo?.case ? (
+                      <CargoPanel
+                        c={m.cargo}
+                        cargo={item.trip.cargo}
+                        side="driver"
+                        action={cargoAction}
+                        retryKey={cargoKey}
+                        canInstruct={false}
+                        hidden={
+                          <>
+                            <input type="hidden" name="locale" value={locale} />
+                            <input type="hidden" name="bookingId" value={item.bookingId} />
+                            <input type="hidden" name="driverView" value="true" />
+                          </>
+                        }
                       />
                     ) : null}
                     {item.trip.next && !item.trip.hold ? (

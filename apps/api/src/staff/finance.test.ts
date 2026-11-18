@@ -1245,3 +1245,61 @@ test('AUDIT-4: financial-setting approval must recheck an expired session after 
     'An expired staff session approved financial settings after waiting for the lock',
   );
 });
+
+test('FS-5: the undeliverable-cargo settings (slice 18d) are drafted, checked and approved like the others; a draft without them keeps those in force; a booking keeps the version it was accepted under', async () => {
+  const first = await newStaff(['staff_admin']);
+  const second = await newStaff(['staff_admin']);
+  const made = await offer();
+  const booking = await book(made);
+  const before = await versionOf(booking.id);
+  // Out of range or not allowed: refused, nothing drafted.
+  for (const over of [
+    { responseMinutesGeneral: 2 },
+    { waitingRatePerHour: 'ten' },
+    { returnTripFee: 'always' },
+    { emergencyActions: ['sell_cargo'] },
+    { exceptionRateCurrency: 'xx' },
+  ]) {
+    const refused = await draftSetting(first, values(over));
+    assert.ok([422].includes(refused.status), `${JSON.stringify(over)}: ${refused.text}`);
+  }
+  const changed = await approved(
+    first,
+    second,
+    values({
+      responseMinutesGeneral: 120,
+      responseMinutesTemperature: 30,
+      responseMinutesDangerous: 15,
+      escalationMinutes: 45,
+      freeWaitingMinutes: 60,
+      waitingRatePerHour: '12.50',
+      storageRatePerDay: '30',
+      emergencyActions: ['temporary_storage', 'return_to_sender'],
+      emergencyCap: '150',
+      returnTripFee: 'carrier_offer',
+      note: 'Exception settings (fictional)',
+    }),
+  );
+  const inForce = (await settingsOf(first)).inForce as unknown as Record<string, unknown>;
+  assert.equal(inForce.id, changed.id);
+  assert.deepEqual(
+    [
+      inForce.responseMinutesGeneral,
+      inForce.escalationMinutes,
+      inForce.freeWaitingMinutes,
+      Number(inForce.waitingRatePerHour),
+      inForce.emergencyActions,
+      inForce.returnTripFee,
+    ],
+    [120, 45, 60, 12.5, ['return_to_sender', 'temporary_storage'], 'carrier_offer'],
+  );
+  // A later draft that leaves them out keeps the values in force.
+  const next = await approved(first, second, values({ note: 'Fee only (fictional)' }));
+  const kept = (await settingsOf(first)).inForce as unknown as Record<string, unknown>;
+  assert.deepEqual(
+    [kept.id, kept.responseMinutesGeneral, kept.returnTripFee],
+    [next.id, 120, 'carrier_offer'],
+  );
+  // The booking accepted earlier keeps its version: its terms are not changed afterwards.
+  assert.equal(await versionOf(booking.id), before);
+});

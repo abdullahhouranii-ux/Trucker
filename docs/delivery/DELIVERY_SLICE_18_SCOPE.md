@@ -19,7 +19,7 @@ Delivered as three focused pull requests: **18a** the delivery outcome, cargo cu
 | E-3 | No resource is released because a POD is recorded or accepted, or because a time passes |
 | E-4 | Anything entered on someone else's behalf shows who it is about, who entered it and why, and its time is marked as reported |
 | E-1 | Only the shipper's administrators accept or reject a POD. Operations never accepts on the shipper's behalf until that is explicitly approved |
-| DI-403 | A resource is released only when: the outcome is delivered in full, or delivered with remarks with nothing left on the vehicle; and no custody is open; or operations confirms the release in a case |
+| DI-403 | A resource is released only when: the outcome is delivered in full, or delivered with remarks with nothing left on the vehicle; and no custody is open (slice 18d: no cargo on the vehicle, counting only confirmed handovers and completed legs, and no leg under way); or operations confirms the release in a case (never while a leg is under way) |
 | DI-402 | A POD is reviewed only when every required item of its manifest has been received |
 | DI-405 | A matching fingerprint is shown as transfer integrity only, never as proof that the delivery happened |
 | DI-401 | Holds are separate records, one per cause; the booking is "held" while at least one is active |
@@ -55,6 +55,6 @@ Payment, invoicing and settlement; any fee or charge for refused cargo, return o
 | DL-1 | Outcomes in Release 1 | The five of Part 4: delivered in full, delivered with remarks, partly delivered, refused, not delivered. DB-13 named four; "not delivered" covers a receiver who is absent or a site that is closed |
 | DL-2 | What an outcome records | The outcome, the receiver's name (not needed for refused or not delivered), remarks (needed for every outcome except delivered in full), and whether cargo remains on the vehicle (implied for partly delivered, refused and not delivered) |
 | DL-3 | Who records custody handovers | The carrier's administrator or operations. A handover type from DL-4, who handed over, who received, the time and the place |
-| DL-4 | Handover types | Returned to the shipper; delivered to another place; handed to a replacement vehicle. Who instructs and who pays for return or storage is not decided here (R-406) |
+| DL-4 | Handover types | Returned to the shipper; delivered to another place; handed to a replacement vehicle. Slice 18d (R-406, decided 18 November 2026) adds warehouse, another carrier and the consignee, quantities, condition and standings, and makes custody move only on a confirmed receipt; who instructs and who pays is in `UNDELIVERABLE_SLICE_18D.md` |
 | DL-5 | Who releases | The carrier's administrator, or operations (shown as such). The driver does not release |
 | DL-6 | Correcting an outcome | Only operations, with a reason, as a new version; the earlier one stays visible. Not allowed once a handover or a release is recorded |

@@ -1096,13 +1096,46 @@ const deliveryOf = async (party: Party, id: string): Promise<Delivery> =>
     .delivery;
 const openEpisodes = (id: string) =>
   count('occupancy_episode', 'booking_id = $1 AND closed_at IS NULL', [id]);
-const handoverBody = () => ({
+const handoverBody = (quantity = 14) => ({
   kind: 'returned_to_shipper',
   handedBy: 'Fictional Driver',
+  handedByStanding: 'Driver of the carrier',
   receivedBy: 'Fictional Warehouse Clerk',
+  receivedByStanding: "Clerk at the shipper's warehouse",
   handedAt: iso(new Date(clock().getTime() - 60_000)),
   place: 'Origin warehouse, gate 2 (fictional)',
+  quantity,
+  condition: 'Crates intact (fictional)',
 });
+/** Why delivery fell short, and the quantities (slice 18d). */
+const shortfall = (reason = 'receiver_refused', delivered = 0, remaining = 14) => ({
+  reason,
+  location: 'Delivery gate (fictional)',
+  cargoCondition: 'Sealed crates (fictional)',
+  quantityUnit: 'crates',
+  quantityDelivered: delivered,
+  quantityRemaining: remaining,
+  contactAttempts: 2,
+});
+/** The receiving side confirms a handover: the shipper's administrator (slice 18d). */
+const confirmReceipt = async (party: Party, id: string, handoverId: string) =>
+  call('POST', bookingRoute(party.org, id, '/cargo'), {
+    token: (await freshParty(party)).person.token,
+    key: key(),
+    body: {
+      command: 'confirm_receipt',
+      handoverId,
+      state: 'confirmed',
+      reference: 'Warehouse receipt 001 (fictional)',
+    },
+  });
+const handoverIdOf = async (id: string) =>
+  (
+    await owner.query<{ id: string }>(
+      'SELECT h.id FROM trucker.cargo_handover h JOIN trucker.trip t ON t.id = h.trip_id WHERE t.booking_id = $1 AND NOT EXISTS (SELECT 1 FROM trucker.cargo_handover_receipt r WHERE r.handover_id = h.id)',
+      [id],
+    )
+  ).rows[0]!.id;
 
 test('DLV-1, E-3: the driver records one outcome after arriving at delivery; not before, not on hold, not by anyone else; recording it releases nothing', async () => {
   const operations = await operator();
@@ -1183,6 +1216,7 @@ test("DLV-1, DLV-3, DLV-4: the carrier records a partial delivery on the driver'
     receiverName: 'Fictional Receiver',
     remarks: 'Two pallets refused (fictional)',
     statedAt: iso(new Date(clock().getTime() - 10 * 60_000)),
+    shortfall: shortfall('receiver_refused', 10, 4),
   };
   const noReason = await deliverAs(carrier, id, base);
   assert.equal(noReason.status, 422, noReason.text);
@@ -1249,6 +1283,7 @@ test('REL-1, REL-3, DLV-5: a resource is released only after an outcome and only
     version: 0,
     outcome: 'refused',
     remarks: 'Receiver refused the load (fictional)',
+    shortfall: shortfall(),
   });
   assert.equal(refusedLoad.status, 200, refusedLoad.text);
   carrier = await freshParty(carrier);
@@ -1271,11 +1306,16 @@ test('REL-1, REL-3, DLV-5: a resource is released only after an outcome and only
   assert.equal(handed.status, 200, handed.text);
   const twice = await handover(carrier, id, handoverBody());
   assert.deepEqual([twice.status, twice.body.code], [409, 'no_custody']);
+  // Until the receiving side confirms it, the custody has not moved (slice 18d).
+  assert.equal((await deliveryOf(earlier.shipper, id)).custody?.open, true);
+  assert.equal((await release(carrier, id, 'truck')).body.code, 'custody_open');
+  assert.equal((await confirmReceipt(earlier.shipper, id, await handoverIdOf(id))).status, 200);
   const shipperSees = await deliveryOf(earlier.shipper, id);
   assert.deepEqual(
     [shipperSees.custody?.open, shipperSees.custody?.handover?.kind],
     [false, 'returned_to_shipper'],
   );
+  carrier = await freshParty(carrier);
   // The later booking cannot be dispatched while the truck is on this trip.
   await untilDispatchable(carrier, later.booking.id);
   carrier = await freshParty(carrier);
@@ -1359,6 +1399,7 @@ test('REL-2, DL-6: operations releases with custody open only with a note, recor
     remarks: 'One pallet left on the truck (fictional)',
     statedAt: iso(new Date(clock().getTime() - 60_000)),
     reason: 'correction',
+    shortfall: shortfall('receiver_refused', 13, 1),
   };
   const noNote = await ops(await fresh(operations), `/bookings/${id}/delivery`, correction);
   assert.equal(noNote.status, 422, noNote.text);
@@ -1413,8 +1454,19 @@ test('REL-2, DL-6: operations releases with custody open only with a note, recor
     [['truck', 'operations', 'operations']],
   );
   // Custody still open: operations records the handover, then the driver is released normally.
-  const handed = await ops(operations, `/bookings/${id}/handover`, handoverBody());
+  const handed = await ops(operations, `/bookings/${id}/handover`, handoverBody(1));
   assert.equal(handed.status, 200, handed.text);
+  const confirmed = await call('POST', `/staff/operations/bookings/${id}/cargo`, {
+    token: (await fresh(operations)).token,
+    key: key(),
+    body: {
+      command: 'confirm_receipt',
+      handoverId: await handoverIdOf(id),
+      state: 'confirmed',
+      reference: 'Storage receipt 7 (fictional)',
+    },
+  });
+  assert.equal(confirmed.status, 200, confirmed.text);
   assert.equal((await release(await freshParty(trip.carrier), id, 'driver')).status, 200);
   assert.deepEqual(await consistency(), []);
   await refused(

@@ -1879,6 +1879,124 @@ async function main() {
           custody: { open: true, handover: null },
           releases: [],
         },
+        // Undeliverable cargo (slice 18d): an approved storage, a handover not yet confirmed,
+        // an open claim and its hold. Fictional values.
+        cargo: {
+          authorities: [
+            {
+              id: ids(70),
+              holder: 'Fictional Shipper LLC',
+              holderRole: 'contracting_customer',
+              basis: 'customer_declared_contract',
+              basisNote: 'Clause 4 (fictional)',
+              actions: ['temporary_storage', 'return_to_sender'],
+              spendLimit: '200.00',
+              currency: 'XTS',
+              validUntil: null,
+              alternateContact: 'Fictional duty desk',
+              declaredAt: at,
+              endedAt: null,
+              endReason: null,
+            },
+          ],
+          onVehicle: 2,
+          case: {
+            id: ids(71),
+            version: 4,
+            cargoClass: 'general',
+            openedAt: at,
+            responseDueAt: at,
+            escalateAt: at,
+            escalatedAt: at,
+            authorityOrder: null,
+            authorityAllowedActions: null,
+            closedAt: null,
+            shortfall: {
+              reason: 'receiver_refused',
+              refusalReason: 'Not ordered (fictional)',
+              location: 'At the gate',
+              cargoCondition: 'Sealed',
+              quantityUnit: 'cartons',
+              quantityDelivered: 8,
+              quantityRemaining: 2,
+              contactAttempts: 2,
+              contactNote: null,
+              evidenceNote: null,
+            },
+            instructions: [
+              {
+                id: ids(72),
+                version: 3,
+                action: 'temporary_storage',
+                destination: null,
+                details: null,
+                state: 'executing',
+                emergency: false,
+                issuedAt: at,
+                issuer: 'Fictional Shipper LLC',
+                feasible: true,
+                offerEta: null,
+                offerNote: null,
+                decidedAt: at,
+                approvalBasis: 'authorised_party',
+                approvedTotal: '50.00',
+                startedAt: at,
+                endedAt: null,
+                executionNote: null,
+                costs: [
+                  {
+                    id: ids(73),
+                    kind: 'storage',
+                    description: null,
+                    quantity: '2',
+                    unit: 'day',
+                    unitAmount: '25.00',
+                    amount: '50.00',
+                    currency: 'XTS',
+                    offeredAt: at,
+                    termsVersion: 1,
+                    interimPayer: 'instructing_party',
+                    provisionalLiability: 'pending',
+                    finalLiability: null,
+                    finalSource: null,
+                    finalReference: null,
+                    held: true,
+                  },
+                ],
+              },
+            ],
+            handovers: [
+              {
+                id: ids(74),
+                kind: 'warehouse',
+                handedBy: 'Fictional Driver',
+                handedByStanding: 'Driver',
+                receivedBy: 'Fictional Clerk',
+                receivedByStanding: 'Clerk',
+                handedAt: at,
+                place: 'Depot (fictional)',
+                quantity: 2,
+                quantityUnit: 'cartons',
+                condition: 'Sealed',
+                evidenceNote: null,
+                receipt: null,
+              },
+            ],
+            legs: [],
+            claims: [
+              {
+                id: ids(75),
+                raisedAt: at,
+                description: 'Late arrival (fictional)',
+                costIds: [ids(73)],
+                state: 'open',
+              },
+            ],
+            holds: [
+              { id: ids(76), ownerKind: 'carrier_claim', costIds: [ids(73)], releasedAt: null },
+            ],
+          },
+        },
       },
       [],
       [],
@@ -1889,7 +2007,13 @@ async function main() {
     const deliveryShown =
       (await one.page.$('#ops-handover-form')) !== null &&
       (await one.page.$('#ops-delivery-form')) !== null &&
-      (await one.page.$$('[data-ops-release]')).length === 2;
+      (await one.page.$$('[data-ops-release]')).length === 2 &&
+      (await one.page.$('#cargo [data-receipt="pending"] form')) !== null &&
+      (await one.page.$('#ops-liability')) !== null &&
+      (await one.page.$('#cargo [data-claim="open"] form')) !== null &&
+      (await one.page.$('#cargo [data-hold="carrier_claim"] form')) !== null &&
+      (await one.page.$('#ops-authority-order')) !== null &&
+      (await one.page.$('#ops-close-case')) === null;
     await one.inspect('operations delivery');
     delete relay.canned[`GET /staff/operations/bookings/${ids(60)}`];
     check(

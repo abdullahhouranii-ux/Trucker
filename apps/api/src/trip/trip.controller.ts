@@ -1,4 +1,4 @@
-import { Body, Controller, Headers, HttpCode, Inject, Param, Post, Req } from '@nestjs/common';
+import { Body, Controller, Get, Headers, HttpCode, Inject, Param, Post, Req } from '@nestjs/common';
 import { z } from 'zod';
 import type { Caller } from '../assignment/assignment.service.js';
 import { ApiError } from '../http/api-error.js';
@@ -66,9 +66,37 @@ const deliveryBody = z.object({
   statedAt: z.string().max(40).optional(),
   reason: z.enum(['no_phone', 'no_signal', 'driver_unable', 'correction', 'other']).optional(),
   note: z.union([z.string().max(2000), z.null()]).optional(),
+  shortfall: z
+    .object({
+      reason: z.string().max(40),
+      refusalReason: z.union([z.string().max(2000), z.null()]).optional(),
+      location: z.string().max(1000),
+      cargoCondition: z.string().max(2000),
+      quantityUnit: z.string().max(80),
+      quantityDelivered: z.union([z.string().max(20), z.number()]),
+      quantityRemaining: z.union([z.string().max(20), z.number()]),
+      contactAttempts: z.number().int().min(0).max(1000),
+      contactNote: z.union([z.string().max(2000), z.null()]).optional(),
+      evidenceNote: z.union([z.string().max(2000), z.null()]).optional(),
+    })
+    .optional(),
 });
 const handoverBody = z.object({
-  kind: z.enum(['returned_to_shipper', 'delivered_elsewhere', 'replacement_vehicle']),
+  quantity: z.union([z.string().max(20), z.number()]),
+  condition: z.string().max(2000),
+  handedByStanding: z.string().max(600),
+  receivedByStanding: z.string().max(600),
+  evidenceNote: z.union([z.string().max(2000), z.null()]).optional(),
+  instructionId: z.union([z.string().max(40), z.null()]).optional(),
+
+  kind: z.enum([
+    'returned_to_shipper',
+    'delivered_elsewhere',
+    'replacement_vehicle',
+    'warehouse',
+    'alternate_carrier',
+    'consignee',
+  ]),
   handedBy: z.string().max(400),
   receivedBy: z.string().max(400),
   handedAt: z.string().max(40),
@@ -76,6 +104,26 @@ const handoverBody = z.object({
   note: z.union([z.string().max(2000), z.null()]).optional(),
 });
 const ROLES = ['truck', 'trailer', 'driver'];
+// A cargo command (slice 18d): the database judges every field.
+const cargoBody = z
+  .object({
+    command: z.enum([
+      'declare_authority',
+      'end_authority',
+      'issue',
+      'withdraw',
+      'offer',
+      'decide',
+      'execute',
+      'emergency',
+      'confirm_receipt',
+      'leg',
+      'dispute_cost',
+      'raise_claim',
+    ]),
+  })
+  .passthrough()
+  .refine((value) => JSON.stringify(value).length <= 20_000);
 function retryKey(key: string | undefined): string {
   if (!key || !RETRY_KEY.test(key))
     throw new ApiError(
@@ -230,6 +278,36 @@ export class TripController {
     return this.trips.release(caller, identifier(organisationId), identifier(bookingId), role);
   }
 
+  @Post('cargo')
+  @HttpCode(200)
+  async cargo(
+    @Param('organisationId') organisationId: string,
+    @Param('bookingId') bookingId: string,
+    @Headers('idempotency-key') key: string | undefined,
+    @Body() body: unknown,
+    @Req() request: IncomingRequest,
+  ) {
+    const caller = await callerOf(this.identity, request);
+    const checked = retryKey(key);
+    return this.trips.cargo(
+      caller,
+      identifier(organisationId),
+      identifier(bookingId),
+      checked,
+      parse(cargoBody, body) as Record<string, unknown>,
+    );
+  }
+
+  @Get('authorities')
+  async authorities(
+    @Param('organisationId') organisationId: string,
+    @Param('bookingId') bookingId: string,
+    @Req() request: IncomingRequest,
+  ) {
+    const caller = await callerOf(this.identity, request);
+    return this.trips.authorities(caller, identifier(organisationId), identifier(bookingId));
+  }
+
   @Post('estimate')
   @HttpCode(200)
   async estimate(
@@ -313,5 +391,39 @@ export class DriverTripController {
     const caller = await callerOf(this.identity, request);
     const { version, ...content } = parse(deliveryBody, body);
     return this.trips.delivery(caller, '', identifier(bookingId), version, content);
+  }
+
+  @Post('cargo')
+  @HttpCode(200)
+  async cargo(
+    @Param('bookingId') bookingId: string,
+    @Headers('idempotency-key') key: string | undefined,
+    @Body() body: unknown,
+    @Req() request: IncomingRequest,
+  ) {
+    const caller = await callerOf(this.identity, request);
+    const checked = retryKey(key);
+    return this.trips.cargo(
+      caller,
+      '',
+      identifier(bookingId),
+      checked,
+      parse(cargoBody, body) as Record<string, unknown>,
+    );
+  }
+}
+
+/** The organiser: cargo cases where it holds an authority (slice 18d). */
+@Controller('organisations/:organisationId/cargo-cases')
+export class OrganiserCargoController {
+  constructor(
+    @Inject(IdentityService) private readonly identity: IdentityService,
+    @Inject(TripService) private readonly trips: TripService,
+  ) {}
+
+  @Get()
+  async list(@Param('organisationId') organisationId: string, @Req() request: IncomingRequest) {
+    const caller = await callerOf(this.identity, request);
+    return this.trips.organiserCases(caller, identifier(organisationId));
   }
 }

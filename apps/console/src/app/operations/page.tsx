@@ -24,6 +24,18 @@ interface Queue {
   resolved: OperationsCase[];
   blocks: { bookingId: string; reason: string; blockedAt: string }[];
   holds: { bookingId: string; reason: string; heldAt: string }[];
+  /** Undeliverable cargo not closed (slice 18d): escalated and overdue first. */
+  cargo?: {
+    bookingId: string;
+    caseId: string;
+    cargoClass: string;
+    responseDueAt: string;
+    overdue: boolean;
+    escalatedAt: string | null;
+    onVehicle: string | number;
+    openInstruction: string | null;
+    heldCosts: number;
+  }[];
 }
 
 export default async function OperationsPage({ searchParams }: Props) {
@@ -108,6 +120,33 @@ export default async function OperationsPage({ searchParams }: Props) {
                       <CaseCard key={item.id} item={item} />
                     ))}
                   </ol>
+                )}
+              </section>
+              <section className="section" aria-labelledby="cargo-title">
+                <h2 id="cargo-title">Cargo not delivered</h2>
+                {(reply.data.operations.cargo ?? []).length === 0 ? (
+                  <p>None.</p>
+                ) : (
+                  <ul className="evidence" id="cargo-cases">
+                    {(reply.data.operations.cargo ?? []).map((item) => (
+                      <li
+                        key={item.caseId}
+                        data-escalated={item.escalatedAt ? 'true' : 'false'}
+                        data-overdue={item.overdue ? 'true' : 'false'}
+                      >
+                        {bookingLink(item.bookingId)}:{' '}
+                        {item.escalatedAt
+                          ? `escalated ${at(item.escalatedAt)}`
+                          : item.overdue
+                            ? 'instructions overdue'
+                            : `instructions due ${at(item.responseDueAt)}`}
+                        ; {item.cargoClass.replace('_', ' ')}; on the vehicle{' '}
+                        <bdi>{String(item.onVehicle)}</bdi>
+                        {item.openInstruction ? `; instruction ${item.openInstruction}` : ''}
+                        {item.heldCosts > 0 ? `; ${item.heldCosts} hold(s) in force` : ''}
+                      </li>
+                    ))}
+                  </ul>
                 )}
               </section>
               <section className="section" aria-labelledby="blocks-title">

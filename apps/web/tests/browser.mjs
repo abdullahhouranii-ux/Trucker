@@ -661,6 +661,8 @@ async function main() {
       'en:booking refund': 'booking-refund-en-390',
       'ar:booking refund': 'booking-refund-ar-390',
       'en:trip for carrier': 'trip-carrier-en-390',
+      'en:trip for shipper': 'cargo-shipper-en-390',
+      'ur:trip for shipper': 'cargo-shipper-ur-390',
       'ar:driver trip': 'driver-trip-ar-390',
     };
     // Fictional numbers: country code 999 is not assigned. Unique per run.
@@ -3811,28 +3813,83 @@ async function main() {
         ).rowCount === 1,
       `the reported problem shows: carrier ${carrierCase.slice(0, 200)}; shipper ${shipperCase.slice(0, 200)}`,
     );
-    // Delivery (slice 18a): the driver records the remaining milestones and a partial delivery;
-    // the carrier records the handover of what is left and releases the truck and the driver.
-    // The shipper sees the outcome and the handover, not the releases.
+    // Delivery (slice 18a) and undeliverable cargo (slice 18d, R-406): the driver records the
+    // remaining milestones and a partial delivery with what fell short; the carrier's release is
+    // refused while cargo is in custody. The shipper declares its authority and instructs
+    // storage; the carrier offers its costs; the shipper approves, which decides no liability.
+    // The carrier hands the cargo to a warehouse: custody moves only when the shipper confirms
+    // the receipt. Then the truck and the driver are released. The shipper sees the outcome and
+    // the case, never the releases.
     await open('/en/driver', 390);
     for (const step of ['loading_started', 'loaded_departed', 'arrived_at_delivery'])
       await submit(`[data-record-milestone="${step}"]`);
     await page.select(`#delivery-${bookingId}-outcome`, 'partly_delivered');
     await page.type(`#delivery-${bookingId}-receiver`, 'Fictional Receiver');
     await page.type(`#delivery-${bookingId}-remarks`, 'Two cartons refused 4410');
+    await page.select(`#delivery-${bookingId}-short-reason`, 'receiver_refused');
+    await page.type(`#delivery-${bookingId}-refusal`, 'Not ordered (fictional)');
+    await page.type(`#delivery-${bookingId}-short-location`, 'On the truck at the gate');
+    await page.type(`#delivery-${bookingId}-short-condition`, 'Sealed cartons');
+    await page.type(`#delivery-${bookingId}-short-unit`, 'cartons');
+    await page.type(`#delivery-${bookingId}-short-delivered`, '8');
+    await page.type(`#delivery-${bookingId}-short-remaining`, '2');
     await submit(`[data-record-delivery="delivery-${bookingId}"]`);
     const outcomeRecorded =
       page.url().includes('aDone=recorded') &&
       (await page.$(`[data-assignment="${bookingId}"] [data-outcome="partly_delivered"]`)) !== null;
     await open(bookingPath('en', carrierOrg), 390);
     const custodyShown = (await page.$('#custody[data-custody="open"]')) !== null;
+    const caseShown = (await page.$('#cargo-on-vehicle[data-on-vehicle="2"]')) !== null;
     await submit('[data-release="truck"]');
     const releaseRefused = page.url().includes('aError=custody_open');
+    // The shipper: no instruction before an authority is declared; then storage is instructed.
+    await open(bookingPath('en', verifyOrg), 390);
+    const noAuthority =
+      (await page.$('#cargo-issue')) !== null && (await page.$('#cargo-authorities-none')) !== null;
+    await page.click('#cargo-declare [name="confirmContract"]');
+    await page.type('#cargo-spend', '200.00');
+    await page.type('#cargo-contact', 'Fictional duty desk, +99900000003');
+    await page.type('#cargo-basis', 'Sale contract clause 4 (fictional)');
+    await submit('[data-cargo="declare"]');
+    const declared = page.url().includes('aDone=cargo_declared');
+    await page.select('#cargo-action', 'temporary_storage');
+    await page.type('#cargo-details', 'Nearest covered storage');
+    await submit('[data-cargo="issue"]');
+    const issued = page.url().includes('aDone=cargo_issued');
+    await open(bookingPath('en', carrierOrg), 390);
+    await page.select('#offer-cost0-kind', 'storage');
+    await page.type('#offer-cost0-quantity', '2');
+    await page.select('#offer-cost0-unit', 'day');
+    await page.type('#offer-cost0-amount', '25');
+    await submit('[data-cargo="offer"]');
+    const costOffered = page.url().includes('aDone=cargo_offered');
+    await open(bookingPath('en', verifyOrg), 390);
+    const costShown = ((await text('#cargo-instructions')) ?? '').includes('50.00');
+    await submit('[data-cargo="approve"]');
+    const approved = page.url().includes('aDone=cargo_approved');
+    await open(bookingPath('en', carrierOrg), 390);
+    await submit('[data-cargo="start"]');
+    await page.select('#handover-kind', 'warehouse');
+    const instruction = await page.$eval('#handover-instruction option:last-child', (o) => o.value);
+    await page.select('#handover-instruction', instruction);
+    await page.type('#handover-quantity', '2');
+    await page.type('#handover-condition', 'Sealed cartons');
     await page.type('#handover-by', 'Fictional Driver');
+    await page.type('#handover-by-standing', 'Driver of the carrier');
     await page.type('#handover-to', 'Fictional Clerk');
-    await page.type('#handover-place', 'Origin warehouse (fictional)');
+    await page.type('#handover-to-standing', 'Clerk at the storage (fictional)');
+    await page.type('#handover-place', 'Storage depot (fictional)');
     await submit('#record-handover');
     const handedOver = page.url().includes('aDone=handed_over');
+    const pendingShown = (await page.$('#custody[data-custody="pending"]')) !== null;
+    await submit('[data-release="truck"]');
+    const stillRefused = page.url().includes('aError=custody_open');
+    await open(bookingPath('en', verifyOrg), 390);
+    await page.type('#cargo-handovers input[name="reference"]', 'Depot receipt 77');
+    await submit('[data-cargo="confirm"]');
+    const receiptConfirmed = page.url().includes('aDone=cargo_confirmed');
+    await open(bookingPath('en', carrierOrg), 390);
+    await submit('[data-cargo="complete"]');
     await submit('[data-release="truck"]');
     await submit('[data-release="driver"]');
     const releasedRows = await owner.query(
@@ -3843,20 +3900,39 @@ async function main() {
       'SELECT 1 FROM trucker.occupancy_episode WHERE booking_id = $1 AND closed_at IS NULL',
       [bookingId],
     );
+    const costRows = await owner.query(
+      `SELECT c.amount::text AS amount, c.interim_payer, c.final_liability FROM trucker.exception_cost c
+       JOIN trucker.cargo_case k ON k.id = c.case_id WHERE k.booking_id = $1`,
+      [bookingId],
+    );
     await open(bookingPath('en', verifyOrg), 390);
     const shipperDelivery = (await text('#delivery-facts')) ?? '';
     check(
       'delivery',
       outcomeRecorded &&
         custodyShown &&
+        caseShown &&
         releaseRefused &&
+        noAuthority &&
+        declared &&
+        issued &&
+        costOffered &&
+        costShown &&
+        approved &&
         handedOver &&
+        pendingShown &&
+        stillRefused &&
+        receiptConfirmed &&
         releasedRows.rows.map((row) => row.role).join() === 'driver,truck' &&
         openEpisodes.rowCount === 0 &&
+        costRows.rows.length === 1 &&
+        costRows.rows[0].amount === '50.00' &&
+        costRows.rows[0].interim_payer === 'instructing_party' &&
+        costRows.rows[0].final_liability === null &&
         shipperDelivery.includes('Partly delivered') &&
         shipperDelivery.includes('4410') &&
         (await page.$('#releases')) === null,
-      `delivery: outcome ${outcomeRecorded}, custody ${custodyShown}, refused ${releaseRefused}, handed ${handedOver}, released ${releasedRows.rows.map((row) => row.role)}, shipper ${shipperDelivery.slice(0, 200)}`,
+      `delivery: outcome ${outcomeRecorded}, custody ${custodyShown}, case ${caseShown}, refused ${releaseRefused}, no authority ${noAuthority}, declared ${declared}, issued ${issued}, offered ${costOffered}, cost ${costShown}, approved ${approved}, handed ${handedOver}, pending ${pendingShown}, still refused ${stillRefused}, receipt ${receiptConfirmed}, released ${releasedRows.rows.map((row) => row.role)}, costs ${JSON.stringify(costRows.rows)}, shipper ${shipperDelivery.slice(0, 200)}`,
     );
     for (const locale of locales) {
       await open(bookingPath(locale, carrierOrg), 390);
