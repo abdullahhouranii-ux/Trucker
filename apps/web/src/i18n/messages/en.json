@@ -1868,5 +1868,90 @@
       "record_changed": "This changed since the page was opened. Nothing was changed.",
       "cargo_unconfirmed": "It is not confirmed that this was recorded. Check what is shown below; sending it again repeats nothing."
     }
+  },
+  "pod": {
+    "title": "Proof of delivery",
+    "states": {
+      "not_received": "No proof of delivery has reached Trucker yet.",
+      "upload_incomplete": "Proof of delivery started: some required files have not arrived yet.",
+      "ready_for_review": "Proof of delivery received: waiting for the shipper's review.",
+      "accepted": "Proof of delivery accepted by the shipper.",
+      "more_evidence_requested": "The shipper asked for more evidence.",
+      "superseded": "Replaced by a newer version."
+    },
+    "version": "Version {n}",
+    "kinds": {
+      "signature": "Receiver's signature",
+      "signed_document": "Signed and stamped document",
+      "delivery_note": "Delivery note",
+      "cargo_photo": "Photo of the cargo",
+      "other": "Other evidence"
+    },
+    "received": "Received",
+    "missing": "Not received yet",
+    "optional": "optional",
+    "open": "Open",
+    "fingerprint": "Fingerprint (shows the file arrived unchanged; it does not prove the delivery)",
+    "capturedBy": "Captured by the driver",
+    "reportedBy": "Uploaded on behalf of {about}",
+    "byOperations": "Uploaded by Trucker operations on behalf of {about}",
+    "capturedAt": "Captured",
+    "receiverName": "Receiver's name",
+    "receiverRole": "Receiver's role",
+    "receiverRemarks": "Receiver's remarks (damage, shortage)",
+    "replacesReason": "Why this replaces the earlier version",
+    "reviewNote": "What is missing",
+    "captureTitle": "Send the proof of delivery",
+    "captureLead": "Choose the files: JPEG, PNG or PDF, up to 10 MB each, at most 10. A delivery needs the receiver's signature or a signed document; a partial delivery also a photo of the cargo; a refusal or a delivery that did not happen needs a photo.",
+    "newVersionTitle": "Send a new version",
+    "onBehalfTitle": "Upload the proof on the driver's behalf",
+    "reason": "Reason",
+    "reasons": {
+      "no_phone": "The driver has no phone",
+      "no_signal": "No signal",
+      "driver_unable": "The driver could not do it",
+      "device_lost": "The driver's phone was lost",
+      "paper_copy": "A paper copy was handed in",
+      "other": "Other (say why in the note)"
+    },
+    "note": "Note (seen by your organisation and Trucker operations)",
+    "capturedAtField": "When it was captured (UTC)",
+    "send": "Send",
+    "sendMissing": "Send this file",
+    "file": "File",
+    "reviewTitle": "Review the proof of delivery",
+    "reviewLead": "Accepting it is not a payment, does not release any truck or driver, and places or lifts no hold. Nothing is accepted by silence.",
+    "accept": "Accept",
+    "askMore": "Ask for more evidence",
+    "done": {
+      "pod_captured": "The proof of delivery was sent.",
+      "pod_file_received": "The file arrived.",
+      "pod_accepted": "The proof of delivery is accepted.",
+      "pod_more_evidence_requested": "More evidence was asked for."
+    },
+    "errors": {
+      "pod_files_needed": "Choose at least one file.",
+      "pod_file_rejected": "Only JPEG, PNG or PDF files up to 10 MB are accepted.",
+      "evidence_missing": "The files do not include what this outcome needs.",
+      "pod_unconfirmed": "It is not confirmed that the proof was sent. Check what is shown below before sending it again.",
+      "pod_upload_incomplete": "Not every file arrived. Send the missing files below.",
+      "pod_review_unconfirmed": "It is not confirmed that your decision was recorded. Check what is shown below.",
+      "pod_note_needed": "Say what is missing.",
+      "fingerprint_mismatch": "A file changed on the way and was refused. Send it again.",
+      "media_type_mismatch": "A file is not of the type declared. Send it again.",
+      "pod_not_ready": "Not every required file has arrived yet.",
+      "pod_already_decided": "This version is already decided.",
+      "pod_superseded": "A newer version replaces this one.",
+      "pod_accepted": "The proof of delivery is already accepted.",
+      "pod_closed": "This version is decided or replaced: send a new version.",
+      "no_delivery_outcome": "Record the delivery outcome first.",
+      "file_storage_closed": "File storage is not available here.",
+      "already_received": "A different file already arrived for this item."
+    },
+    "missingEvidence": {
+      "signature_or_signed_document": "The receiver's signature or a signed document is needed.",
+      "cargo_photo": "A photo of the cargo is needed.",
+      "photo": "A photo is needed."
+    }
   }
 }

@@ -118,6 +118,7 @@ No legal or tax rule is stated here. Every value that is not approved is a prote
 | Slice 18a | Built under "agreed proceed" (18 November 2026, 08:38) on DL-1 to DL-6 as development defaults: `DELIVERY_SLICE_18A.md`. The slice 18 scope (`DELIVERY_SLICE_18_SCOPE.md`) is for approval |
 | R-406 | **Decided by Abdullah on 18 November 2026 (11:23)** for development and testing (not a merge, deployment or purchase): undeliverable, refused and partly delivered cargo, temporary storage and return within the trip; who may instruct, who approves and pays for now, and who finally bears a cost kept apart; silence never approval. Built in slice 18d: `UNDELIVERABLE_SLICE_18D.md`. Its values and UD-1 to UD-10 are development defaults, open for Abdullah |
 | Node.js 24 | **Decided by Abdullah on 18 November 2026 (13:53)**: the project moves from Node 22 to Node 24 (24.11 or later) and npm 11 (11.6 or later), replacing the decision of 13 November 2026 recorded in `FOUNDATION_SLICE_1.md`. `.nvmrc`, `engines`, the doctor check and the Windows setup guide follow. Verified locally on Node 24.21.0 and npm 11.19.0 (the versions on his PC); earlier slice records keep the versions they were tested with |
+| Slice 18b | Built under "now" (18 November 2026, 22:08) on PD-1 to PD-7 as development defaults: `POD_SLICE_18B.md`, for approval. E-1 stays: only the shipper's administrators accept a POD. R-401, R-402, R-305 and D-011 stay open |
 
 ## 2. Exceptions to the proposed structures
 

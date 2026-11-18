@@ -81,6 +81,13 @@ const schema = z.object({
   PAYMENT_PROVIDER: z.enum(['none', 'test']).default('none'),
   /** Key the stand-in signs its notifications with. Development falls back to a published value. */
   PAYMENT_TEST_SECRET: z.string().min(32).optional(),
+  /**
+   * Where proof-of-delivery files are kept (src/storage). No storage supplier is chosen (D-011):
+   * `none` closes file upload, and `local` is a development stand-in that writes files to
+   * FILE_STORAGE_DIR on this machine, refused in production.
+   */
+  FILE_STORAGE: z.enum(['none', 'local']).default('none'),
+  FILE_STORAGE_DIR: z.string().min(1).optional(),
 });
 
 /** Published on purpose: the stand-in protects nothing. */
@@ -179,6 +186,12 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
       !databaseIsLocal(parsed.APP_DATABASE_URL ?? parsed.DATABASE_URL)
     ) {
       problems.push('PAYMENT_PROVIDER test needs a database on this machine');
+    }
+    if (production && parsed.FILE_STORAGE === 'local') {
+      problems.push('FILE_STORAGE must not be local in production');
+    }
+    if (parsed.FILE_STORAGE === 'local' && !parsed.FILE_STORAGE_DIR) {
+      problems.push('FILE_STORAGE_DIR must be set when FILE_STORAGE is local');
     }
     if (production && parsed.COUNTRY_FIXTURES !== 'none') {
       problems.push('COUNTRY_FIXTURES must not be set in production');

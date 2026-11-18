@@ -42,7 +42,7 @@ Delivered as three focused pull requests: **18a** the delivery outcome, cargo cu
 | REL-4 | Nothing else closes an episode: not an outcome, not a milestone, not the passage of time, not a direct write without a release record |
 | REL-5 | Two releases of one resource at the same moment record one release |
 
-**18b and 18c** are scoped in detail before they are built, with the acceptance tests AT-401 to AT-415 and AT-421 to AT-426 of Part 4 adjusted by DI-401, DI-402 and DI-405.
+**18b** is detailed and built in `POD_SLICE_18B.md` (for approval), with AT-402 to AT-405 and AT-411 to AT-415 as its tests; AT-401 (offline capture) waits for the mobile application. **18c** is scoped in detail before it is built, with AT-421 to AT-426 of Part 4 adjusted by DI-401.
 
 ## 4. Out of this slice
 

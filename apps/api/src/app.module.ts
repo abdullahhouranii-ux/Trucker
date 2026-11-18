@@ -40,6 +40,9 @@ import {
   TripController,
 } from './trip/trip.controller.js';
 import { TripService } from './trip/trip.service.js';
+import { DriverPodController, PodController, StaffPodController } from './trip/pod.controller.js';
+import { PodService } from './trip/pod.service.js';
+import { LocalFileStore } from './storage/file-store.js';
 import { FleetService } from './fleet/fleet.service.js';
 import { QuotationController } from './quotation/quotation.controller.js';
 import { QuotationService } from './quotation/quotation.service.js';
@@ -59,7 +62,7 @@ import { StaffController } from './staff/staff.controller.js';
 import { StaffService } from './staff/staff.service.js';
 import { VerificationController } from './verification/verification.controller.js';
 import { VerificationService } from './verification/verification.service.js';
-import { APP_CONFIG, CLOCK, DB_POOL, type Clock } from './tokens.js';
+import { APP_CONFIG, CLOCK, DB_POOL, FILE_STORE, type Clock } from './tokens.js';
 
 @Injectable()
 class PoolLifecycle implements OnModuleDestroy {
@@ -92,6 +95,9 @@ export class AppModule {
         TripController,
         DriverTripController,
         OrganiserCargoController,
+        PodController,
+        DriverPodController,
+        StaffPodController,
         AuthorityController,
         BookingController,
         BookingStaffController,
@@ -107,6 +113,14 @@ export class AppModule {
         { provide: APP_CONFIG, useValue: config },
         { provide: DB_POOL, useFactory: () => createPool(config) },
         { provide: CLOCK, useValue: clock },
+        {
+          // Proof-of-delivery files: a development stand-in on this machine, or closed (D-011).
+          provide: FILE_STORE,
+          useValue:
+            config.FILE_STORAGE === 'local' && config.FILE_STORAGE_DIR
+              ? new LocalFileStore(config.FILE_STORAGE_DIR)
+              : null,
+        },
         {
           provide: PAYMENT_PROVIDER,
           useValue:
@@ -128,6 +142,7 @@ export class AppModule {
         QuotationService,
         AssignmentService,
         TripService,
+        PodService,
         AuthorityService,
         BookingService,
         FleetService,

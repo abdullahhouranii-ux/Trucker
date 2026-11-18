@@ -1,7 +1,8 @@
 import { notFound, redirect } from 'next/navigation';
 import { ErrorSummary } from '../../../../../../web/src/components/form.tsx';
-import { api, type TripCargo } from '../../../../../../web/src/server/api.ts';
+import { api, type TripCargo, type TripPod } from '../../../../../../web/src/server/api.ts';
 import { CargoOpsPanel } from '../../../../components/cargo-ops.tsx';
+import { PodOpsPanel } from '../../../../components/pod-ops.tsx';
 import { ConsoleHeader, Unavailable } from '../../../../components/console-header.tsx';
 import {
   at,
@@ -148,6 +149,7 @@ interface Detail {
       }[];
     } | null;
     cargo?: TripCargo;
+    pod?: TripPod;
   } | null;
   roles: string[];
   cases: OperationsCase[];
@@ -448,6 +450,10 @@ export default async function OperationsBookingPage({ params, searchParams }: Pr
               {b.trip &&
               b.trip.milestones.some((item) => item.milestone === 'arrived_at_delivery') ? (
                 <DeliveryPanel b={b} hidden={hidden} now={now} />
+              ) : null}
+
+              {b.trip?.pod && b.trip.delivery?.outcome ? (
+                <PodOpsPanel bookingId={b.id} pod={b.trip.pod} now={now} />
               ) : null}
 
               {b.trip?.cargo?.case ? (

@@ -5,7 +5,8 @@ const nextConfig = {
   poweredByHeader: false,
   reactStrictMode: true,
   // Shared styles and form components are imported from the web application's sources.
-  experimental: { externalDir: true },
+  // Proof-of-delivery files pass through a server action: up to 10 files of 10 MB (slice 18b).
+  experimental: { externalDir: true, serverActions: { bodySizeLimit: '105mb' } },
   async headers() {
     return [
       {

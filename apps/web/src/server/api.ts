@@ -54,6 +54,67 @@ export async function api<T>(
   };
 }
 
+/** Sends a file's own bytes (proof of delivery, slice 18b). */
+export async function apiPutFile<T>(
+  path: string,
+  options: { token?: string; mediaType: string; bytes: ArrayBuffer },
+): Promise<ApiReply<T>> {
+  let response: Response;
+  try {
+    response = await fetch(base() + path, {
+      method: 'PUT',
+      headers: {
+        'content-type': options.mediaType,
+        ...(options.token ? { authorization: `Bearer ${options.token}` } : {}),
+      },
+      cache: 'no-store',
+      signal: AbortSignal.timeout(30000),
+      body: options.bytes,
+    });
+  } catch {
+    return { ok: false, status: 0, code: 'unavailable', details: {} };
+  }
+  const text = await response.text();
+  let parsed: { code?: unknown; details?: unknown } = {};
+  try {
+    parsed = text ? (JSON.parse(text) as typeof parsed) : {};
+  } catch {
+    return { ok: false, status: response.status, code: 'unavailable', details: {} };
+  }
+  if (response.ok) return { ok: true, status: response.status, data: parsed as T };
+  return {
+    ok: false,
+    status: response.status,
+    code: typeof parsed.code === 'string' ? parsed.code : 'unavailable',
+    details:
+      typeof parsed.details === 'object' && parsed.details !== null
+        ? (parsed.details as Record<string, unknown>)
+        : {},
+  };
+}
+
+/** Reads a file through the API, as the signed-in person; null when it may not be read. */
+export async function apiGetFile(
+  path: string,
+  token: string,
+): Promise<{ status: number; type: string; bytes: ArrayBuffer } | null> {
+  try {
+    const response = await fetch(base() + path, {
+      headers: { authorization: `Bearer ${token}` },
+      cache: 'no-store',
+      signal: AbortSignal.timeout(30000),
+    });
+    if (!response.ok) return { status: response.status, type: '', bytes: new ArrayBuffer(0) };
+    return {
+      status: 200,
+      type: response.headers.get('content-type') ?? 'application/octet-stream',
+      bytes: await response.arrayBuffer(),
+    };
+  } catch {
+    return null;
+  }
+}
+
 export interface Person {
   id: string;
   phoneMasked: string;
@@ -978,6 +1039,55 @@ export interface TripCargo {
       | null;
   } | null;
 }
+/** Proof of delivery (slice 18b). */
+export type PodKind = 'signature' | 'signed_document' | 'delivery_note' | 'cargo_photo' | 'other';
+export type PodState =
+  | 'not_received'
+  | 'upload_incomplete'
+  | 'ready_for_review'
+  | 'accepted'
+  | 'more_evidence_requested'
+  | 'superseded';
+export interface PodItem {
+  id: string;
+  position: number;
+  kind: PodKind;
+  required: boolean;
+  mediaType: 'image/jpeg' | 'image/png' | 'application/pdf';
+  sizeBytes: number;
+  fingerprint: string;
+  received: boolean;
+  receivedAt: string | null;
+}
+export interface PodVersion {
+  id: string;
+  version: number;
+  state: Exclude<PodState, 'not_received'>;
+  outcomeVersion: number;
+  basis: 'observed' | 'reported';
+  enteredAs: 'driver' | 'carrier' | 'operations';
+  about: string | null;
+  enteredBy: string | null;
+  reason: string | null;
+  note?: string | null;
+  receiverName: string | null;
+  receiverRole: string | null;
+  receiverRemarks: string | null;
+  replacesReason: string | null;
+  capturedAt: string;
+  recordedAt: string;
+  items: PodItem[];
+  review: {
+    decision: 'accepted' | 'more_evidence_requested';
+    note: string | null;
+    decidedAt: string;
+    decidedBy: string | null;
+  } | null;
+}
+export interface TripPod {
+  state: PodState;
+  versions: PodVersion[];
+}
 export interface TripDelivery {
   outcome: DeliveryOutcome | null;
   earlier: DeliveryOutcome[];
@@ -1039,6 +1149,8 @@ export interface Trip {
   delivery?: TripDelivery;
   /** Undeliverable or refused cargo (slice 18d). */
   cargo?: TripCargo;
+  /** Proof of delivery (slice 18b). */
+  pod?: TripPod;
   estimate: {
     arrivalAt: string;
     statedAt: string;
