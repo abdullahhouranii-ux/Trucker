@@ -13,7 +13,10 @@ import {
 import {
   blockAction,
   holdAction,
+  operationsDeliveryAction,
+  operationsHandoverAction,
   operationsMilestoneAction,
+  operationsReleaseAction,
   withdrawMilestoneAction,
 } from '../../../../server/operations-actions.ts';
 import { requireStaff } from '../../../../server/session.ts';
@@ -40,6 +43,18 @@ const BLOCKERS: Record<string, string> = {
   resource_overrunning: 'A resource is on another trip past its planned end',
   acknowledgement_missing: 'The driver has not acknowledged',
   operations_block: 'Blocked by operations',
+};
+const OUTCOMES: Record<string, string> = {
+  delivered_in_full: 'Delivered in full',
+  delivered_with_remarks: 'Delivered with remarks',
+  partly_delivered: 'Partly delivered',
+  refused: 'Refused',
+  not_delivered: 'Not delivered',
+};
+const HANDOVERS: Record<string, string> = {
+  returned_to_shipper: 'Returned to the shipper',
+  delivered_elsewhere: 'Delivered to another place',
+  replacement_vehicle: 'Handed to a replacement vehicle',
 };
 const ON_BEHALF: Record<string, string> = {
   no_phone: 'The driver has no phone',
@@ -86,7 +101,38 @@ interface Detail {
     withdrawn: { milestone: string; statedAt: string; withdrawnAt: string; note: string }[];
     hold: { reason: string; heldAt: string; note: string; heldBy: string } | null;
     estimate: { arrivalAt: string; statedBy: string; statedAs: string } | null;
+    delivery: {
+      outcome: {
+        version: number;
+        outcome: string;
+        receiverName: string | null;
+        remarks: string | null;
+        statedAt: string;
+        enteredAs: string;
+        enteredBy: string | null;
+        note: string | null;
+      } | null;
+      earlier: { version: number; outcome: string; statedAt: string }[];
+      custody: {
+        open: boolean;
+        handover: {
+          kind: string;
+          handedBy: string;
+          receivedBy: string;
+          handedAt: string;
+          place: string;
+        } | null;
+      } | null;
+      releases: {
+        role: string;
+        releasedAt: string;
+        basis: string;
+        releasedBy: string | null;
+        note: string | null;
+      }[];
+    } | null;
   } | null;
+  roles: string[];
   cases: OperationsCase[];
   atRiskFrom: string[];
 }
@@ -382,6 +428,11 @@ export default async function OperationsBookingPage({ params, searchParams }: Pr
                 </section>
               ) : null}
 
+              {b.trip &&
+              b.trip.milestones.some((item) => item.milestone === 'arrived_at_delivery') ? (
+                <DeliveryPanel b={b} hidden={hidden} now={now} />
+              ) : null}
+
               <section className="section" id="cases" aria-labelledby="cases-title">
                 <h2 id="cases-title">Cases</h2>
                 {b.cases.length === 0 ? (
@@ -399,5 +450,218 @@ export default async function OperationsBookingPage({ params, searchParams }: Pr
         </div>
       </main>
     </>
+  );
+}
+
+/** Delivery for operations (slice 18a): the outcome, custody and releases, and the steps. */
+function DeliveryPanel({ b, hidden, now }: { b: Detail; hidden: React.ReactNode; now: string }) {
+  const delivery = b.trip!.delivery;
+  const outcome = delivery?.outcome ?? null;
+  const released = new Set((delivery?.releases ?? []).map((item) => item.role));
+  const settled = (delivery?.releases.length ?? 0) > 0 || Boolean(delivery?.custody?.handover);
+  const custodyOpen = delivery?.custody?.open ?? false;
+  return (
+    <section className="section" id="delivery" aria-labelledby="delivery-title">
+      <h2 id="delivery-title">Delivery</h2>
+      {outcome ? (
+        <ul className="evidence" id="delivery-outcome">
+          <li>
+            {OUTCOMES[outcome.outcome]} at {at(outcome.statedAt)} (version {outcome.version}),{' '}
+            {outcome.enteredAs === 'driver'
+              ? 'recorded by the driver'
+              : `reported by ${outcome.enteredAs}`}
+            {outcome.enteredBy ? (
+              <>
+                {' '}
+                (<bdi>{outcome.enteredBy}</bdi>)
+              </>
+            ) : null}
+          </li>
+          {outcome.receiverName ? (
+            <li>
+              Received by <bdi>{outcome.receiverName}</bdi>
+            </li>
+          ) : null}
+          {outcome.remarks ? (
+            <li>
+              Remarks: <bdi>{outcome.remarks}</bdi>
+            </li>
+          ) : null}
+          {outcome.note ? (
+            <li>
+              Note: <bdi>{outcome.note}</bdi>
+            </li>
+          ) : null}
+          {delivery!.earlier.map((item) => (
+            <li key={item.version}>
+              Earlier version {item.version}: {OUTCOMES[item.outcome]} at {at(item.statedAt)}
+            </li>
+          ))}
+          {delivery!.custody ? (
+            <li data-custody={delivery!.custody.open ? 'open' : 'closed'}>
+              {delivery!.custody.handover
+                ? `Cargo handed over: ${HANDOVERS[delivery!.custody.handover.kind]} at ${at(delivery!.custody.handover.handedAt)}, by ${delivery!.custody.handover.handedBy} to ${delivery!.custody.handover.receivedBy}, ${delivery!.custody.handover.place}`
+                : 'Cargo in custody on the vehicle: no handover recorded'}
+            </li>
+          ) : null}
+          {delivery!.releases.map((item) => (
+            <li key={item.role}>
+              {item.role} released at {at(item.releasedAt)}
+              {item.basis === 'operations' ? ' as an operations release' : ''}
+              {item.releasedBy ? (
+                <>
+                  {' '}
+                  by <bdi>{item.releasedBy}</bdi>
+                </>
+              ) : null}
+              {item.note ? (
+                <>
+                  : <bdi>{item.note}</bdi>
+                </>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p id="delivery-none">No delivery outcome is recorded yet.</p>
+      )}
+
+      {!settled && !b.trip!.hold ? (
+        <form className="form card" action={operationsDeliveryAction} id="ops-delivery-form">
+          {hidden}
+          <input type="hidden" name="version" value={outcome?.version ?? 0} />
+          <input type="hidden" name="anchor" value="delivery" />
+          <h3>{outcome ? 'Correct the outcome' : "Record the outcome on the driver's behalf"}</h3>
+          <div className="field">
+            <label htmlFor="ops-outcome">Outcome</label>
+            <select id="ops-outcome" name="outcome">
+              {Object.entries(OUTCOMES).map(([code, label]) => (
+                <option key={code} value={code}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor="ops-receiver">Receiver&apos;s name</label>
+            <input id="ops-receiver" name="receiverName" type="text" maxLength={200} />
+          </div>
+          <div className="field">
+            <label htmlFor="ops-remarks">Remarks</label>
+            <textarea id="ops-remarks" name="remarks" rows={2} maxLength={2000} />
+          </div>
+          <fieldset className="choice">
+            <legend>Cargo</legend>
+            <label>
+              <input type="checkbox" name="cargoRemains" value="true" /> Some cargo is still on the
+              vehicle
+            </label>
+          </fieldset>
+          <div className="field">
+            <label htmlFor="ops-delivery-at">When it happened (UTC)</label>
+            <input
+              id="ops-delivery-at"
+              name="statedAt"
+              type="datetime-local"
+              defaultValue={now}
+              max={now}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="ops-delivery-reason">Reason</label>
+            <select
+              id="ops-delivery-reason"
+              name="reason"
+              defaultValue={outcome ? 'correction' : 'no_signal'}
+            >
+              {Object.entries(ON_BEHALF).map(([code, label]) => (
+                <option key={code} value={code}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <Note id="ops-delivery-note" label="Note (operations only; needed for a correction)" />
+          <button className="button" type="submit" id="ops-record-delivery">
+            {outcome ? 'Record the correction' : 'Record the outcome'}
+          </button>
+        </form>
+      ) : null}
+
+      {custodyOpen ? (
+        <form className="form card" action={operationsHandoverAction} id="ops-handover-form">
+          {hidden}
+          <input type="hidden" name="anchor" value="delivery" />
+          <h3>Record the handover of the cargo</h3>
+          <div className="field">
+            <label htmlFor="ops-handover-kind">What happened to the cargo</label>
+            <select id="ops-handover-kind" name="kind">
+              {Object.entries(HANDOVERS).map(([code, label]) => (
+                <option key={code} value={code}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor="ops-handed-by">Handed over by</label>
+            <input id="ops-handed-by" name="handedBy" type="text" maxLength={200} />
+          </div>
+          <div className="field">
+            <label htmlFor="ops-received-by">Received by</label>
+            <input id="ops-received-by" name="receivedBy" type="text" maxLength={200} />
+          </div>
+          <div className="field">
+            <label htmlFor="ops-handed-at">When (UTC)</label>
+            <input
+              id="ops-handed-at"
+              name="handedAt"
+              type="datetime-local"
+              defaultValue={now}
+              max={now}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="ops-handover-place">Where</label>
+            <input id="ops-handover-place" name="place" type="text" maxLength={500} />
+          </div>
+          <Note id="ops-handover-note" label="Note (operations only)" />
+          <button className="button" type="submit" id="ops-record-handover">
+            Record the handover
+          </button>
+        </form>
+      ) : null}
+
+      {outcome && b.roles.some((role) => !released.has(role)) ? (
+        <div className="card" id="ops-release">
+          <h3>Release resources</h3>
+          <p>
+            Release each resource when it is free.
+            {custodyOpen
+              ? ' Cargo is still in custody: a release now is an operations release and needs a note.'
+              : ''}
+          </p>
+          {b.roles
+            .filter((role) => !released.has(role))
+            .map((role) => (
+              <form key={role} className="form" action={operationsReleaseAction}>
+                {hidden}
+                <input type="hidden" name="role" value={role} />
+                <input type="hidden" name="anchor" value="delivery" />
+                <input type="hidden" name="override" value={custodyOpen ? 'true' : 'false'} />
+                {custodyOpen ? (
+                  <Note
+                    id={`ops-release-note-${role}`}
+                    label={`Why the ${role} is released (operations only)`}
+                  />
+                ) : null}
+                <button className="button" type="submit" data-ops-release={role}>
+                  Release the {role}
+                </button>
+              </form>
+            ))}
+        </div>
+      ) : null}
+    </section>
   );
 }

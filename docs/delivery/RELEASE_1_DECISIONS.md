@@ -114,7 +114,8 @@ No legal or tax rule is stated here. Every value that is not approved is a prote
 | Slice 28 | Built under the instruction of 17 November 2026 (20:06) with D-8 (second-person approval) and RD-1 to RD-5 as development defaults, the development stand-in as the only provider, and no money moving: `REFUNDS_SLICE_28.md`. O-4 (partial refund cases), payer bank details, D-8's 5 business days and RD-1 to RD-5 are open for Abdullah; OP-3 stays proposed |
 | Slice 17a | Built under "Start with dispatch" (17 November 2026) with DD-1, DD-2, DD-5 to DD-8 and DS-1 to DS-3 as development defaults: `DISPATCH_SLICE_17A.md`. The scope document is still for approval; DD-3, DD-4, DD-9 and DD-10 wait for slice 17b |
 | Slice 17 scope | Approved by Abdullah on 18 November 2026 (06:10): DD-1 to DD-10 as recommended, and the recommendation that a mistaken milestone is corrected through operations in slice 17b |
-| Slice 17b | Built on the approved scope with XS-1 to XS-5 as development defaults: `EXCEPTIONS_SLICE_17B.md` |
+| Slice 17b | Built on the approved scope with XS-1 to XS-5: `EXCEPTIONS_SLICE_17B.md`. XS-1 to XS-5 approved by Abdullah on 18 November 2026 (08:38, "agreed proceed"). Whether the emergency notice shows each country's number stays open: no numbers are recorded in Trucker |
+| Slice 18a | Built under "agreed proceed" (18 November 2026, 08:38) on DL-1 to DL-6 as development defaults: `DELIVERY_SLICE_18A.md`. The slice 18 scope (`DELIVERY_SLICE_18_SCOPE.md`) is for approval; R-406 (who instructs and pays for returned or stored cargo) stays open |
 
 ## 2. Exceptions to the proposed structures
 

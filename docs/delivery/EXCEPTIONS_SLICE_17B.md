@@ -18,9 +18,9 @@ Date: 18 November 2026. Branch `feat/exceptions`, stacked on PR #33 (slice 17a).
 | Web | The trip shows the hold, the problems reported and the withdrawn milestones. A "Report a problem" form for the driver, the carrier and the shipper. A dispatch blocked by operations names the reason. English, Arabic and Urdu |
 | Console | Operations: the queue of open cases with the step each allows, the blocks and holds in force, recently resolved cases, and a page for one booking (block or lift, hold or resume, record on behalf, withdraw, the cases). The staff accounts page offers the new privilege |
 
-## Development defaults used (not approved for production)
+## Values used
 
-DD-1 to DD-10 are approved as the slice scope. Further values chosen here:
+DD-1 to DD-10 are approved as the slice scope. Further values chosen here, approved by Abdullah on 18 November 2026 (08:38):
 
 | Item | Value used |
 |---|---|

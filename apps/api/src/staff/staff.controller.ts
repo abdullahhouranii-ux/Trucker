@@ -185,6 +185,28 @@ const operationsMilestoneBody = z.object({
   reason: z.enum(['no_phone', 'no_signal', 'driver_unable', 'correction', 'other']),
   note: z.union([z.string().max(2000), z.null()]).optional(),
 });
+const staffDeliveryBody = z.object({
+  version: z.number().int().min(0),
+  outcome: z.string().max(40),
+  receiverName: z.union([z.string().max(400), z.null()]).optional(),
+  remarks: z.union([z.string().max(4000), z.null()]).optional(),
+  cargoRemains: z.boolean().optional(),
+  statedAt: z.string().max(40),
+  reason: z.enum(['no_phone', 'no_signal', 'driver_unable', 'correction', 'other']),
+  note: z.union([z.string().max(2000), z.null()]).optional(),
+});
+const staffHandoverBody = z.object({
+  kind: z.string().max(40),
+  handedBy: z.string().max(400),
+  receivedBy: z.string().max(400),
+  handedAt: z.string().max(40),
+  place: z.string().max(1000),
+  note: z.union([z.string().max(2000), z.null()]).optional(),
+});
+const staffReleaseBody = z.object({
+  override: z.boolean().optional(),
+  note: z.union([z.string().max(2000), z.null()]).optional(),
+});
 const withdrawBody = z.object({ version: z.number().int().min(1), note: z.string().max(2000) });
 const financialMoveBody = z.object({
   version: z.number().int().min(1),
@@ -564,6 +586,45 @@ export class StaffController {
     const caller = await this.caller(request);
     const { version, note } = parse(withdrawBody, body);
     return this.operations.withdraw(caller, identifier(id), version, note);
+  }
+
+  // Delivery, custody and release (slice 18a).
+  @Post('operations/bookings/:id/delivery')
+  @HttpCode(200)
+  async operationsDelivery(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Req() request: IncomingRequest,
+  ) {
+    const caller = await this.caller(request);
+    const { version, ...content } = parse(staffDeliveryBody, body);
+    return this.operations.delivery(caller, identifier(id), version, content);
+  }
+
+  @Post('operations/bookings/:id/handover')
+  @HttpCode(200)
+  async operationsHandover(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Req() request: IncomingRequest,
+  ) {
+    const caller = await this.caller(request);
+    return this.operations.handover(caller, identifier(id), parse(staffHandoverBody, body));
+  }
+
+  @Post('operations/bookings/:id/resources/:role/release')
+  @HttpCode(200)
+  async operationsRelease(
+    @Param('id') id: string,
+    @Param('role') role: string,
+    @Body() body: unknown,
+    @Req() request: IncomingRequest,
+  ) {
+    const caller = await this.caller(request);
+    if (!['truck', 'trailer', 'driver'].includes(role))
+      throw new ApiError(404, 'not_found', 'The requested resource was not found.');
+    const { override, note } = parse(staffReleaseBody, body);
+    return this.operations.release(caller, identifier(id), role, override ?? false, note ?? null);
   }
 
   // Refunds: requested by one administrator, approved by another, submitted, then completed or

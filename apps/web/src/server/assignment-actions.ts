@@ -346,3 +346,100 @@ export async function driverReportProblemAction(form: FormData): Promise<void> {
     retryKey,
   });
 }
+
+// Slice 18a: the delivery outcome, the handover of cargo left on the vehicle, and releases.
+const OUTCOMES = [
+  'delivered_in_full',
+  'delivered_with_remarks',
+  'partly_delivered',
+  'refused',
+  'not_delivered',
+];
+const outcomeBody = (form: FormData, onBehalf: boolean) => {
+  const outcome = text(form, 'outcome');
+  const receiverName = text(form, 'receiverName').trim();
+  const remarks = text(form, 'remarks').trim();
+  const note = text(form, 'note').trim();
+  const statedAt = instant(form, 'statedAt');
+  const reason = text(form, 'reason');
+  const body: Record<string, unknown> = {
+    version: Number(text(form, 'version')),
+    outcome,
+    receiverName: receiverName === '' ? null : receiverName.slice(0, 200),
+    remarks: remarks === '' ? null : remarks.slice(0, 2000),
+    cargoRemains: text(form, 'cargoRemains') === 'true',
+  };
+  if (onBehalf)
+    Object.assign(body, { statedAt, reason, note: note === '' ? null : note.slice(0, 500) });
+  const valid =
+    OUTCOMES.includes(outcome) && (!onBehalf || (statedAt !== null && REASONS.includes(reason)));
+  return { valid, body };
+};
+
+/** The carrier's administrator records the outcome on the driver's behalf. */
+export async function recordDeliveryAction(form: FormData): Promise<void> {
+  const { here, organisationId, bookingId } = bookingPage(form);
+  const { valid, body } = outcomeBody(form, true);
+  await command(form, {
+    operation: 'delivery',
+    path:
+      organisationId && valid
+        ? `/organisations/${organisationId}/bookings/${bookingId}/delivery`
+        : null,
+    here,
+    anchor: 'trip',
+    body,
+  });
+}
+
+/** The driver records the outcome as it happens. */
+export async function driverDeliveryAction(form: FormData): Promise<void> {
+  const bookingId = text(form, 'bookingId');
+  const { valid, body } = outcomeBody(form, false);
+  await command(form, {
+    operation: 'delivery',
+    path: UUID.test(bookingId) && valid ? `/me/driver/assignments/${bookingId}/delivery` : null,
+    here: `/${localeOf(form)}/driver`,
+    anchor: 'assignments',
+    body,
+  });
+}
+
+/** The carrier's administrator records the handover of cargo left on the vehicle. */
+export async function recordHandoverAction(form: FormData): Promise<void> {
+  const { here, organisationId, bookingId } = bookingPage(form);
+  const handedAt = instant(form, 'handedAt');
+  const note = text(form, 'note').trim();
+  await command(form, {
+    operation: 'handover',
+    path:
+      organisationId && handedAt
+        ? `/organisations/${organisationId}/bookings/${bookingId}/handover`
+        : null,
+    here,
+    anchor: 'trip',
+    body: {
+      kind: text(form, 'kind'),
+      handedBy: text(form, 'handedBy').trim().slice(0, 200),
+      receivedBy: text(form, 'receivedBy').trim().slice(0, 200),
+      handedAt,
+      place: text(form, 'place').trim().slice(0, 500),
+      note: note === '' ? null : note.slice(0, 1000),
+    },
+  });
+}
+
+/** The carrier's administrator releases one resource from the trip. */
+export async function releaseResourceAction(form: FormData): Promise<void> {
+  const { here, organisationId, bookingId } = bookingPage(form);
+  const role = text(form, 'role');
+  await command(form, {
+    operation: 'release',
+    path:
+      organisationId && ['truck', 'trailer', 'driver'].includes(role)
+        ? `/organisations/${organisationId}/bookings/${bookingId}/resources/${role}/release`
+        : null,
+    here,
+    anchor: 'trip',
+  });
+}

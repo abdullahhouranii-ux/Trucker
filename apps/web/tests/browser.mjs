@@ -3811,6 +3811,53 @@ async function main() {
         ).rowCount === 1,
       `the reported problem shows: carrier ${carrierCase.slice(0, 200)}; shipper ${shipperCase.slice(0, 200)}`,
     );
+    // Delivery (slice 18a): the driver records the remaining milestones and a partial delivery;
+    // the carrier records the handover of what is left and releases the truck and the driver.
+    // The shipper sees the outcome and the handover, not the releases.
+    await open('/en/driver', 390);
+    for (const step of ['loading_started', 'loaded_departed', 'arrived_at_delivery'])
+      await submit(`[data-record-milestone="${step}"]`);
+    await page.select(`#delivery-${bookingId}-outcome`, 'partly_delivered');
+    await page.type(`#delivery-${bookingId}-receiver`, 'Fictional Receiver');
+    await page.type(`#delivery-${bookingId}-remarks`, 'Two cartons refused 4410');
+    await submit(`[data-record-delivery="delivery-${bookingId}"]`);
+    const outcomeRecorded =
+      page.url().includes('aDone=recorded') &&
+      (await page.$(`[data-assignment="${bookingId}"] [data-outcome="partly_delivered"]`)) !== null;
+    await open(bookingPath('en', carrierOrg), 390);
+    const custodyShown = (await page.$('#custody[data-custody="open"]')) !== null;
+    await submit('[data-release="truck"]');
+    const releaseRefused = page.url().includes('aError=custody_open');
+    await page.type('#handover-by', 'Fictional Driver');
+    await page.type('#handover-to', 'Fictional Clerk');
+    await page.type('#handover-place', 'Origin warehouse (fictional)');
+    await submit('#record-handover');
+    const handedOver = page.url().includes('aDone=handed_over');
+    await submit('[data-release="truck"]');
+    await submit('[data-release="driver"]');
+    const releasedRows = await owner.query(
+      'SELECT role FROM trucker.resource_release WHERE booking_id = $1 ORDER BY role',
+      [bookingId],
+    );
+    const openEpisodes = await owner.query(
+      'SELECT 1 FROM trucker.occupancy_episode WHERE booking_id = $1 AND closed_at IS NULL',
+      [bookingId],
+    );
+    await open(bookingPath('en', verifyOrg), 390);
+    const shipperDelivery = (await text('#delivery-facts')) ?? '';
+    check(
+      'delivery',
+      outcomeRecorded &&
+        custodyShown &&
+        releaseRefused &&
+        handedOver &&
+        releasedRows.rows.map((row) => row.role).join() === 'driver,truck' &&
+        openEpisodes.rowCount === 0 &&
+        shipperDelivery.includes('Partly delivered') &&
+        shipperDelivery.includes('4410') &&
+        (await page.$('#releases')) === null,
+      `delivery: outcome ${outcomeRecorded}, custody ${custodyShown}, refused ${releaseRefused}, handed ${handedOver}, released ${releasedRows.rows.map((row) => row.role)}, shipper ${shipperDelivery.slice(0, 200)}`,
+    );
     for (const locale of locales) {
       await open(bookingPath(locale, carrierOrg), 390);
       await inspect(locale, 'trip for carrier');

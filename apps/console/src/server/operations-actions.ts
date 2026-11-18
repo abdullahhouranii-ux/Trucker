@@ -111,3 +111,59 @@ export async function findBookingAction(form: FormData): Promise<void> {
   const id = text(form, 'booking').trim().toLowerCase();
   redirect(UUID.test(id) ? `/operations/bookings/${id}` : '/operations?error=not_found#find');
 }
+
+/** Record the delivery outcome on the driver's behalf, or correct it with a note (slice 18a). */
+export async function operationsDeliveryAction(form: FormData): Promise<void> {
+  const id = text(form, 'bookingId');
+  const statedAt = text(form, 'statedAt');
+  const receiverName = text(form, 'receiverName').trim();
+  const remarks = text(form, 'remarks').trim();
+  const note = text(form, 'note').trim();
+  await send(
+    form,
+    UUID.test(id) && MINUTE.test(statedAt) ? `/staff/operations/bookings/${id}/delivery` : null,
+    {
+      version: Number(text(form, 'version')),
+      outcome: text(form, 'outcome'),
+      receiverName: receiverName === '' ? null : receiverName.slice(0, 200),
+      remarks: remarks === '' ? null : remarks.slice(0, 2000),
+      cargoRemains: text(form, 'cargoRemains') === 'true',
+      statedAt: `${statedAt}:00Z`,
+      reason: text(form, 'reason'),
+      note: note === '' ? null : note.slice(0, 1000),
+    },
+  );
+}
+
+/** Record the handover of cargo left on the vehicle. */
+export async function operationsHandoverAction(form: FormData): Promise<void> {
+  const id = text(form, 'bookingId');
+  const handedAt = text(form, 'handedAt');
+  const note = text(form, 'note').trim();
+  await send(
+    form,
+    UUID.test(id) && MINUTE.test(handedAt) ? `/staff/operations/bookings/${id}/handover` : null,
+    {
+      kind: text(form, 'kind'),
+      handedBy: text(form, 'handedBy').trim().slice(0, 200),
+      receivedBy: text(form, 'receivedBy').trim().slice(0, 200),
+      handedAt: `${handedAt}:00Z`,
+      place: text(form, 'place').trim().slice(0, 500),
+      note: note === '' ? null : note.slice(0, 1000),
+    },
+  );
+}
+
+/** Release a resource; with custody open only as an operations release, with a note. */
+export async function operationsReleaseAction(form: FormData): Promise<void> {
+  const id = text(form, 'bookingId');
+  const role = text(form, 'role');
+  const note = text(form, 'note').trim();
+  await send(
+    form,
+    UUID.test(id) && ['truck', 'trailer', 'driver'].includes(role)
+      ? `/staff/operations/bookings/${id}/resources/${role}/release`
+      : null,
+    { override: text(form, 'override') === 'true', note: note === '' ? null : note.slice(0, 1000) },
+  );
+}

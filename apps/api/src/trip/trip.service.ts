@@ -43,6 +43,30 @@ const ERRORS: Record<string, [number, string, string]> = {
     'The truck has arrived at delivery: an estimated arrival is no longer taken.',
   ],
   invalid: [422, 'validation_failed', 'Some fields are missing or not valid.'],
+  not_arrived: [
+    409,
+    'not_arrived_at_delivery',
+    'The truck has not arrived at delivery: no outcome is recorded yet.',
+  ],
+  already_recorded: [409, 'delivery_recorded', 'The delivery outcome is already recorded.'],
+  settled: [
+    409,
+    'delivery_settled',
+    'A handover or a release is recorded: the outcome is no longer corrected.',
+  ],
+  no_custody: [409, 'no_custody', 'No cargo is in custody on this trip.'],
+  already_released: [409, 'already_released', 'This resource is already released.'],
+  no_outcome: [
+    409,
+    'no_delivery_outcome',
+    'No delivery outcome is recorded: the resource stays on the trip.',
+  ],
+  custody_open: [
+    409,
+    'custody_open',
+    'Cargo is still in custody: record its handover before releasing the resource.',
+  ],
+  not_assigned: [404, 'not_found', 'No such resource on this booking.'],
   on_hold: [
     409,
     'trip_on_hold',
@@ -214,6 +238,48 @@ export class TripService {
         outcome: row.status === 'reported' ? 'reported' : 'already_reported',
         case: row.detail,
       };
+    return refuse(row.status, row.detail);
+  }
+
+  /** The delivery outcome (slice 18a): by the driver (organisation ''), or the carrier on behalf. */
+  async delivery(
+    caller: Caller,
+    organisationId: string,
+    bookingId: string,
+    version: number,
+    content: Detail,
+  ) {
+    const row = await this.run(
+      caller,
+      organisationId,
+      'SELECT status, detail FROM trucker.trip_delivery_record($1, $2, $3)',
+      () => [bookingId, version, JSON.stringify(content)],
+    );
+    if (row.status === 'recorded') return { outcome: 'recorded', trip: row.detail };
+    return refuse(row.status, row.detail);
+  }
+
+  /** The handover of cargo left on the vehicle, by the carrier's administrator. */
+  async handover(caller: Caller, organisationId: string, bookingId: string, content: Detail) {
+    const row = await this.run(
+      caller,
+      organisationId,
+      'SELECT status, detail FROM trucker.cargo_handover_record($1, $2)',
+      () => [bookingId, JSON.stringify(content)],
+    );
+    if (row.status === 'recorded') return { outcome: 'handed_over', trip: row.detail };
+    return refuse(row.status, row.detail);
+  }
+
+  /** Releases one resource from the trip, by the carrier's administrator. */
+  async release(caller: Caller, organisationId: string, bookingId: string, role: string) {
+    const row = await this.run(
+      caller,
+      organisationId,
+      'SELECT status, detail FROM trucker.resource_release_record($1, $2)',
+      () => [bookingId, role],
+    );
+    if (row.status === 'released') return { outcome: 'released', trip: row.detail };
     return refuse(row.status, row.detail);
   }
 }

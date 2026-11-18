@@ -1845,7 +1845,58 @@ async function main() {
       (await one.page.$('#lift-form')) !== null &&
       (await one.page.$('#trip')) === null;
     await one.inspect('operations booking blocked');
+    // Delivery for operations (slice 18a): a partial delivery with cargo in custody.
+    const delivered = bookingShape(
+      {
+        id: ids(63),
+        version: 6,
+        dispatchedAt: at,
+        late: false,
+        next: 'unloading_started',
+        milestones: [
+          'departed_for_pickup',
+          'arrived_at_pickup',
+          'loading_started',
+          'loaded_departed',
+          'arrived_at_delivery',
+        ].map((name) => milestone(name, 'observed')),
+        withdrawn: [],
+        hold: null,
+        cases: [],
+        estimate: null,
+        delivery: {
+          outcome: {
+            version: 1,
+            outcome: 'partly_delivered',
+            receiverName: 'Fictional Receiver',
+            remarks: 'Two cartons refused (fictional)',
+            statedAt: at,
+            enteredAs: 'driver',
+            enteredBy: null,
+            note: null,
+          },
+          earlier: [],
+          custody: { open: true, handover: null },
+          releases: [],
+        },
+      },
+      [],
+      [],
+    );
+    delivered.booking.roles = ['driver', 'truck'];
+    relay.canned[`GET /staff/operations/bookings/${ids(60)}`] = delivered;
+    await one.open(`/operations/bookings/${ids(60)}`);
+    const deliveryShown =
+      (await one.page.$('#ops-handover-form')) !== null &&
+      (await one.page.$('#ops-delivery-form')) !== null &&
+      (await one.page.$$('[data-ops-release]')).length === 2;
+    await one.inspect('operations delivery');
     delete relay.canned[`GET /staff/operations/bookings/${ids(60)}`];
+    check(
+      'operations',
+      deliveryShown,
+      `the operations delivery panel did not show its forms at ${one.page.url()}`,
+    );
     check(
       'operations',
       operationsEmpty &&
