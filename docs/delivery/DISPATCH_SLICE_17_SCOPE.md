@@ -1,6 +1,6 @@
 # Trucker: dispatch and trip execution slice 17, scope and acceptance criteria
 
-Version 0.1, 15 November 2026. Status: **for approval. Nothing here is built.** Sources: `docs/specs/STAGE_2_PART_3_DISPATCH_TRACKING_EXCEPTIONS.md` sections 2 to 4 and 8; decisions DB-9 (proposed structure), DB-10 and DB-11 (approved for Release 1) and exception E-4 in RELEASE_1_DECISIONS.md; the slice 15 choices N-3, N-5 and N-6 approved on 15 November 2026 (22:24); the cancellation boundary of slice 16.
+Version 0.1, 15 November 2026. Status: **approved by Abdullah on 18 November 2026 (06:10), with DD-1 to DD-10 as recommended.** Slice 17a is built (`DISPATCH_SLICE_17A.md`, PR #33) and slice 17b (`EXCEPTIONS_SLICE_17B.md`). Sources: `docs/specs/STAGE_2_PART_3_DISPATCH_TRACKING_EXCEPTIONS.md` sections 2 to 4 and 8; decisions DB-9 (proposed structure), DB-10 and DB-11 (approved for Release 1) and exception E-4 in RELEASE_1_DECISIONS.md; the slice 15 choices N-3, N-5 and N-6 approved on 15 November 2026 (22:24); the cancellation boundary of slice 16.
 
 Delivered as two focused pull requests: **17a** dispatch, the trip and its milestones; **17b** exceptions and operations cases. 17b depends on 17a.
 

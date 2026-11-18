@@ -1138,7 +1138,8 @@
       "resource_overrunning": "A resource is still on another trip past its planned end. This booking is at risk.",
       "acknowledgement_missing": "The driver has not acknowledged the assignment.",
       "booking_cancelled": "This booking is cancelled.",
-      "fee_not_paid": "Trucker's fee is not paid and verified yet."
+      "fee_not_paid": "Trucker's fee is not paid and verified yet.",
+      "operations_block": "Trucker operations has blocked dispatch."
     },
     "roles": {
       "truck": "Truck",
@@ -1199,7 +1200,9 @@
       "already_cancelled": "Cancellation confirmed. Reservations are released.",
       "dispatched": "The booking is dispatched. The trip has started.",
       "already_dispatched": "This booking was already dispatched.",
-      "stated": "The estimate is recorded."
+      "stated": "The estimate is recorded.",
+      "reported": "The problem is reported to Trucker operations.",
+      "already_reported": "This problem was already reported."
     },
     "errors": {
       "unavailable": "This could not be loaded. Try again.",
@@ -1232,7 +1235,9 @@
       "retry_key_conflict": "This form was already used for something else. Reload the page.",
       "dispatch_unconfirmed": "It is not confirmed that the booking was dispatched. Check what is shown below before trying again.",
       "milestone_unconfirmed": "It is not confirmed that the milestone was recorded. Check what is shown below before trying again.",
-      "estimate_unconfirmed": "It is not confirmed that the estimate was recorded. Check what is shown below before trying again."
+      "estimate_unconfirmed": "It is not confirmed that the estimate was recorded. Check what is shown below before trying again.",
+      "trip_on_hold": "Trucker operations has put this trip on hold. Nothing was recorded.",
+      "report_unconfirmed": "It is not confirmed that the problem was reported. Check what is shown below before trying again."
     },
     "driver": {
       "title": "Your assignments",
@@ -1527,6 +1532,56 @@
       "too_early": "It is too early to dispatch. The earliest time is shown in the trip section.",
       "substitution_open": "A substitution is waiting for the shipper.",
       "capability_missing": "A party does not hold the verification this needs now."
-    }
+    },
+    "operationsReasons": {
+      "safety_review": "safety review",
+      "document_concern": "a concern about a document",
+      "suspected_fraud": "suspected fraud",
+      "other": "another reason"
+    },
+    "hold": "Trucker operations has put this trip on hold: {reason}. No milestone can be recorded until it is resumed.",
+    "heldSince": "On hold since",
+    "enteredByOperations": "Reported by Trucker operations for {about}",
+    "withdrawnTitle": "Withdrawn milestones",
+    "withdrawnLead": "Recorded by mistake and withdrawn by Trucker operations. They no longer count.",
+    "withdrawnAt": "withdrawn",
+    "casesTitle": "Problems reported",
+    "noCases": "No problem is reported.",
+    "caseKinds": {
+      "overrun": "A resource is still on this trip past its planned end (seen by Trucker)",
+      "no_pickup_arrival": "No arrival at pick-up by the end of the pick-up window (seen by Trucker)"
+    },
+    "exceptionTypes": {
+      "delay": "Delay",
+      "breakdown": "Breakdown",
+      "accident": "Accident",
+      "cargo_damage_or_shortage": "Cargo damage or shortage",
+      "refused_at_site": "Refused or blocked at a site",
+      "receiver_absent": "Receiver absent",
+      "document_problem": "Document problem",
+      "road_closed": "Road closed",
+      "safety_concern": "Safety concern",
+      "no_show": "No-show",
+      "other": "Other"
+    },
+    "caseStates": {
+      "open": "open",
+      "acknowledged": "being handled by Trucker operations",
+      "resolved": "resolved"
+    },
+    "reportedAs": {
+      "driver": "the driver",
+      "carrier": "the carrier",
+      "shipper": "the shipper",
+      "system": "Trucker"
+    },
+    "caseLine": "Reported by {as}",
+    "state": "State",
+    "reportTitle": "Report a problem",
+    "reportLead": "Trucker operations sees it at once and handles it. The other party sees that a problem is reported, its type and its state, not your description.",
+    "emergency": "In an emergency, call the country's emergency number first. Trucker does not send emergency services.",
+    "exceptionType": "What happened",
+    "description": "Describe it",
+    "report": "Report the problem"
   }
 }

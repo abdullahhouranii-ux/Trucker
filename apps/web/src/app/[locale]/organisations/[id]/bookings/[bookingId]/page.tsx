@@ -8,7 +8,7 @@ import {
   PayOnline,
 } from '../../../../../../components/booking-view.tsx';
 import { ErrorSummary, Field } from '../../../../../../components/form.tsx';
-import { TripFacts, utcMinute } from '../../../../../../components/trip-view.tsx';
+import { ReportProblem, TripFacts, utcMinute } from '../../../../../../components/trip-view.tsx';
 import { direction, isLocale, type Locale } from '../../../../../../i18n/config.ts';
 import { getMessages, type Messages } from '../../../../../../i18n/messages.ts';
 import {
@@ -25,6 +25,7 @@ import {
   decideSubstitutionAction,
   dispatchBookingAction,
   recordMilestoneOnBehalfAction,
+  reportProblemAction,
   stateEstimateAction,
   waitForCarrierAction,
 } from '../../../../../../server/assignment-actions.ts';
@@ -135,8 +136,19 @@ export default async function BookingPage({ params, searchParams }: Props) {
       const why =
         (tt.refusals as Record<string, string>)[code] ??
         (a.blockers as Record<string, string>)[code];
-      const cause = reasonText(one('aCause'));
-      const parts = [message, why, roleName ? `${roleName}${cause ? `: ${cause}` : ''}` : null];
+      const cause =
+        code === 'operations_block'
+          ? (tt.operationsReasons as Record<string, string>)[one('aCause')]
+          : reasonText(one('aCause'));
+      const parts = [
+        message,
+        why,
+        roleName
+          ? `${roleName}${cause ? `: ${cause}` : ''}`
+          : code === 'operations_block'
+            ? cause
+            : null,
+      ];
       problems.push({ message: parts.filter(Boolean).join(' ') });
     } else
       problems.push({
@@ -278,6 +290,9 @@ export default async function BookingPage({ params, searchParams }: Props) {
               {booking.dispatch.blockers.map((blocker, index) => (
                 <li key={index} data-blocker={blocker.code}>
                   {a.blockers[blocker.code]}
+                  {blocker.code === 'operations_block' && blocker.reason
+                    ? `: ${(tt.operationsReasons as Record<string, string>)[blocker.reason] ?? ''}`
+                    : null}
                   {blocker.role ? (
                     <>
                       {' '}
@@ -301,6 +316,13 @@ export default async function BookingPage({ params, searchParams }: Props) {
             <>
               <TripFacts t={tt} trip={trip} />
               {role === 'carrier' ? <CarrierTripForms t={tt} trip={trip} hidden={hidden} /> : null}
+              <ReportProblem
+                t={tt}
+                id="report-problem"
+                action={reportProblemAction}
+                hidden={hidden}
+                retryKey={UUID.test(one('aKey')) ? one('aKey') : randomUUID()}
+              />
             </>
           ) : (
             <form action={dispatchBookingAction} id="dispatch-form">
@@ -572,7 +594,7 @@ function CarrierTripForms({
   const arrived = trip.milestones.some((item) => item.milestone === 'arrived_at_delivery');
   return (
     <>
-      {trip.next ? (
+      {trip.next && !trip.hold ? (
         <form action={recordMilestoneOnBehalfAction} id="on-behalf-form" className="form card">
           {hidden}
           <h3>{t.onBehalfTitle}</h3>
@@ -610,7 +632,7 @@ function CarrierTripForms({
             {t.recordOnBehalf}
           </button>
         </form>
-      ) : (
+      ) : trip.next ? null : (
         <p id="trip-complete">{t.complete}</p>
       )}
       {arrived ? null : (

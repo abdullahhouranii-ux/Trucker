@@ -3783,6 +3783,34 @@ async function main() {
         (await page.$('#on-behalf-form')) === null,
       `the shipper's trip shows: ${shipperTrip.slice(0, 300)}`,
     );
+    // A problem reported by the driver (slice 17b): the carrier sees its description, the
+    // shipper its type and state only; the form says to call the emergency number first.
+    await open('/en/driver', 390);
+    const emergencyShown = (await page.$(`#report-${bookingId} [data-emergency]`)) !== null;
+    await page.select(`#report-${bookingId}-type`, 'breakdown');
+    await page.type(`#report-${bookingId}-description`, 'Engine light 5521');
+    await submit(`[data-report="report-${bookingId}"]`);
+    const reportedShown = page.url().includes('aDone=reported');
+    await open(bookingPath('en', carrierOrg), 390);
+    const carrierCase = (await text('#trip-cases')) ?? '';
+    await open(bookingPath('en', verifyOrg), 390);
+    const shipperCase = (await text('#trip-cases')) ?? '';
+    check(
+      'dispatch',
+      emergencyShown &&
+        reportedShown &&
+        carrierCase.includes('Breakdown') &&
+        carrierCase.includes('Engine light 5521') &&
+        shipperCase.includes('Breakdown') &&
+        !shipperCase.includes('5521') &&
+        (
+          await owner.query(
+            "SELECT 1 FROM trucker.trip_case WHERE booking_id = $1 AND kind = 'exception'",
+            [bookingId],
+          )
+        ).rowCount === 1,
+      `the reported problem shows: carrier ${carrierCase.slice(0, 200)}; shipper ${shipperCase.slice(0, 200)}`,
+    );
     for (const locale of locales) {
       await open(bookingPath(locale, carrierOrg), 390);
       await inspect(locale, 'trip for carrier');

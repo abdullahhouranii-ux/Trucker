@@ -9,13 +9,14 @@ import {
   fleetProblems,
 } from '../../../components/fleet-view.tsx';
 import { ErrorSummary, Field } from '../../../components/form.tsx';
-import { TripFacts, utcMinute } from '../../../components/trip-view.tsx';
+import { ReportProblem, TripFacts, utcMinute } from '../../../components/trip-view.tsx';
 import { isLocale } from '../../../i18n/config.ts';
 import { getMessages } from '../../../i18n/messages.ts';
 import { api, type Country, type DriverAssignment, type DriverSide } from '../../../server/api.ts';
 import {
   acknowledgeAssignmentAction,
   driverEstimateAction,
+  driverReportProblemAction,
   driverMilestoneAction,
 } from '../../../server/assignment-actions.ts';
 import {
@@ -35,6 +36,7 @@ type Props = {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
 const RETRY_KEY = /^[A-Za-z0-9._-]{16,128}$/;
+const UUID_KEY = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export default async function DriverPage({ params, searchParams }: Props) {
   const { locale } = await params;
@@ -219,7 +221,7 @@ export default async function DriverPage({ params, searchParams }: Props) {
                       </dl>
                     ) : null}
                     <TripFacts t={m.trip} trip={item.trip} />
-                    {item.trip.next ? (
+                    {item.trip.next && !item.trip.hold ? (
                       <form className="form-inline" action={driverMilestoneAction}>
                         <input type="hidden" name="locale" value={locale} />
                         <input type="hidden" name="bookingId" value={item.bookingId} />
@@ -233,7 +235,7 @@ export default async function DriverPage({ params, searchParams }: Props) {
                           {m.trip.record}: {m.trip.milestones[item.trip.next]}
                         </button>
                       </form>
-                    ) : (
+                    ) : item.trip.next ? null : (
                       <p data-trip-complete="yes">{m.trip.complete}</p>
                     )}
                     {item.trip.milestones.some(
@@ -256,6 +258,18 @@ export default async function DriverPage({ params, searchParams }: Props) {
                         </button>
                       </form>
                     )}
+                    <ReportProblem
+                      t={m.trip}
+                      id={`report-${item.bookingId}`}
+                      action={driverReportProblemAction}
+                      hidden={
+                        <>
+                          <input type="hidden" name="locale" value={locale} />
+                          <input type="hidden" name="bookingId" value={item.bookingId} />
+                        </>
+                      }
+                      retryKey={UUID_KEY.test(one('aKey')) ? one('aKey') : randomUUID()}
+                    />
                   </div>
                 ) : (
                   <p className="field-hint">{a.driver.note}</p>

@@ -8,6 +8,7 @@ type Props = { searchParams: Promise<Record<string, string | string[] | undefine
 const PRIVILEGE: Record<string, string> = {
   staff_admin: 'Staff administrator',
   reviewer: 'Reviewer',
+  operations: 'Operations',
 };
 
 export default async function HomePage({ searchParams }: Props) {

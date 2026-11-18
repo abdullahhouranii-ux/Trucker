@@ -1,4 +1,4 @@
-export type Privilege = 'staff_admin' | 'reviewer';
+export type Privilege = 'staff_admin' | 'reviewer' | 'operations';
 
 export interface StaffAccount {
   id: string;

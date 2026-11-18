@@ -286,3 +286,63 @@ export async function driverEstimateAction(form: FormData): Promise<void> {
     body: { arrivalAt },
   });
 }
+
+// Slice 17b: a problem reported on a trip. The retry key makes a retried report one case.
+const EXCEPTION_TYPES = [
+  'delay',
+  'breakdown',
+  'accident',
+  'cargo_damage_or_shortage',
+  'refused_at_site',
+  'receiver_absent',
+  'document_problem',
+  'road_closed',
+  'safety_concern',
+  'no_show',
+  'other',
+];
+const problem = (form: FormData) => {
+  const type = text(form, 'type');
+  const description = text(form, 'description').trim();
+  const retryKey = text(form, 'retryKey');
+  return {
+    valid:
+      EXCEPTION_TYPES.includes(type) &&
+      description.length >= 1 &&
+      description.length <= 2000 &&
+      UUID.test(retryKey),
+    body: { type, description },
+    retryKey,
+  };
+};
+
+/** The carrier's or the shipper's administrator reports a problem on the trip. */
+export async function reportProblemAction(form: FormData): Promise<void> {
+  const { here, organisationId, bookingId } = bookingPage(form);
+  const { valid, body, retryKey } = problem(form);
+  await command(form, {
+    operation: 'report',
+    path:
+      organisationId && valid
+        ? `/organisations/${organisationId}/bookings/${bookingId}/exceptions`
+        : null,
+    here,
+    anchor: 'trip',
+    body,
+    retryKey,
+  });
+}
+
+/** The driver reports a problem on the trip. */
+export async function driverReportProblemAction(form: FormData): Promise<void> {
+  const bookingId = text(form, 'bookingId');
+  const { valid, body, retryKey } = problem(form);
+  await command(form, {
+    operation: 'report',
+    path: UUID.test(bookingId) && valid ? `/me/driver/assignments/${bookingId}/exceptions` : null,
+    here: `/${localeOf(form)}/driver`,
+    anchor: 'assignments',
+    body,
+    retryKey,
+  });
+}

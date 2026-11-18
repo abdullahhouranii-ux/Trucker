@@ -31,14 +31,15 @@ Each slice has a scope and a record with its evidence in this folder.
 | 26 | Trucker's fee before confirmation: bank transfer verified by two administrators, lapse at the deadline, refund records | PR #30 |
 | 27 | Online payment of the fee through a provider-neutral interface (development stand-in only), receipts; corrected after the independent review of 17 November 2026 (R2 to R5) | PR #31 |
 | 28 | Refunds of the fee (requested, approved, submitted, completed or failed; partial; never more than the payment) and reconciliation, by independent staff; no real provider, no money moves | PR #32 |
-| 17a | Dispatch (one step, refused with the first failing precondition, idempotent) and the trip's milestones by the driver or on the driver's behalf, the arrival estimate, and what each party sees; exceptions (17b) not built | PR #33 (planned number) |
+| 17a | Dispatch (one step, refused with the first failing precondition, idempotent) and the trip's milestones by the driver or on the driver's behalf, the arrival estimate, and what each party sees; exceptions (17b) not built | PR #33 |
+| 17b | Exceptions reported by the driver, carrier or shipper; the operations privilege, queue and cases; overrun and missing-arrival cases; dispatch blocks, trip holds, operations' milestones and withdrawing a mistaken one | PR #34 (planned number) |
 
 Pull requests #15 to #32 are stacked, open and green in CI; slice 17a's pull request is open. None is merged; each needs a dependency review and Abdullah's explicit authorisation.
 
 ## Next
 
 1. Phase five (dispatch, proof of delivery, settlement, closure), each as its own unmerged pull request, on development defaults, under the instruction of 17 November 2026 (11:46).
-2. Slice 17b (exceptions, the operations privilege, cases and holds) on DD-3, DD-4, DD-9 and DD-10 as development defaults; slice 17a is built: `DISPATCH_SLICE_17A.md`.
+2. Slice 18 (delivery outcome, proof of delivery, release of resources). Slice 17 is built: `DISPATCH_SLICE_17A.md`, `EXCEPTIONS_SLICE_17B.md`.
 
 ## Open decisions
 

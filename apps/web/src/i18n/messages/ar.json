@@ -1138,7 +1138,8 @@
       "resource_overrunning": "أحد الموارد ما زال في رحلة أخرى بعد نهايتها المخططة. هذا الحجز في خطر.",
       "acknowledgement_missing": "لم يُقرّ السائق بالإسناد.",
       "booking_cancelled": "هذا الحجز ملغى.",
-      "fee_not_paid": "لم تُدفع رسوم Trucker ولم يُتحقق منها بعد."
+      "fee_not_paid": "لم تُدفع رسوم Trucker ولم يُتحقق منها بعد.",
+      "operations_block": "أوقفت عمليات Trucker الإطلاق."
     },
     "roles": {
       "truck": "الشاحنة",
@@ -1199,7 +1200,9 @@
       "already_cancelled": "تم تأكيد الإلغاء وتحرير حجوزات الموارد.",
       "dispatched": "أُطلق الحجز. بدأت الرحلة.",
       "already_dispatched": "سبق إطلاق هذا الحجز.",
-      "stated": "سُجّل التقدير."
+      "stated": "سُجّل التقدير.",
+      "reported": "أُبلغت عمليات Trucker بالمشكلة.",
+      "already_reported": "سبق الإبلاغ عن هذه المشكلة."
     },
     "errors": {
       "unavailable": "تعذر التحميل. حاول مرة أخرى.",
@@ -1232,7 +1235,9 @@
       "retry_key_conflict": "استُخدم هذا النموذج لطلب آخر. أعد تحميل الصفحة.",
       "dispatch_unconfirmed": "لم يتأكد إطلاق الحجز. راجع ما يظهر أدناه قبل المحاولة مرة أخرى.",
       "milestone_unconfirmed": "لم يتأكد تسجيل المرحلة. راجع ما يظهر أدناه قبل المحاولة مرة أخرى.",
-      "estimate_unconfirmed": "لم يتأكد تسجيل التقدير. راجع ما يظهر أدناه قبل المحاولة مرة أخرى."
+      "estimate_unconfirmed": "لم يتأكد تسجيل التقدير. راجع ما يظهر أدناه قبل المحاولة مرة أخرى.",
+      "trip_on_hold": "أوقفت عمليات Trucker هذه الرحلة مؤقتاً. لم يُسجَّل شيء.",
+      "report_unconfirmed": "لم يتأكد الإبلاغ عن المشكلة. راجع ما يظهر أدناه قبل المحاولة مرة أخرى."
     },
     "driver": {
       "title": "إسناداتك",
@@ -1527,6 +1532,56 @@
       "too_early": "الوقت مبكر للإطلاق. يظهر أبكر وقت في قسم الرحلة.",
       "substitution_open": "هناك استبدال بانتظار الشاحن.",
       "capability_missing": "أحد الطرفين لا يحمل التحقق اللازم لهذا الآن."
-    }
+    },
+    "operationsReasons": {
+      "safety_review": "مراجعة السلامة",
+      "document_concern": "ملاحظة على مستند",
+      "suspected_fraud": "اشتباه احتيال",
+      "other": "سبب آخر"
+    },
+    "hold": "أوقفت عمليات Trucker هذه الرحلة مؤقتاً: {reason}. لا يمكن تسجيل أي مرحلة حتى تُستأنف.",
+    "heldSince": "متوقفة منذ",
+    "enteredByOperations": "أبلغت بها عمليات Trucker نيابةً عن {about}",
+    "withdrawnTitle": "مراحل مسحوبة",
+    "withdrawnLead": "سُجّلت خطأً وسحبتها عمليات Trucker. لم تعد تُحتسب.",
+    "withdrawnAt": "سُحبت",
+    "casesTitle": "المشكلات المُبلَّغ عنها",
+    "noCases": "لا توجد مشكلة مُبلَّغ عنها.",
+    "caseKinds": {
+      "overrun": "أحد الموارد ما زال في هذه الرحلة بعد نهايتها المخططة (رصده Trucker)",
+      "no_pickup_arrival": "لم يحدث الوصول إلى الاستلام حتى نهاية نافذة الاستلام (رصده Trucker)"
+    },
+    "exceptionTypes": {
+      "delay": "تأخير",
+      "breakdown": "عطل",
+      "accident": "حادث",
+      "cargo_damage_or_shortage": "تلف أو نقص في البضاعة",
+      "refused_at_site": "رفض أو منع في موقع",
+      "receiver_absent": "غياب المستلم",
+      "document_problem": "مشكلة في مستند",
+      "road_closed": "طريق مغلق",
+      "safety_concern": "مخاوف سلامة",
+      "no_show": "عدم الحضور",
+      "other": "أخرى"
+    },
+    "caseStates": {
+      "open": "مفتوحة",
+      "acknowledged": "قيد المعالجة لدى عمليات Trucker",
+      "resolved": "محلولة"
+    },
+    "reportedAs": {
+      "driver": "السائق",
+      "carrier": "الناقل",
+      "shipper": "الشاحن",
+      "system": "نظام Trucker"
+    },
+    "caseLine": "أبلغ عنها {as}",
+    "state": "الحالة",
+    "reportTitle": "الإبلاغ عن مشكلة",
+    "reportLead": "تراها عمليات Trucker فوراً وتعالجها. يرى الطرف الآخر أن مشكلة أُبلغ عنها ونوعها وحالتها، لا وصفك.",
+    "emergency": "في حالة الطوارئ، اتصل أولاً برقم الطوارئ في البلد. لا يرسل Trucker خدمات الطوارئ.",
+    "exceptionType": "ماذا حدث",
+    "description": "صف ما حدث",
+    "report": "الإبلاغ عن المشكلة"
   }
 }
