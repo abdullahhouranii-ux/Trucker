@@ -2,10 +2,10 @@
   "name": "trucker",
   "private": true,
   "description": "Trucker freight platform workspace. Foundation only: API and web shell, no business modules.",
-  "packageManager": "npm@10.9.9",
+  "packageManager": "npm@11.19.0",
   "engines": {
-    "node": ">=22.12.0 <23",
-    "npm": ">=10.9.0 <11"
+    "node": ">=24.11.0 <25",
+    "npm": ">=11.6.0 <12"
   },
   "workspaces": [
     "apps/*"
