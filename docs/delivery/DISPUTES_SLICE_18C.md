@@ -35,6 +35,7 @@ Changes made while splitting:
 - The lock-wait check in the revoked-administrator test read other sessions' query text, which works only when the test role is a superuser. It now uses the same check as the other lock tests (an ungranted lock in this database). It detects the same wait.
 - The browser journey also exercised slice 19 (financial completion). Those steps belong to slice 19 and were removed from this branch.
 - Codex's rewrite of `docs/specs/STAGE_2_PART_4_POD_DISPUTES.md` is not included: see the decisions below.
+- Defect fixed (22 November): the sweep of unrecorded files (from the 18b follow-up) counted only POD files, so it would have removed dispute evidence after its grace period. Migration 0034 now redefines `pod_storage_keys_in_use` to count evidence keys too, and the dispute test runs a sweep and reads the evidence back. With the evidence keys left out, that test fails.
 
 ## Decisions for Abdullah
 

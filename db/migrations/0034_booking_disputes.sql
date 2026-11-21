@@ -307,3 +307,35 @@ END
 $$;
 REVOKE ALL ON FUNCTION trucker.staff_dispute_queue(text, text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION trucker.staff_dispute_queue(text, text) TO trucker_app;
+
+-- Dispute evidence is kept in the same file store as proof of delivery, under the key recorded
+-- in its evidence event. The sweep of unrecorded files (0033) must count those keys too, or it
+-- would remove evidence once its grace period ends.
+CREATE OR REPLACE FUNCTION trucker.pod_storage_keys_in_use(p_keys jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql STABLE SECURITY DEFINER
+SET search_path = pg_catalog, trucker, pg_temp
+AS $function$
+#variable_conflict use_column
+DECLARE
+  v_keys text[];
+BEGIN
+  IF p_keys IS NULL OR jsonb_typeof(p_keys) <> 'array' THEN
+    RAISE EXCEPTION 'pod_storage_keys_in_use expects an array of keys' USING ERRCODE = '22023';
+  END IF;
+  IF jsonb_array_length(p_keys) > 500 THEN
+    RAISE EXCEPTION 'pod_storage_keys_in_use takes at most 500 keys' USING ERRCODE = '22023';
+  END IF;
+  SELECT coalesce(array_agg(k), '{}') INTO v_keys
+  FROM jsonb_array_elements_text(p_keys) k
+  WHERE k ~ '^[0-9a-f-]{36}$';
+  RETURN coalesce((SELECT jsonb_agg(u.k ORDER BY u.k) FROM (
+             SELECT i.storage_key AS k FROM trucker.pod_item i WHERE i.storage_key = ANY (v_keys)
+             UNION
+             SELECT e.command->>'storageKey' FROM trucker.booking_dispute_event e
+             WHERE e.kind = 'evidence' AND e.command->>'storageKey' = ANY (v_keys)) u),
+           '[]'::jsonb);
+END
+$function$;
+REVOKE ALL ON FUNCTION trucker.pod_storage_keys_in_use(jsonb) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION trucker.pod_storage_keys_in_use(jsonb) TO trucker_app;
