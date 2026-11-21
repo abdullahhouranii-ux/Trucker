@@ -185,7 +185,7 @@ export default async function FleetPage({ searchParams }: Props) {
               {list.data.fleet.claims.length === 0 ? (
                 <p id="claims-empty">No claim is waiting.</p>
               ) : (
-                <ul className="organisation-list" id="claims">
+                <ul className="organisation-list record-collection" id="claims">
                   {list.data.fleet.claims.map((claim) => (
                     <li key={claim.id} className="card account" data-claim={claim.id}>
                       <h3>
@@ -234,7 +234,7 @@ export default async function FleetPage({ searchParams }: Props) {
               {list.data.fleet.documents.length === 0 ? (
                 <p id="documents-empty">No document is waiting.</p>
               ) : (
-                <ul className="organisation-list" id="documents">
+                <ul className="organisation-list record-collection" id="documents">
                   {list.data.fleet.documents.map((document) => (
                     <li
                       key={document.id}

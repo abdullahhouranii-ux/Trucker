@@ -75,65 +75,126 @@ function Hidden({
 function Costs({ c, costs, side }: { c: C; costs: CargoCost[]; side: CargoSide }) {
   if (costs.length === 0) return <p className="field-hint">{c.costsNone}</p>;
   return (
-    <table className="table">
-      <caption className="visually-hidden">{c.costsTitle}</caption>
-      <thead>
-        <tr>
-          <th scope="col">{c.kind}</th>
-          <th scope="col">{c.quantity}</th>
-          <th scope="col">{c.unitAmount}</th>
-          <th scope="col">{c.total}</th>
-          <th scope="col">{c.interimPayer}</th>
-          <th scope="col">{c.liability}</th>
-        </tr>
-      </thead>
-      <tbody>
-        {costs.map((cost) => (
-          <tr key={cost.id} data-cost={cost.kind}>
-            <td>
-              {c.kinds[cost.kind]}
-              {cost.description ? (
-                <>
-                  <br />
-                  <bdi className="field-hint">{cost.description}</bdi>
-                </>
-              ) : null}
-              {cost.held && side !== 'driver' ? (
-                <>
-                  {' '}
-                  <strong data-held="true">({c.held})</strong>
-                </>
-              ) : null}
-            </td>
-            <td>
-              <bdi>{cost.quantity}</bdi> {c.units[cost.unit]}
-            </td>
-            <td>
-              <bdi>
-                {cost.unitAmount} {cost.currency}
-              </bdi>
-            </td>
-            <td>
-              <bdi>
-                {cost.amount} {cost.currency}
-              </bdi>
-            </td>
-            <td>{c.interimPayers[cost.interimPayer]}</td>
-            <td>
-              {cost.finalLiability ? (
-                <bdi>
-                  {cost.finalLiability} ({cost.finalReference})
-                </bdi>
-              ) : cost.provisionalLiability === 'per_contract' ? (
-                `${c.provisional.per_contract}. ${c.liabilityPending}`
-              ) : (
-                c.liabilityPending
-              )}
-            </td>
+    <>
+      <table className="table cost-table">
+        <caption className="visually-hidden">{c.costsTitle}</caption>
+        <thead>
+          <tr>
+            <th scope="col">{c.kind}</th>
+            <th scope="col">{c.quantity}</th>
+            <th scope="col">{c.unitAmount}</th>
+            <th scope="col">{c.total}</th>
+            <th scope="col">{c.interimPayer}</th>
+            <th scope="col">{c.liability}</th>
           </tr>
+        </thead>
+        <tbody>
+          {costs.map((cost) => (
+            <tr key={cost.id} data-cost={cost.kind}>
+              <th scope="row">
+                {c.kinds[cost.kind]}
+                {cost.description ? (
+                  <>
+                    <br />
+                    <bdi className="field-hint">{cost.description}</bdi>
+                  </>
+                ) : null}
+                {cost.held && side !== 'driver' ? (
+                  <>
+                    {' '}
+                    <strong data-held="true">({c.held})</strong>
+                  </>
+                ) : null}
+              </th>
+              <td className="cost-number">
+                <bdi>{cost.quantity}</bdi> {c.units[cost.unit]}
+              </td>
+              <td className="cost-number">
+                <bdi>
+                  {cost.unitAmount} {cost.currency}
+                </bdi>
+              </td>
+              <td className="cost-number cost-total">
+                <bdi>
+                  {cost.amount} {cost.currency}
+                </bdi>
+              </td>
+              <td>{c.interimPayers[cost.interimPayer]}</td>
+              <td>
+                {cost.finalLiability ? (
+                  <bdi>
+                    {cost.finalLiability} ({cost.finalReference})
+                  </bdi>
+                ) : cost.provisionalLiability === 'per_contract' ? (
+                  `${c.provisional.per_contract}. ${c.liabilityPending}`
+                ) : (
+                  c.liabilityPending
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div className="cost-cards">
+        {costs.map((cost) => (
+          <dl className="card facts" key={cost.id}>
+            <div>
+              <dt>{c.kind}</dt>
+              <dd>
+                {c.kinds[cost.kind]}
+                {cost.description ? (
+                  <>
+                    {' '}
+                    · <bdi>{cost.description}</bdi>
+                  </>
+                ) : null}
+                {cost.held && side !== 'driver' ? <strong> ({c.held})</strong> : null}
+              </dd>
+            </div>
+            <div>
+              <dt>{c.quantity}</dt>
+              <dd>
+                <bdi>{cost.quantity}</bdi> {c.units[cost.unit]}
+              </dd>
+            </div>
+            <div>
+              <dt>{c.unitAmount}</dt>
+              <dd>
+                <bdi>
+                  {cost.unitAmount} {cost.currency}
+                </bdi>
+              </dd>
+            </div>
+            <div>
+              <dt>{c.total}</dt>
+              <dd className="cost-number cost-total">
+                <bdi>
+                  {cost.amount} {cost.currency}
+                </bdi>
+              </dd>
+            </div>
+            <div>
+              <dt>{c.interimPayer}</dt>
+              <dd>{c.interimPayers[cost.interimPayer]}</dd>
+            </div>
+            <div>
+              <dt>{c.liability}</dt>
+              <dd>
+                {cost.finalLiability ? (
+                  <bdi>
+                    {cost.finalLiability} ({cost.finalReference})
+                  </bdi>
+                ) : cost.provisionalLiability === 'per_contract' ? (
+                  `${c.provisional.per_contract}. ${c.liabilityPending}`
+                ) : (
+                  c.liabilityPending
+                )}
+              </dd>
+            </div>
+          </dl>
         ))}
-      </tbody>
-    </table>
+      </div>
+    </>
   );
 }
 

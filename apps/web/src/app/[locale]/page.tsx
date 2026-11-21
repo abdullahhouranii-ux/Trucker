@@ -51,7 +51,12 @@ export default async function HomePage({ params, searchParams }: HomeProps) {
     <div className="page">
       <section className="section" id="published-shipments" aria-labelledby="published-title">
         <h1 id="published-title">{m.publicShipments.title}</h1>
-        <p>{m.publicShipments.fleetRule}</p>
+        <div className="operations-module-heading">
+          <p>{m.publicShipments.fleetRule}</p>
+          <a className="button button-primary" href={'/' + locale + '/operations'}>
+            {m.operationsWorkspace.openDashboard}
+          </a>
+        </div>
         {!board.ok ? (
           <p role="status">{m.publicShipments.unavailable}</p>
         ) : board.data.items.length === 0 ? (

@@ -20,6 +20,7 @@ const cookieOptions = {
 export interface SignInProgress {
   phone: string;
   challengeId?: string;
+  destination?: 'operations';
   developmentCode?: string;
 }
 

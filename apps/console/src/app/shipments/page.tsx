@@ -68,7 +68,7 @@ export default async function ShipmentsPage() {
             {list.data.shipments.length === 0 ? (
               <p id="shipments-empty">Nothing has been published.</p>
             ) : null}
-            <ul className="organisation-list" id="shipments">
+            <ul className="organisation-list record-collection" id="shipments">
               {list.data.shipments.map((entry) => (
                 <li
                   key={entry.id}

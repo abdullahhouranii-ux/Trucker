@@ -1,5 +1,6 @@
 import { notFound, redirect } from 'next/navigation';
 import { ErrorSummary } from '../../../../../components/form.tsx';
+import { RecordOptions } from '../../../../../components/record-options.tsx';
 import { Ltr } from '../../../../../components/ltr.tsx';
 import { shipmentProblems } from '../../../../../components/shipment-form.tsx';
 import { ShipmentUnavailable } from '../../../../../components/shipment-unavailable.tsx';
@@ -104,19 +105,13 @@ export default async function ShipmentsPage({ params, searchParams }: Props) {
           {t.fixtureNotice}
         </p>
       ) : null}
-      <nav className="form-inline" aria-label={t.listTitle}>
-        <a
-          className="button"
-          id="filter-open"
-          href={here}
-          aria-current={status === 'draft' ? 'page' : undefined}
-        >
+      <nav className="section-tabs" aria-label={t.listTitle}>
+        <a id="filter-open" href={here} aria-current={status === 'draft' ? 'page' : undefined}>
           {t.filterOpen}
         </a>
         {(['published', 'expired', 'withdrawn', 'booking_cancelled'] as const).map((name) => (
           <a
             key={name}
-            className="button"
             id={`filter-${name}`}
             href={`${here}?status=${name}`}
             aria-current={status === name ? 'page' : undefined}
@@ -131,7 +126,6 @@ export default async function ShipmentsPage({ params, searchParams }: Props) {
           </a>
         ))}
         <a
-          className="button"
           id="filter-discarded"
           href={`${here}?status=discarded`}
           aria-current={status === 'discarded' ? 'page' : undefined}
@@ -145,7 +139,7 @@ export default async function ShipmentsPage({ params, searchParams }: Props) {
           {status === 'discarded' ? t.noneDiscarded : status === 'draft' ? t.none : m.pub.noneHere}
         </p>
       ) : null}
-      <ul className="organisation-list" id="shipment-list">
+      <ul className="organisation-list shipment-records" id="shipment-list">
         {shipments.map((shipment) => {
           const title = shipment.shipperReference ?? shipment.cargoDescription;
           return (
@@ -188,6 +182,30 @@ export default async function ShipmentsPage({ params, searchParams }: Props) {
                   <bdi>{title ?? t.untitled}</bdi>
                 </span>
               </a>
+              <RecordOptions label={m.publicShipments.options}>
+                <li>
+                  <a className="button" href={here + '/' + shipment.id}>
+                    {t.open}
+                  </a>
+                </li>
+                {shipment.status === 'draft' ||
+                shipment.status === 'published' ||
+                shipment.status === 'suspended' ? (
+                  <li>
+                    <a
+                      className="button"
+                      href={
+                        here +
+                        '/' +
+                        shipment.id +
+                        (shipment.status === 'draft' ? '#edit-title' : '/change')
+                      }
+                    >
+                      {shipment.status === 'draft' ? t.editTitle : m.pub.changeLink}
+                    </a>
+                  </li>
+                ) : null}
+              </RecordOptions>
             </li>
           );
         })}

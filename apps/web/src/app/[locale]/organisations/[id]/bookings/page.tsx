@@ -1,5 +1,6 @@
 import { notFound, redirect } from 'next/navigation';
 import { BookingCard } from '../../../../../components/booking-view.tsx';
+import { RecordOptions } from '../../../../../components/record-options.tsx';
 import { ErrorSummary } from '../../../../../components/form.tsx';
 import { isLocale } from '../../../../../i18n/config.ts';
 import { getMessages } from '../../../../../i18n/messages.ts';
@@ -38,7 +39,7 @@ export default async function BookingsPage({ params }: Props) {
       ) : reply.data.bookings.length === 0 ? (
         <p id="no-bookings">{t.noBookings}</p>
       ) : (
-        <ol className="organisation-list" id="booking-list">
+        <ol className="organisation-list record-collection" id="booking-list">
           {reply.data.bookings.map((booking) => (
             <li key={booking.id}>
               <BookingCard
@@ -48,6 +49,16 @@ export default async function BookingsPage({ params }: Props) {
                 booking={booking}
                 href={`/${locale}/organisations/${id}/bookings/${booking.id}`}
               />
+              <RecordOptions label={m.publicShipments.options}>
+                <li>
+                  <a
+                    className="button"
+                    href={'/' + locale + '/organisations/' + id + '/bookings/' + booking.id}
+                  >
+                    {m.asg.open}
+                  </a>
+                </li>
+              </RecordOptions>
             </li>
           ))}
         </ol>

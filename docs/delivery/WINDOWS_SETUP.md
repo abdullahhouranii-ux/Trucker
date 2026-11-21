@@ -88,3 +88,27 @@ not read `.env` itself, but those commands do.
 | Killed-runner test | One test stops a child process abruptly. It passes on the Windows runner |
 | Port 5432 in use | A PostgreSQL service already installed on Windows conflicts with the Docker database. Use one option, not both |
 | Antivirus or indexing | Can slow `npm ci`; no workaround is needed for correctness |
+
+## Run Trucker in the background with Docker Desktop
+
+Keep the existing PostgreSQL running and use its current loopback connection in the root
+`.env`. Start Docker Desktop in Linux containers mode and enable **Resources → Network →
+Enable host networking**. This requires Docker Desktop 4.34 or later and allows the
+containers to reach that existing database. The three app servers bind to loopback. Stop
+any existing local Trucker API, web or console process on ports 3000, 3100 and 3200 before
+starting its Docker replacement. Leave PostgreSQL running.
+
+From the repository root:
+
+```powershell
+docker compose -f tools/dev/docker-apps.yml up -d --build --wait
+docker compose -f tools/dev/docker-apps.yml ps
+```
+
+Open http://localhost:3100 for Trucker and http://localhost:3200 for the staff console.
+The API readiness endpoint is http://localhost:3000/health/ready. Once the services are
+healthy, close PowerShell. Docker Desktop must remain running. To restart after editing
+code, rerun the same command. To stop only these app containers, run
+`docker compose -f tools/dev/docker-apps.yml down`. This Compose project uses the existing
+database and does not create or stop PostgreSQL, or run migrations. It binds the standard
+development proof-of-delivery directory at `apps/api/.data/pod-files`.

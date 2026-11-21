@@ -1,6 +1,16 @@
 import { notFound, redirect } from 'next/navigation';
 import { ErrorSummary } from '../../../../../../web/src/components/form.tsx';
 import { api, type TripCargo, type TripPod } from '../../../../../../web/src/server/api.ts';
+import {
+  AssignClosure,
+  type ClosureQueueItem,
+} from '../../../../../../web/src/components/booking-completion.tsx';
+import { closureBlockerLabels } from '../../../../../../web/src/components/booking-completion-labels.ts';
+import { sendCompletion } from '../../../../../../web/src/server/booking-completion.ts';
+import {
+  DisputePanel,
+  type BookingDisputes,
+} from '../../../../../../web/src/components/dispute-panel.tsx';
 import { CargoOpsPanel } from '../../../../components/cargo-ops.tsx';
 import { PodOpsPanel } from '../../../../components/pod-ops.tsx';
 import { ConsoleHeader, Unavailable } from '../../../../components/console-header.tsx';
@@ -21,16 +31,6 @@ import {
   operationsReleaseAction,
   withdrawMilestoneAction,
 } from '../../../../server/operations-actions.ts';
-import {
-  AssignClosure,
-  type ClosureQueueItem,
-} from '../../../../../../web/src/components/booking-completion.tsx';
-import { closureBlockerLabels } from '../../../../../../web/src/components/booking-completion-labels.ts';
-import { sendCompletion } from '../../../../../../web/src/server/booking-completion.ts';
-import {
-  DisputePanel,
-  type BookingDisputes,
-} from '../../../../../../web/src/components/dispute-panel.tsx';
 import { requireStaff, staffToken } from '../../../../server/session.ts';
 
 // One booking for Trucker operations (slice 17b): block its dispatch or lift the block; once
@@ -216,15 +216,6 @@ export default async function OperationsBookingPage({ params, searchParams }: Pr
   const hidden = <input type="hidden" name="bookingId" value={id} />;
   const now = new Date().toISOString().slice(0, 16);
   const b = reply.ok ? reply.data.booking : null;
-  const closurePath = `/staff/operations/bookings/${id}/closure`;
-  const closureReply = b?.trip
-    ? await api<ClosureQueueItem[]>('GET', closurePath, { token: found.token })
-    : null;
-  const closure = closureReply?.ok ? closureReply.data[0] : null;
-  async function assignClosure(key: string, body: Record<string, unknown>) {
-    'use server';
-    return sendCompletion(closurePath, await staffToken(), key, body);
-  }
   const disputePath = `/staff/operations/bookings/${id}/disputes`;
   const disputeView = b
     ? await api<BookingDisputes>('GET', disputePath, { token: found.token })
@@ -238,6 +229,15 @@ export default async function OperationsBookingPage({ params, searchParams }: Pr
     if (result.status === 0 || result.status >= 500 || result.code === 'unavailable')
       return 'unknown';
     return result.status === 409 ? 'conflict' : 'refused';
+  }
+  const closurePath = `/staff/operations/bookings/${id}/closure`;
+  const closureReply = b?.trip
+    ? await api<ClosureQueueItem[]>('GET', closurePath, { token: found.token })
+    : null;
+  const closure = closureReply?.ok ? closureReply.data[0] : null;
+  async function assignClosure(key: string, body: Record<string, unknown>) {
+    'use server';
+    return sendCompletion(closurePath, await staffToken(), key, body);
   }
   const blockInForce = b?.blocks.find((item) => item.liftedAt === null) ?? null;
   return (
@@ -500,6 +500,7 @@ export default async function OperationsBookingPage({ params, searchParams }: Pr
                   }
                 />
               ) : null}
+
               {closure ? (
                 <section
                   id="operational-closure"

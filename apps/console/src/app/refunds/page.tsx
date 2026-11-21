@@ -454,7 +454,7 @@ export default async function RefundsPage({ searchParams }: Props) {
                 {reply.data.refunds.owed.length === 0 ? (
                   <p id="owed-empty">Nothing is left to request.</p>
                 ) : (
-                  <ol className="organisation-list" id="owed-list">
+                  <ol className="organisation-list record-collection" id="owed-list">
                     {reply.data.refunds.owed.map((owed) => (
                       <li className="card" key={owed.id} data-owed={owed.id}>
                         <ul className="evidence">
@@ -550,7 +550,7 @@ export default async function RefundsPage({ searchParams }: Props) {
                 {reply.data.refunds.open.length === 0 ? (
                   <p id="open-empty">No refund is in progress.</p>
                 ) : (
-                  <ol className="organisation-list" id="open-list">
+                  <ol className="organisation-list record-collection" id="open-list">
                     {reply.data.refunds.open.map((item) => (
                       <li className="card" key={item.id} data-refund-request={item.id}>
                         <span className="visually-hidden" id={`request-${item.id}-ref`}>
@@ -708,7 +708,7 @@ export default async function RefundsPage({ searchParams }: Props) {
                 reply.data.refunds.toReconcile.refunds.length === 0 ? (
                   <p id="reconcile-empty">Nothing is waiting.</p>
                 ) : (
-                  <ol className="organisation-list" id="reconcile-list">
+                  <ol className="organisation-list record-collection" id="reconcile-list">
                     {reply.data.refunds.toReconcile.payments.map((payment) => {
                       const involved = [payment.recordedBy?.id, payment.decidedBy?.id].includes(me);
                       return (
@@ -780,7 +780,7 @@ export default async function RefundsPage({ searchParams }: Props) {
                 {reply.data.refunds.discrepancies.length === 0 ? (
                   <p id="discrepancies-empty">No discrepancy is open.</p>
                 ) : (
-                  <ol className="organisation-list" id="discrepancy-list">
+                  <ol className="organisation-list record-collection" id="discrepancy-list">
                     {reply.data.refunds.discrepancies.map((entry) => (
                       <li className="card" key={entry.id} data-discrepancy={entry.id}>
                         <ul className="evidence">
@@ -825,7 +825,7 @@ export default async function RefundsPage({ searchParams }: Props) {
                 {reply.data.refunds.ended.length === 0 ? (
                   <p id="ended-empty">No refund has ended yet.</p>
                 ) : (
-                  <ol className="organisation-list" id="ended-list">
+                  <ol className="organisation-list record-collection" id="ended-list">
                     {reply.data.refunds.ended.map((item) => (
                       <li className="card" key={item.id} data-refund-request={item.id}>
                         <RequestFacts request={item} />

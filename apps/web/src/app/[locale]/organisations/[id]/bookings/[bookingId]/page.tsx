@@ -1,5 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { notFound, redirect } from 'next/navigation';
+import {
+  BookingCompletionPanel,
+  type ClosureStatus,
+  type FinancialCompletion,
+} from '../../../../../../components/booking-completion.tsx';
+import { sendCompletion } from '../../../../../../server/booking-completion.ts';
+import { DisputePanel, type BookingDisputes } from '../../../../../../components/dispute-panel.tsx';
 import { CargoPanel } from '../../../../../../components/cargo-panel.tsx';
 import { PodPanel } from '../../../../../../components/pod-panel.tsx';
 import {
@@ -7,12 +14,6 @@ import {
   podReviewAction,
   podSendAction,
 } from '../../../../../../server/pod-actions.ts';
-import {
-  BookingCompletionPanel,
-  type ClosureStatus,
-  type FinancialCompletion,
-} from '../../../../../../components/booking-completion.tsx';
-import { DisputePanel, type BookingDisputes } from '../../../../../../components/dispute-panel.tsx';
 import { DraftKeeper } from '../../../../../../components/draft-keeper.tsx';
 import {
   BookingCard,
@@ -53,7 +54,6 @@ import {
   stateEstimateAction,
   waitForCarrierAction,
 } from '../../../../../../server/assignment-actions.ts';
-import { sendCompletion } from '../../../../../../server/booking-completion.ts';
 import { requirePerson } from '../../../../../../server/session.ts';
 
 // One booking, for its shipper or its carrier. The carrier assigns its resources here; the
@@ -138,10 +138,6 @@ export default async function BookingPage({ params, searchParams }: Props) {
       </div>
     );
   const { booking, candidates } = reply.data;
-  const role = booking.role === 'carrier' ? 'carrier' : 'shipper';
-  const confirmed = booking.status === 'confirmed';
-  const cancelled = booking.status === 'cancelled';
-  const trip = booking.trip ?? null;
   const disputeLocale: Locale = locale;
   const bookingPath = `/organisations/${id}/bookings/${bookingId}`;
   const financialPath = bookingPath + '/financial-completion';
@@ -165,6 +161,10 @@ export default async function BookingPage({ params, searchParams }: Props) {
       return 'unknown';
     return result.status === 409 ? 'conflict' : 'refused';
   }
+  const role = booking.role === 'carrier' ? 'carrier' : 'shipper';
+  const confirmed = booking.status === 'confirmed';
+  const cancelled = booking.status === 'cancelled';
+  const trip = booking.trip ?? null;
   const ct = m.cancel;
   const tt = m.trip;
 

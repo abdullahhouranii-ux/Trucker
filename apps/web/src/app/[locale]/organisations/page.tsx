@@ -1,3 +1,4 @@
+import { RecordOptions } from '../../../components/record-options.tsx';
 import { notFound, redirect } from 'next/navigation';
 import { DraftKeeper } from '../../../components/draft-keeper.tsx';
 import { ErrorSummary } from '../../../components/form.tsx';
@@ -63,7 +64,7 @@ export default async function OrganisationsPage({ params, searchParams }: Props)
       <ErrorSummary title={m.auth.errors.summary} problems={problems} />
       <p>{t.listLead}</p>
       {organisations.length === 0 ? <p id="no-organisations">{t.none}</p> : null}
-      <ul className="organisation-list">
+      <ul className="organisation-list record-collection">
         {organisations.map((organisation) => (
           <li key={organisation.id} className="card organisation">
             <h2>
@@ -85,6 +86,21 @@ export default async function OrganisationsPage({ params, searchParams }: Props)
                 <bdi>{organisation.legalName}</bdi>
               </span>
             </a>
+            <RecordOptions label={m.operationsWorkspace.actions + ' ' + organisation.legalName}>
+              <li>
+                <a
+                  className="button"
+                  href={'/' + locale + '/organisations/' + organisation.id + '/operations'}
+                >
+                  {m.operationsWorkspace.openDashboard}
+                </a>
+              </li>
+              <li>
+                <a className="button" href={'/' + locale + '/organisations/' + organisation.id}>
+                  {t.open}
+                </a>
+              </li>
+            </RecordOptions>
           </li>
         ))}
       </ul>

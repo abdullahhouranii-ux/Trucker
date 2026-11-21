@@ -64,7 +64,7 @@ export default async function NewShipmentPage({ params, searchParams }: Props) {
   const formId = `shipment-new-form-${id}`;
 
   return (
-    <div className="page page-narrow">
+    <div className="page page-narrow shipment-editor">
       <div className="form-inline">
         <a className="button" href={list}>
           {t.backToList}
@@ -78,7 +78,12 @@ export default async function NewShipmentPage({ params, searchParams }: Props) {
           {t.fixtureNotice}
         </p>
       ) : null}
-      <form className="form card" id={formId} action={createShipmentAction} noValidate>
+      <form
+        className="form card shipment-editor-form"
+        id={formId}
+        action={createShipmentAction}
+        noValidate
+      >
         <input type="hidden" name="locale" value={locale} />
         <input type="hidden" name="organisationId" value={id} />
         <input type="hidden" name="retryKey" value={retryKey} />

@@ -1,3 +1,4 @@
+import { RecordOptions } from '../../../../../../../components/record-options.tsx';
 import { randomUUID } from 'node:crypto';
 import { notFound, redirect } from 'next/navigation';
 import { AcceptanceFacts, BookingCard } from '../../../../../../../components/booking-view.tsx';
@@ -213,7 +214,7 @@ export default async function ShipmentQuotationsPage({ params, searchParams }: P
         <p className="field-hint" id="comparison-note">
           {q.comparisonNote}
         </p>
-        <ol className="organisation-list" id="quotation-list">
+        <ol className="organisation-list record-collection" id="quotation-list">
           {sorted.map((quotation) => {
             const current = quotation.versions[0]!;
             return (
@@ -287,14 +288,20 @@ export default async function ShipmentQuotationsPage({ params, searchParams }: P
                   </>
                 ) : null}
                 {quotation.status === 'submitted' ? (
-                  <form className="form-inline" action={rejectQuotationAction}>
-                    {hidden('reject')}
-                    <input type="hidden" name="quotationId" value={quotation.id} />
-                    <input type="hidden" name="version" value={quotation.currentVersion} />
-                    <button className="button" type="submit" data-reject={quotation.id}>
-                      {q.reject}
-                    </button>
-                  </form>
+                  <RecordOptions
+                    label={m.operationsWorkspace.actions + ' ' + quotation.id.slice(0, 8)}
+                  >
+                    <li>
+                      <form className="form-inline" action={rejectQuotationAction}>
+                        {hidden('reject')}
+                        <input type="hidden" name="quotationId" value={quotation.id} />
+                        <input type="hidden" name="version" value={quotation.currentVersion} />
+                        <button className="button" type="submit" data-reject={quotation.id}>
+                          {q.reject}
+                        </button>
+                      </form>
+                    </li>
+                  </RecordOptions>
                 ) : null}
               </li>
             );

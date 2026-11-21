@@ -1,3 +1,4 @@
+import { RecordPhotos } from '../../../../../../../components/record-photos.tsx';
 import { randomUUID } from 'node:crypto';
 import { notFound, redirect } from 'next/navigation';
 import { DraftKeeper } from '../../../../../../../components/draft-keeper.tsx';
@@ -16,7 +17,6 @@ import {
   submitVehicleDocumentAction,
 } from '../../../../../../../server/fleet-actions.ts';
 import { requirePerson } from '../../../../../../../server/session.ts';
-import { RecordPhotos } from '../../../../../../../components/record-photos.tsx';
 
 // One vehicle of the carrier: its ownership claim, its documents and whether it is eligible now.
 

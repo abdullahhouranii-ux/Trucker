@@ -214,6 +214,10 @@ function QuotationSection({
         <p className="notice" role="note" id="quotation-unavailable">
           {q.errors.unavailable}
         </p>
+      ) : !context.fleetMatches && !open ? (
+        <p className="notice" role="note">
+          {q.errors.fleet_mismatch}
+        </p>
       ) : !terms ? (
         <p className="notice" role="note" id="terms-missing">
           {q.termsMissing}

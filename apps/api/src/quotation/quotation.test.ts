@@ -1423,6 +1423,60 @@ test(
           [bookingId, quotation.id, '1250.50', 'awaiting_resources'],
         );
         assert.equal((await mine(carrier.person, carrier.org))[0]?.status, 'accepted');
+        const operations = '/ar/organisations/' + carrier.org + '/operations';
+        await page.setViewport({ width: 1280, height: 900 });
+        const guestEntry = await fetch(web + '/ar/operations', { redirect: 'manual' });
+        assert.equal(guestEntry.status, 307);
+        assert.equal(guestEntry.headers.get('location'), '/ar/sign-in?destination=operations');
+        await page.goto(web + '/ar', { waitUntil: 'networkidle0' });
+        await Promise.all([
+          page.waitForNavigation(),
+          page.click('#published-shipments a[href="/ar/operations"]'),
+        ]);
+        assert.equal(new URL(page.url()).pathname, operations);
+        const bookingTable = '#operations-dispatch .operations-table';
+        assert.equal(await page.$eval('html', (element) => element.getAttribute('dir')), 'rtl');
+        assert.equal(
+          await page.$eval(
+            bookingTable,
+            (element) => element.ownerDocument.defaultView?.getComputedStyle(element).display,
+          ),
+          'table',
+        );
+        const menu = bookingTable + ' tbody tr:first-child summary';
+        await page.click(menu);
+        assert.equal(
+          await page.$eval(menu, (element) => element.parentElement?.hasAttribute('open')),
+          true,
+        );
+        assert.ok(
+          await page.$(
+            bookingTable +
+              ' a[href="/ar/organisations/' +
+              carrier.org +
+              '/bookings/' +
+              bookingId +
+              '"]',
+          ),
+        );
+        await page.setViewport({ width: 390, height: 900 });
+        assert.equal(
+          await page.$eval(
+            bookingTable + ' tbody tr',
+            (element) => element.ownerDocument.defaultView?.getComputedStyle(element).display,
+          ),
+          'grid',
+        );
+        assert.equal(
+          await page.$eval('html', (element) => element.scrollWidth <= element.clientWidth),
+          true,
+        );
+        const bookingLink = `a[href="/ar/organisations/${shipper.org}/bookings/${bookingId}"]`;
+        await Promise.all([shipperPage.waitForNavigation(), shipperPage.click(bookingLink)]);
+        assert.equal(
+          new URL(shipperPage.url()).pathname,
+          `/ar/organisations/${shipper.org}/bookings/${bookingId}`,
+        );
       } finally {
         await browser.close();
       }

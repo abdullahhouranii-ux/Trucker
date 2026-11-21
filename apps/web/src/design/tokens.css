@@ -1,11 +1,11 @@
-/* Generated from tokens.json (version 0.3.0, provisional). Do not edit by hand. */
+/* Generated from tokens.json (version 0.4.0, provisional). Do not edit by hand. */
 :root {
   --c-blue: #0b4ea2;
   --c-green: #0b6b4a;
   --c-asphalt: #1f2328;
   --c-yellow: #f6c700;
   --c-red: #b3261e;
-  --c-ground: #edeff1;
+  --c-ground: #f3f5f8;
   --c-surface: #ffffff;
   --c-text: #1f2328;
   --c-muted: #4a525c;
@@ -15,8 +15,8 @@
   --c-green-tint: #dff0e7;
   --c-yellow-tint: #fff3b8;
   --c-red-tint: #fbe4e2;
-  --f-latin: 'Barlow', system-ui, sans-serif;
-  --f-arabic: 'Noto Sans Arabic', 'Barlow', system-ui, sans-serif;
+  --f-latin: var(--font-barlow), 'Barlow', system-ui, sans-serif;
+  --f-arabic: var(--font-arabic), 'Noto Sans Arabic', var(--font-barlow), system-ui, sans-serif;
   --lh-latin: 1.4;
   --lh-latin-tight: 1.15;
   --lh-arabic: 1.7;
