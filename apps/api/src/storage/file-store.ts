@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 /**
@@ -14,6 +14,13 @@ export interface FileStore {
   get(key: string): Promise<Buffer | null>;
   /** Removes what a key holds; nothing happens when it holds nothing. */
   remove(key: string): Promise<void>;
+  /** Every key kept, with when its bytes were stored. */
+  list(): Promise<StoredKey[]>;
+}
+
+export interface StoredKey {
+  readonly key: string;
+  readonly storedAt: Date;
 }
 
 const KEY = /^[0-9a-f-]{36}$/;
@@ -45,5 +52,26 @@ export class LocalFileStore implements FileStore {
 
   async remove(key: string): Promise<void> {
     await rm(this.where(key), { force: true });
+  }
+
+  async list(): Promise<StoredKey[]> {
+    let names: string[];
+    try {
+      names = await readdir(this.directory);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+      throw error;
+    }
+    const kept: StoredKey[] = [];
+    for (const name of names) {
+      if (!KEY.test(name)) continue;
+      try {
+        kept.push({ key: name, storedAt: (await stat(this.where(name))).mtime });
+      } catch (error) {
+        // Removed while listing: nothing to report.
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      }
+    }
+    return kept;
   }
 }

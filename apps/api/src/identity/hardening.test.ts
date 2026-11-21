@@ -265,6 +265,7 @@ const CALLABLE = [
   'pod_file(p_booking uuid, p_item uuid)',
   'pod_receive(p_booking uuid, p_item uuid, p_receipt jsonb)',
   'pod_review_record(p_booking uuid, p_pod uuid, p_expected_version integer, p_decision text, p_note text)',
+  'pod_storage_keys_in_use(p_keys jsonb)',
   'propose_commission_contract(p_code text, p_content jsonb)',
   'publish_shipment(p_shipment uuid, p_expected_version integer, p_key text, p_details jsonb, p_allow_fixtures boolean)',
   'quotation_context(p_shipment uuid, p_allow_fixtures boolean)',
