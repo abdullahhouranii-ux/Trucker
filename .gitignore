@@ -6,6 +6,7 @@ dist/
 *.log
 .DS_Store
 .next/
+.next-review/
 next-env.d.ts
 apps/web/tests/output/
 *.tsbuildinfo

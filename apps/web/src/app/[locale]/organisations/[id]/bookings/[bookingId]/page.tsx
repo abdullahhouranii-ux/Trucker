@@ -7,6 +7,7 @@ import {
   podReviewAction,
   podSendAction,
 } from '../../../../../../server/pod-actions.ts';
+import { DisputePanel, type BookingDisputes } from '../../../../../../components/dispute-panel.tsx';
 import { DraftKeeper } from '../../../../../../components/draft-keeper.tsx';
 import {
   BookingCard,
@@ -135,6 +136,18 @@ export default async function BookingPage({ params, searchParams }: Props) {
   const confirmed = booking.status === 'confirmed';
   const cancelled = booking.status === 'cancelled';
   const trip = booking.trip ?? null;
+  const disputeLocale: Locale = locale;
+  const disputePath = `/organisations/${id}/bookings/${bookingId}/disputes`;
+  const disputeView = await api<BookingDisputes>('GET', disputePath, { token: person.token });
+  async function submitDispute(key: string, body: Record<string, unknown>) {
+    'use server';
+    const session = await requirePerson(disputeLocale);
+    const result = await api('POST', disputePath, { token: session.token, retryKey: key, body });
+    if (result.ok) return 'ok';
+    if (result.status === 0 || result.status >= 500 || result.code === 'unavailable')
+      return 'unknown';
+    return result.status === 409 ? 'conflict' : 'refused';
+  }
   const ct = m.cancel;
   const tt = m.trip;
 
@@ -346,6 +359,16 @@ export default async function BookingPage({ params, searchParams }: Props) {
         )}
       </section>
 
+      {disputeView.ok ? (
+        <DisputePanel
+          view={disputeView.data}
+          bookingId={bookingId}
+          submit={submitDispute}
+          locale={locale}
+          org={id}
+          podVersions={trip?.pod?.versions ?? []}
+        />
+      ) : null}
       {trip || (role === 'carrier' && !cancelled && booking.dispatch.ready) ? (
         <section className="section" aria-labelledby="trip-title" id="trip">
           <h2 id="trip-title">{tt.title}</h2>

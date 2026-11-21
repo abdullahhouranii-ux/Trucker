@@ -36,9 +36,11 @@ Each slice has a scope and a record with its evidence in this folder.
 | 18a | Delivery outcome (by the driver, or on behalf), operations case for anything but full delivery, cargo custody and handover, release of each resource on the release condition | PR #35 |
 | 18d | Undeliverable, refused and partly delivered cargo (R-406): authority to instruct, instructions and costs, approval within limits, escalation and the emergency plan, confirmed handovers, further legs of the trip, claims and holds by cause | PR #36 |
 | — | Node.js 24 and npm 11 | PR #37 |
-| 18b | Proof of delivery: manifest, files checked by fingerprint behind a storage interface (development stand-in only), review by the shipper only, never by silence | PR #38 (planned number) |
+| 18b | Proof of delivery: manifest, files checked by fingerprint behind a storage interface (development stand-in only), review by the shipper only, never by silence | PR #38 |
+| 18b follow-up | Stored POD files kept when the database's answer is lost; a sweep removes only files proven unrecorded; PDFs download on every route | PR #39 |
+| 18c | Booking disputes and settlement holds (split from Codex's local work): mediated agreement, counterclaims, independent holds released only on a recorded basis | PR #40 (planned number) |
 
-Pull requests #15 to #32 are stacked, open and green in CI; slice 17a's pull request is open. None is merged; each needs a dependency review and Abdullah's explicit authorisation.
+Pull requests #15 onward are stacked and open; none is merged, and each needs a dependency review and Abdullah's explicit authorisation. CI passed on #15 to #32 when it ran. On later pull requests (at least #36 to #39) GitHub has not started the checks because of a billing block on the account, so they have no CI result: their only results are the local runs recorded in each slice record.
 
 ## Next
 

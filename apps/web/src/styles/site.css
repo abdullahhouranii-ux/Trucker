@@ -851,3 +851,26 @@ textarea {
   list-style: disc;
   overflow-wrap: anywhere;
 }
+
+.dispute-checkbox {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-block-size: var(--target-min);
+}
+
+.dispute-checkbox input {
+  flex: none;
+  inline-size: 1.5rem;
+  block-size: 1.5rem;
+  margin: 0;
+}
+
+.dispute-file {
+  min-block-size: var(--target-min);
+  max-inline-size: 100%;
+}
+
+.dispute-file::file-selector-button {
+  min-block-size: var(--target-min);
+}

@@ -56,6 +56,31 @@ export default async function OperationsPage({ searchParams }: Props) {
     token: found.token,
   });
   if (!reply.ok && reply.status === 401) redirect('/sign-in?error=session_ended');
+  const disputes = reply.ok
+    ? await api<
+        {
+          id: string;
+          bookingId: string;
+          kind: string;
+          openedAt: string;
+          state: string;
+          assignee: string | null;
+          held: boolean;
+        }[]
+      >('GET', '/staff/operations/disputes', { token: found.token })
+    : null;
+  const disputeState = one('disputeState');
+  const disputeOwner = one('disputeOwner');
+  const disputeStates: Record<string, string> = {
+    open: 'Open',
+    assign: 'In review',
+    request_information: 'Awaiting information',
+    propose: 'Proposal sent',
+    agreement: 'Agreement recorded',
+    withdraw: 'Withdrawn',
+    close: 'Closed without agreement',
+    external: 'Reported external decision',
+  };
   const error = one('error');
   const done = DONE[one('done')];
   const problems = error ? [{ message: ERRORS[error] ?? 'That was refused.' }] : [];
@@ -149,6 +174,63 @@ export default async function OperationsPage({ searchParams }: Props) {
                   </ul>
                 )}
               </section>
+              {disputes?.ok ? (
+                <section className="section" aria-labelledby="dispute-queue-title">
+                  <h2 id="dispute-queue-title">Booking disputes</h2>
+                  <form method="get" className="form-inline">
+                    <label>
+                      State{' '}
+                      <select name="disputeState" defaultValue={disputeState}>
+                        <option value="">All states</option>
+                        {Object.entries(disputeStates).map(([value, label]) => (
+                          <option key={value} value={value}>
+                            {label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Owner{' '}
+                      <select name="disputeOwner" defaultValue={disputeOwner}>
+                        <option value="">All owners</option>
+                        <option value="unassigned">Unassigned</option>
+                        {[
+                          ...new Set(
+                            disputes.data.flatMap((item) => (item.assignee ? [item.assignee] : [])),
+                          ),
+                        ].map((id) => (
+                          <option key={id} value={id}>
+                            {id === found.staff.id ? 'Assigned to me' : id}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <button type="submit" className="button">
+                      Filter disputes
+                    </button>
+                  </form>
+                  <ul className="evidence" id="disputes">
+                    {disputes.data
+                      .filter(
+                        (item) =>
+                          (!disputeState || item.state === disputeState) &&
+                          (!disputeOwner || (item.assignee ?? 'unassigned') === disputeOwner),
+                      )
+                      .map((item) => (
+                        <li key={item.id}>
+                          <a
+                            className="button"
+                            href={`/operations/bookings/${item.bookingId}#${item.id}`}
+                          >
+                            Review dispute: {item.kind.replaceAll('_', ' ')}
+                          </a>{' '}
+                          {disputeStates[item.state]}, opened {at(item.openedAt)}
+                          {item.held ? '; settlement eligibility on hold' : ''}
+                        </li>
+                      ))}
+                  </ul>
+                </section>
+              ) : null}
               <section className="section" aria-labelledby="blocks-title">
                 <h2 id="blocks-title">Dispatches blocked</h2>
                 {reply.data.operations.blocks.length === 0 ? (

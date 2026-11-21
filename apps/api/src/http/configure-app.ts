@@ -51,7 +51,7 @@ function rawNotificationBody(
 
 /** Largest proof-of-delivery file (PD-2): a larger body is refused before it is all read. */
 export const POD_FILE_LIMIT_BYTES = 10 * 1024 * 1024;
-const POD_ITEM_PATH = /\/pod\/items\/[^/]+$/;
+const EVIDENCE_UPLOAD_PATH = /\/(?:pod\/items\/[^/]+|disputes\/[^/]+\/evidence)$/;
 
 /**
  * A proof-of-delivery file is sent as its own bytes (PUT .../pod/items/:itemId) and kept as
@@ -62,7 +62,7 @@ function rawPodFileBody(
   response: ServerResponse,
   next: (error?: unknown) => void,
 ): void {
-  if (request.method !== 'PUT' || !POD_ITEM_PATH.test((request.url ?? '').split('?')[0]!)) {
+  if (request.method !== 'PUT' || !EVIDENCE_UPLOAD_PATH.test((request.url ?? '').split('?')[0]!)) {
     next();
     return;
   }
