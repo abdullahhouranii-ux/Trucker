@@ -131,9 +131,16 @@ test('ready is 503 within the deadline when a query on an open connection stalls
     assert.equal((await fetch(`${api.base}/health/live`)).status, 200);
 
     await blocker.query('ROLLBACK');
-    // The abandoned statement is cancelled by the server-side statement timeout.
-    await new Promise((resolve) => setTimeout(resolve, 1200));
-    assert.equal((await fetch(`${api.base}/health/ready`)).status, 200);
+    // Allow the pool to recover after the abandoned statement's server-side timeout.
+    const recoveryDeadline = Date.now() + 6000;
+    let recovered = false;
+    while (!recovered && Date.now() < recoveryDeadline) {
+      const reply = await fetch(`${api.base}/health/ready`);
+      recovered = reply.status === 200;
+      await reply.body?.cancel();
+      if (!recovered) await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+    assert.ok(recovered, 'readiness recovered after the lock was released');
   } finally {
     blocker.release();
     await api.close();

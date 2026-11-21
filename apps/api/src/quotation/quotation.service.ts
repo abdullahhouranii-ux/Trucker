@@ -35,6 +35,7 @@ export type QuotationView = Record<string, unknown> & { id: string };
 const ERRORS: Record<string, [number, string, string]> = {
   unauthorized: [401, 'unauthorized', 'Authentication is required.'],
   not_found: [404, 'not_found', 'The requested resource was not found.'],
+  fleet_mismatch: [409, 'fleet_mismatch', 'No eligible fleet equipment matches this shipment.'],
   not_carrier: [403, 'carrier_not_eligible', 'This organisation is not a verified carrier now.'],
   not_eligible: [
     403,

@@ -22,6 +22,7 @@ import { hashToken } from '../identity/secrets.js';
 import { DEMONSTRATION_TERMS_VERSION } from '../identity/terms.js';
 import { blockedRequests } from '../testing/blocked-request.js';
 import { createTestClock } from '../testing/test-clock.js';
+import { ensureQuotationFleet } from '../testing/quotation-fleet.js';
 import { createTestDatabase, type TestDatabase } from '../testing/test-database.js';
 
 // Acceptance and booking (slice 14). Real PostgreSQL, the API connected as its restricted role.
@@ -597,6 +598,7 @@ async function market() {
   return { shipper, shipment, carrier };
 }
 async function quoted(person: Person, org: string, shipment: string, body = quoteBody()) {
+  await ensureQuotationFleet(owner, person.personId, org, shipment);
   const reply = await quote(person, org, shipment, body);
   assert.equal(reply.status, 201, reply.text);
   return reply.body.quotation as Quotation;

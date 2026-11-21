@@ -9,8 +9,8 @@ import { DB_POOL, FILE_STORE } from '../tokens.js';
 
 // Proof of delivery (slice 18b). The database decides who may do what and keeps each file's
 // declaration and fingerprint; the file store keeps the bytes. A file is stored first and
-// recorded second: if the database refuses it, the stored copy is removed, so no file is ever
-// recorded without its bytes.
+// recorded second. A confirmed refusal removes the stored copy. An unknown database outcome
+// keeps it: a lost commit acknowledgement must never delete evidence already referenced.
 
 type Detail = Record<string, unknown>;
 
@@ -176,24 +176,20 @@ export class PodService {
     const key = await store.put(bytes);
     // What was found on the bytes stored: compared by the database with the declaration.
     const receipt = JSON.stringify({ fingerprint, bytes: bytes.length, mediaType, key });
-    let row: { status: string; detail: unknown };
-    try {
-      row =
-        organisationId === null
-          ? await this.asStaff(
-              'SELECT status, detail FROM trucker.staff_pod_receive($1, $2, $3, $4, $5)',
-              [caller.tokenHash, bookingId, itemId, receipt, caller.requestId ?? null],
-            )
-          : await this.asCaller(
-              caller,
-              organisationId,
-              'SELECT status, detail FROM trucker.pod_receive($1, $2, $3)',
-              [bookingId, itemId, receipt],
-            );
-    } catch (error) {
-      await store.remove(key).catch(() => undefined);
-      throw error;
-    }
+    // A database error can mean COMMIT succeeded but its acknowledgement was lost.
+    // Keep the bytes on unknown outcomes; collect orphans only after checking database keys.
+    const row =
+      organisationId === null
+        ? await this.asStaff(
+            'SELECT status, detail FROM trucker.staff_pod_receive($1, $2, $3, $4, $5)',
+            [caller.tokenHash, bookingId, itemId, receipt, caller.requestId ?? null],
+          )
+        : await this.asCaller(
+            caller,
+            organisationId,
+            'SELECT status, detail FROM trucker.pod_receive($1, $2, $3)',
+            [bookingId, itemId, receipt],
+          );
     if (row.status !== 'received') await store.remove(key).catch(() => undefined);
     if (row.status === 'received' || row.status === 'already_received')
       return { outcome: row.status, fingerprint, pod: row.detail };

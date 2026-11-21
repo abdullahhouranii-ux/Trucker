@@ -58,6 +58,9 @@ export default async function SignInPage({ params, searchParams }: Props) {
       <p>{t.lead}</p>
       <form className="form card" id="sign-in-form" action={requestCodeAction} noValidate>
         <input type="hidden" name="locale" value={locale} />
+        {search.destination === 'operations' ? (
+          <input type="hidden" name="destination" value="operations" />
+        ) : null}
         <input type="hidden" name="retryKey" value={randomUUID()} />
         <Field id="phone" label={t.phoneLabel} hint={t.phoneHint} error={phoneError}>
           <input

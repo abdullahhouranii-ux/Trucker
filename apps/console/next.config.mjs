@@ -2,6 +2,8 @@
 // search results and referrers.
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Review builds can run beside an existing local server without replacing its output.
+  distDir: process.env.TRUCKER_NEXT_BUILD_DIR || '.next',
   poweredByHeader: false,
   reactStrictMode: true,
   // Shared styles and form components are imported from the web application's sources.

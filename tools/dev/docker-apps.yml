@@ -1,0 +1,77 @@
+# Local application services, using the existing loopback PostgreSQL connection.
+name: trucker-app
+
+x-app: &app
+  image: trucker-local:dev
+  build:
+    context: ../..
+    dockerfile: tools/dev/Dockerfile
+  network_mode: host
+  restart: unless-stopped
+  init: true
+
+services:
+  api:
+    <<: *app
+    env_file: ../../.env
+    environment:
+      NODE_ENV: development
+      PORT: '3000'
+      TRUCKER_BIND_LOOPBACK: '1'
+      FILE_STORAGE_DIR: /trucker/.data/pod-files
+    volumes:
+      - ../../apps/api/.data/pod-files:/trucker/.data/pod-files
+    command: ['node', 'apps/api/dist/main.js']
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3000/health/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 4s
+      retries: 12
+
+  web:
+    <<: *app
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      TRUCKER_API_URL: http://127.0.0.1:3000
+      TRUCKER_DEVELOPMENT_CODE_DISPLAY: local-visitors
+    command: ['npm', 'run', 'start', '-w', '@trucker/web', '--', '--hostname', '127.0.0.1']
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3100/',{redirect:'manual'}).then(r=>{if(r.status>=400)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 4s
+      retries: 12
+
+  console:
+    <<: *app
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      TRUCKER_API_URL: http://127.0.0.1:3000
+      CONSOLE_ORIGIN: http://localhost:3200
+    command: ['npm', 'run', 'start', '-w', '@trucker/console', '--', '--hostname', '127.0.0.1']
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3200/',{redirect:'manual'}).then(r=>{if(r.status>=400)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 4s
+      retries: 12

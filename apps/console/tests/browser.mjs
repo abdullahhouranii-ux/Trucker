@@ -246,22 +246,28 @@ async function main() {
     const driver = (page) => {
       const pageErrors = [];
       page.on('pageerror', (error) => pageErrors.push(error.message));
+      const ready = async () => {
+        // Redirects may finish navigation while the staff loading shell is still visible.
+        await page.waitForSelector('main > [aria-busy="true"]', { hidden: true });
+        await page.evaluate(() => document.fonts.ready);
+      };
       const open = async (path) => {
         await page.setViewport({ width: 390, height: 900 });
         // An address that differs only after the # would not load the page again.
         if (path.includes('#')) await page.goto('about:blank');
         const response = await page.goto(origin + path, { waitUntil: 'networkidle0' });
-        await page.evaluate(() => document.fonts.ready);
+        await ready();
         return response;
       };
       const text = (selector) =>
         page.evaluate((s) => document.querySelector(s)?.textContent?.trim() ?? null, selector);
       const submit = async (selector) => {
+        await page.waitForSelector(selector, { visible: true });
         await Promise.all([
           page.waitForNavigation({ waitUntil: 'networkidle0' }),
           page.click(selector),
         ]);
-        await page.evaluate(() => document.fonts.ready);
+        await ready();
       };
       // Keyboard only: Tab from the top of the page must reach every control, each must show
       // where the focus is, and the skip link must move the focus to the content.
@@ -383,7 +389,7 @@ async function main() {
           check('layout', found.length === 0, `${state} at ${width}px: ${found.join('; ')}`);
         }
         await page.setViewport({ width: 390, height: 900 });
-        if (shots[state])
+        if (shots[state] && process.env.TRUCKER_BROWSER_SCREENSHOTS !== 'off')
           await page.screenshot({ path: `${outDir}${shots[state]}.png`, fullPage: true });
         await page.evaluate(() => (document.documentElement.style.fontSize = '200%'));
         const doubled = await page.evaluate(findOverflow);

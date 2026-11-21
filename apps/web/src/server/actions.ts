@@ -39,7 +39,12 @@ const query = (values: Record<string, string | number | undefined>): string => {
   return result ? `?${result}` : '';
 };
 
-async function sendCode(locale: Locale, phone: string, retryKey: string): Promise<never> {
+async function sendCode(
+  locale: Locale,
+  phone: string,
+  retryKey: string,
+  destination?: 'operations',
+): Promise<never> {
   const showCode = await visitorMayHaveDevelopmentCode();
   const reply = await api<{ challengeId: string; developmentCode?: string }>(
     'POST',
@@ -61,11 +66,12 @@ async function sendCode(locale: Locale, phone: string, retryKey: string): Promis
       typeof reply.details.retryAfterSeconds === 'number'
         ? reply.details.retryAfterSeconds
         : undefined;
-    redirect(`/${locale}/${back}${query({ error, seconds })}`);
+    redirect(`/${locale}/${back}${query({ error, seconds, destination })}`);
   }
   await writeSignIn({
     phone,
     challengeId: reply.data.challengeId,
+    destination,
     // Checked again here: a code the API returned is dropped unless the visitor is local.
     ...(showCode && reply.data.developmentCode
       ? { developmentCode: reply.data.developmentCode }
@@ -78,16 +84,22 @@ export async function requestCodeAction(form: FormData): Promise<void> {
   const locale = localeOf(form);
   const phone = text(form, 'phone').trim();
   // Keep what was typed so the form is not emptied by an error.
-  await writeSignIn({ phone });
-  if (!phone) redirect(`/${locale}/sign-in?error=phone`);
-  await sendCode(locale, phone, retryKeyOf(form));
+  const destination = text(form, 'destination') === 'operations' ? 'operations' : undefined;
+  await writeSignIn({ phone, destination });
+  if (!phone) redirect(`/${locale}/sign-in${query({ error: 'phone', destination })}`);
+  await sendCode(locale, phone, retryKeyOf(form), destination);
 }
 
 export async function resendCodeAction(form: FormData): Promise<void> {
   const locale = localeOf(form);
   const progress = await readSignIn();
   if (!progress?.phone) redirect(`/${locale}/sign-in?error=no_challenge`);
-  await sendCode(locale, progress.phone, retryKeyOf(form));
+  await sendCode(
+    locale,
+    progress.phone,
+    retryKeyOf(form),
+    progress.destination === 'operations' ? 'operations' : undefined,
+  );
 }
 
 export async function verifyCodeAction(form: FormData): Promise<void> {
@@ -111,7 +123,8 @@ export async function verifyCodeAction(form: FormData): Promise<void> {
   }
   await startSession(reply.data.token);
   await clearSignIn();
-  redirect(`/${locale}/${reply.data.person.registrationComplete ? 'account' : 'register'}`);
+  const destination = progress.destination === 'operations' ? 'operations' : 'account';
+  redirect(`/${locale}/${reply.data.person.registrationComplete ? destination : 'register'}`);
 }
 
 export async function registerAction(form: FormData): Promise<void> {

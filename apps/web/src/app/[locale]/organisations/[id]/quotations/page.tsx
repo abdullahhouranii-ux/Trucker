@@ -1,3 +1,4 @@
+import { RecordOptions } from '../../../../../components/record-options.tsx';
 import { notFound, redirect } from 'next/navigation';
 import { ErrorSummary } from '../../../../../components/form.tsx';
 import { AmountText, Standing } from '../../../../../components/quotation-view.tsx';
@@ -45,7 +46,7 @@ export default async function MyQuotationsPage({ params }: Props) {
       ) : reply.data.quotations.length === 0 ? (
         <p id="no-quotations">{q.noQuotationsMine}</p>
       ) : (
-        <ol className="organisation-list" id="my-quotation-list">
+        <ol className="organisation-list record-collection" id="my-quotation-list">
           {reply.data.quotations.map((quotation) => (
             <li className="card organisation" key={quotation.id} data-quotation={quotation.id}>
               <h3>
@@ -69,6 +70,28 @@ export default async function MyQuotationsPage({ params }: Props) {
                   {q.openShipment}
                 </a>
               )}
+              {quotation.status !== 'not_selected' ? (
+                <RecordOptions
+                  label={m.operationsWorkspace.actions + ' ' + quotation.id.slice(0, 8)}
+                >
+                  <li>
+                    <a
+                      className="button"
+                      href={
+                        '/' +
+                        locale +
+                        '/organisations/' +
+                        id +
+                        (quotation.status === 'accepted'
+                          ? '/bookings'
+                          : '/discover/' + quotation.shipmentId + '#quotation')
+                      }
+                    >
+                      {quotation.status === 'accepted' ? m.book.link : q.openShipment}
+                    </a>
+                  </li>
+                </RecordOptions>
+              ) : null}
             </li>
           ))}
         </ol>

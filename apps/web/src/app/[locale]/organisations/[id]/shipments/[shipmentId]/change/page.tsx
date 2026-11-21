@@ -94,7 +94,7 @@ export default async function ChangePublishedPage({ params, searchParams }: Prop
     redirect(`${shipmentHref}?error=shipment_not_published`);
   const formId = `published-change-form-${shipment.id}`;
   return (
-    <div className="page page-narrow">
+    <div className="page page-narrow shipment-editor">
       <div className="form-inline">
         <a className="button" id="back-to-shipment" href={shipmentHref}>
           {m.pub.backToShipment}
@@ -107,7 +107,12 @@ export default async function ChangePublishedPage({ params, searchParams }: Prop
         problems={[...found.problems, ...pubFound.problems]}
       />
       <p className="form-note">{m.pub.previewCaution}</p>
-      <form className="form card" id={formId} action={changePublishedShipmentAction} noValidate>
+      <form
+        className="form card shipment-editor-form"
+        id={formId}
+        action={changePublishedShipmentAction}
+        noValidate
+      >
         <input type="hidden" name="locale" value={locale} />
         <input type="hidden" name="organisationId" value={id} />
         <input type="hidden" name="shipmentId" value={shipment.id} />

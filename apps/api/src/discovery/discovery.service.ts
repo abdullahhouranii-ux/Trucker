@@ -15,6 +15,14 @@ import { DB_POOL } from '../tokens.js';
  * decided: matching criteria, not verified vehicles, availability or permission to accept work.
  */
 
+export interface PublicShipment {
+  id: string;
+  origin: string;
+  destination: string;
+  equipment: Record<'en' | 'ar' | 'ur', string>;
+  deadline: Date;
+}
+
 export interface Caller {
   readonly personId: string;
   readonly tokenHash: string;
@@ -100,6 +108,16 @@ export function decodeCursor(cursor: string): unknown {
 
 @Injectable()
 export class DiscoveryService {
+  async publicShipments(after: string | null) {
+    const access = await this.access.requireBoundRole();
+    const { rows } = await this.pool.query<PublicShipment>(
+      'SELECT * FROM trucker.public_shipments($1, $2)',
+      [after, this.access.fixturesAllowed(access)],
+    );
+    const items = rows.slice(0, 20);
+    return { items, next: rows.length > items.length ? items.at(-1)!.id : null };
+  }
+
   constructor(
     @Inject(DB_POOL) private readonly pool: pg.Pool,
     @Inject(AccessGuard) private readonly access: AccessGuard,

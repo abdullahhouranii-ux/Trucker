@@ -1,5 +1,16 @@
+import {
+  FeeInvoiceDraftPanel,
+  type FeeInvoiceDraftResponse,
+} from '../../../../../../components/fee-invoice-draft.tsx';
 import { randomUUID } from 'node:crypto';
 import { notFound, redirect } from 'next/navigation';
+import {
+  BookingCompletionPanel,
+  type ClosureStatus,
+  type FinancialCompletion,
+} from '../../../../../../components/booking-completion.tsx';
+import { sendCompletion } from '../../../../../../server/booking-completion.ts';
+import { DisputePanel, type BookingDisputes } from '../../../../../../components/dispute-panel.tsx';
 import { CargoPanel } from '../../../../../../components/cargo-panel.tsx';
 import { PodPanel } from '../../../../../../components/pod-panel.tsx';
 import {
@@ -131,6 +142,32 @@ export default async function BookingPage({ params, searchParams }: Props) {
       </div>
     );
   const { booking, candidates } = reply.data;
+  const disputeLocale: Locale = locale;
+  const bookingPath = `/organisations/${id}/bookings/${bookingId}`;
+  const financialPath = bookingPath + '/financial-completion';
+  const [financial, closure, invoice] = await Promise.all([
+    api<FinancialCompletion>('GET', financialPath, { token: person.token }),
+    api<ClosureStatus>('GET', bookingPath + '/closure', { token: person.token }),
+    api<FeeInvoiceDraftResponse>('GET', bookingPath + '/fee-invoice-draft', {
+      token: person.token,
+    }),
+  ]);
+  async function submitFinancial(key: string, body: Record<string, unknown>) {
+    'use server';
+    const session = await requirePerson(disputeLocale);
+    return sendCompletion(financialPath, session.token, key, body);
+  }
+  const disputePath = `/organisations/${id}/bookings/${bookingId}/disputes`;
+  const disputeView = await api<BookingDisputes>('GET', disputePath, { token: person.token });
+  async function submitDispute(key: string, body: Record<string, unknown>) {
+    'use server';
+    const session = await requirePerson(disputeLocale);
+    const result = await api('POST', disputePath, { token: session.token, retryKey: key, body });
+    if (result.ok) return 'ok';
+    if (result.status === 0 || result.status >= 500 || result.code === 'unavailable')
+      return 'unknown';
+    return result.status === 409 ? 'conflict' : 'refused';
+  }
   const role = booking.role === 'carrier' ? 'carrier' : 'shipper';
   const confirmed = booking.status === 'confirmed';
   const cancelled = booking.status === 'cancelled';
@@ -346,6 +383,23 @@ export default async function BookingPage({ params, searchParams }: Props) {
         )}
       </section>
 
+      {invoice.ok ? <FeeInvoiceDraftPanel draft={invoice.data.draft} locale={locale} /> : null}
+      <BookingCompletionPanel
+        financial={financial.ok ? financial.data : null}
+        closure={closure.ok ? closure.data : null}
+        locale={locale}
+        submit={submitFinancial}
+      />
+      {disputeView.ok ? (
+        <DisputePanel
+          view={disputeView.data}
+          bookingId={bookingId}
+          submit={submitDispute}
+          locale={locale}
+          org={id}
+          podVersions={trip?.pod?.versions ?? []}
+        />
+      ) : null}
       {trip || (role === 'carrier' && !cancelled && booking.dispatch.ready) ? (
         <section className="section" aria-labelledby="trip-title" id="trip">
           <h2 id="trip-title">{tt.title}</h2>

@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { describedBy, Field, type Problem } from './form.tsx';
+import { ShipmentLocationFields } from './shipment-location-fields.tsx';
 import { Ltr } from './ltr.tsx';
 import type { Locale } from '../i18n/config.ts';
 import type { Messages } from '../i18n/messages.ts';
@@ -206,7 +207,9 @@ function WindowEndFields({
   const offsetId = `${prefix}Offset`;
   const error = errors.get(dateId);
   const [date = '', time = ''] = (current?.local ?? '').split('T');
-  const described = describedBy(dateId, false, Boolean(error));
+  const described = [`${place}-time-hint`, describedBy(dateId, false, Boolean(error))]
+    .filter(Boolean)
+    .join(' ');
   return (
     <div className="window-end" data-invalid={error ? 'true' : undefined}>
       <div className="field-pair">
@@ -219,7 +222,7 @@ function WindowEndFields({
             name={dateId}
             type="text"
             dir="ltr"
-            inputMode="numeric"
+            placeholder="YYYY-MM-DD"
             maxLength={10}
             data-draft
             defaultValue={date}
@@ -236,7 +239,7 @@ function WindowEndFields({
             name={timeId}
             type="text"
             dir="ltr"
-            inputMode="numeric"
+            placeholder="HH:MM"
             maxLength={5}
             data-draft
             defaultValue={time}
@@ -300,7 +303,7 @@ function PlaceFields({
   const choices = (end: EndName): number[] | undefined =>
     ambiguous.get(`${place}.${end}`) ?? current?.[end].offsetChoices ?? undefined;
   return (
-    <fieldset className="fieldset" id={`${place}-fields`}>
+    <fieldset className="fieldset" id={`${place}-fields`} tabIndex={-1}>
       <legend>{title}</legend>
       <TextField
         id={`${place}Address`}
@@ -310,86 +313,105 @@ function PlaceFields({
         maxLength={500}
         rows={3}
       />
-      <Field id={countryId} label={t.country} error={errors.get(countryId)}>
-        <select
-          id={countryId}
-          name={countryId}
-          data-draft
-          defaultValue={current?.countryCode ?? ''}
-          aria-invalid={errors.has(countryId) ? true : undefined}
-          aria-describedby={describedBy(countryId, false, errors.has(countryId))}
-        >
-          <option value="">{t.countryChoose}</option>
-          {places.map((country) => (
-            <option key={country.code} value={country.code}>
-              {country.name[locale]}
-            </option>
-          ))}
-        </select>
-      </Field>
-      <Field id={zoneId} label={t.timeZone} hint={t.timeZoneHint} error={errors.get(zoneId)}>
-        <select
-          id={zoneId}
-          name={zoneId}
-          dir="ltr"
-          data-draft
-          defaultValue={current?.timeZone ?? ''}
-          aria-invalid={errors.has(zoneId) ? true : undefined}
-          aria-describedby={describedBy(zoneId, true, errors.has(zoneId))}
-        >
-          <option value="">{t.timeZoneChoose}</option>
-          {places
-            .filter((country) => country.timeZones.length > 0)
-            .map((country) => (
-              <optgroup key={country.code} label={country.name[locale]}>
-                {country.timeZones.map((zone) => (
-                  <option key={zone} value={zone}>
-                    {zone}
-                  </option>
-                ))}
-              </optgroup>
+      <ShipmentLocationFields countryId={countryId} zoneId={zoneId}>
+        <Field id={countryId} label={t.country} error={errors.get(countryId)}>
+          <select
+            id={countryId}
+            name={countryId}
+            data-draft
+            defaultValue={current?.countryCode ?? ''}
+            aria-invalid={errors.has(countryId) ? true : undefined}
+            aria-describedby={describedBy(countryId, false, errors.has(countryId))}
+          >
+            <option value="">{t.countryChoose}</option>
+            {places.map((country) => (
+              <option key={country.code} value={country.code}>
+                {country.name[locale]}
+              </option>
             ))}
-        </select>
-      </Field>
-      <p className="field-hint" id={`${place}-time-hint`}>
-        {t.dateHint
-          .split(/(\{date\}|\{time\})/)
-          .map((part) =>
-            part === '{date}' ? (
-              <Ltr key={part}>2026-07-01</Ltr>
-            ) : part === '{time}' ? (
-              <Ltr key={part}>09:30</Ltr>
-            ) : (
-              part
-            ),
-          )}
-      </p>
-      <WindowEndFields
-        place={place}
-        end="from"
-        t={t}
-        label={t.windowFrom}
-        current={current?.from}
-        errors={errors}
-        choices={choices('from')}
-      />
-      <WindowEndFields
-        place={place}
-        end="until"
-        t={t}
-        label={t.windowUntil}
-        current={current?.until}
-        errors={errors}
-        choices={choices('until')}
-      />
-      <TextField
-        id={`${place}AccessNotes`}
-        label={t.accessNotes}
-        errors={errors}
-        value={current?.accessNotes ?? ''}
-        maxLength={1000}
-        rows={3}
-      />
+          </select>
+        </Field>
+        <Field id={zoneId} label={t.timeZone} hint={t.timeZoneHint} error={errors.get(zoneId)}>
+          <select
+            id={zoneId}
+            name={zoneId}
+            data-shipment-zone
+            dir="ltr"
+            data-draft
+            defaultValue={current?.timeZone ?? ''}
+            aria-invalid={errors.has(zoneId) ? true : undefined}
+            aria-describedby={describedBy(zoneId, true, errors.has(zoneId))}
+          >
+            <option value="">{t.timeZoneChoose}</option>
+            {places
+              .filter((country) => country.timeZones.length > 0)
+              .map((country) => (
+                <optgroup
+                  key={country.code}
+                  label={country.name[locale]}
+                  data-country={country.code}
+                >
+                  {country.timeZones.map((zone) => (
+                    <option key={zone} value={zone}>
+                      {zone}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+          </select>
+        </Field>
+      </ShipmentLocationFields>
+      <fieldset className="shipment-window">
+        <legend>{t.appointmentWindow}</legend>
+        <p className="field-hint" id={`${place}-time-hint`}>
+          {t.dateHint
+            .split(/(\{date\}|\{time\})/)
+            .map((part) =>
+              part === '{date}' ? (
+                <Ltr key={part}>2026-07-01</Ltr>
+              ) : part === '{time}' ? (
+                <Ltr key={part}>09:30</Ltr>
+              ) : (
+                part
+              ),
+            )}
+        </p>
+        <div className="shipment-field-grid">
+          <WindowEndFields
+            place={place}
+            end="from"
+            t={t}
+            label={t.windowFrom}
+            current={current?.from}
+            errors={errors}
+            choices={choices('from')}
+          />
+          <WindowEndFields
+            place={place}
+            end="until"
+            t={t}
+            label={t.windowUntil}
+            current={current?.until}
+            errors={errors}
+            choices={choices('until')}
+          />
+        </div>
+      </fieldset>
+      <details
+        className="shipment-optional"
+        data-draft-details
+        open={Boolean(current?.accessNotes) || errors.has(`${place}AccessNotes`)}
+      >
+        <summary>{t.accessNotes}</summary>
+        <TextField
+          id={`${place}AccessNotes`}
+          label={t.accessNotes}
+          errors={errors}
+          value={current?.accessNotes ?? ''}
+          maxLength={1000}
+          rows={3}
+        />
+      </details>
     </fieldset>
   );
 }
@@ -411,64 +433,14 @@ export function ShipmentFields({
   const { errors } = problems;
   return (
     <>
-      <fieldset className="fieldset" id="cargo-fields">
-        <legend>{t.sectionCargo}</legend>
-        <p className="field-hint">{t.rulesNote}</p>
-        <TextField
-          id="shipperReference"
-          label={t.shipperReference}
-          errors={errors}
-          value={current?.shipperReference ?? ''}
-          maxLength={64}
-          ltr
-        />
-        <TextField
-          id="cargoDescription"
-          label={t.cargoDescription}
-          errors={errors}
-          value={current?.cargoDescription ?? ''}
-          maxLength={2000}
-          rows={4}
-        />
-        <TextField
-          id="grossWeightKg"
-          label={t.grossWeightKg}
-          hint={t.grossWeightHint}
-          errors={errors}
-          value={current?.grossWeightKg ?? ''}
-          maxLength={12}
-          ltr
-          numeric
-          suffix={t.kilograms}
-        />
-        <TextField
-          id="pieces"
-          label={t.pieces}
-          hint={t.piecesHint}
-          errors={errors}
-          value={
-            current?.pieces === null || current?.pieces === undefined ? '' : String(current.pieces)
-          }
-          maxLength={7}
-          ltr
-          numeric
-        />
-        <TextField
-          id="packaging"
-          label={t.packaging}
-          errors={errors}
-          value={current?.packaging ?? ''}
-          maxLength={200}
-        />
-        <TextField
-          id="equipmentNeeded"
-          label={t.equipmentNeeded}
-          errors={errors}
-          value={current?.equipmentNeeded ?? ''}
-          maxLength={500}
-          rows={2}
-        />
-      </fieldset>
+      <nav className="section-tabs" aria-labelledby="shipment-section-links-title">
+        <span className="visually-hidden" id="shipment-section-links-title">
+          {t.sectionPickup}, {t.sectionDelivery}, {t.sectionCargo}
+        </span>
+        <a href="#pickup-fields">{t.sectionPickup}</a>
+        <a href="#delivery-fields">{t.sectionDelivery}</a>
+        <a href="#cargo-fields">{t.sectionCargo}</a>
+      </nav>
       <PlaceFields
         place="pickup"
         locale={locale}
@@ -487,6 +459,75 @@ export function ShipmentFields({
         current={current?.delivery}
         problems={problems}
       />
+      <fieldset className="fieldset" id="cargo-fields" tabIndex={-1}>
+        <legend>{t.sectionCargo}</legend>
+        <p className="field-hint">{t.rulesNote}</p>
+        <TextField
+          id="shipperReference"
+          label={t.shipperReference}
+          errors={errors}
+          value={current?.shipperReference ?? ''}
+          maxLength={64}
+          ltr
+        />
+        <TextField
+          id="cargoDescription"
+          label={t.cargoDescription}
+          errors={errors}
+          value={current?.cargoDescription ?? ''}
+          maxLength={2000}
+          rows={4}
+        />
+        <div className="shipment-field-grid">
+          <TextField
+            id="grossWeightKg"
+            label={t.grossWeightKg}
+            hint={t.grossWeightHint}
+            errors={errors}
+            value={current?.grossWeightKg ?? ''}
+            maxLength={12}
+            ltr
+            numeric
+            suffix={t.kilograms}
+          />
+          <TextField
+            id="pieces"
+            label={t.pieces}
+            hint={t.piecesHint}
+            errors={errors}
+            value={
+              current?.pieces === null || current?.pieces === undefined
+                ? ''
+                : String(current.pieces)
+            }
+            maxLength={7}
+            ltr
+            numeric
+          />
+        </div>
+        <TextField
+          id="packaging"
+          label={t.packaging}
+          errors={errors}
+          value={current?.packaging ?? ''}
+          maxLength={200}
+        />
+        <details
+          className="shipment-optional"
+          data-draft-details
+          open={Boolean(current?.equipmentNeeded) || errors.has('equipmentNeeded')}
+        >
+          <summary>{t.equipmentNeeded}</summary>
+          <TextField
+            id="equipmentNeeded"
+            label={t.equipmentNeeded}
+            errors={errors}
+            value={current?.equipmentNeeded ?? ''}
+            maxLength={500}
+            rows={2}
+          />
+        </details>
+      </fieldset>
     </>
   );
 }

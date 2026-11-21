@@ -2,7 +2,7 @@ import 'reflect-metadata';
 import assert from 'node:assert/strict';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, readdirSync } from 'node:fs';
+import { mkdtempSync, readdirSync, writeFileSync } from 'node:fs';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -10,6 +10,7 @@ import { after, before, test } from 'node:test';
 import type { INestApplication } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import pg from 'pg';
+import type { Page } from 'puppeteer-core';
 import { AppModule } from '../app.module.js';
 import { loadConfig } from '../config/config.js';
 import {
@@ -25,6 +26,7 @@ import { hashToken } from '../identity/secrets.js';
 import { DEMONSTRATION_TERMS_VERSION } from '../identity/terms.js';
 import { settleFee } from '../testing/fee.js';
 import { createTestClock } from '../testing/test-clock.js';
+import { ensureQuotationFleet } from '../testing/quotation-fleet.js';
 import { createTestDatabase, type TestDatabase } from '../testing/test-database.js';
 
 // Assignment, reservation and confirmation (slice 15). Real PostgreSQL, the API connected as
@@ -511,6 +513,7 @@ const quote = (person: Person, org: string, shipment: string, body = quoteBody()
     body,
   });
 async function quoted(person: Person, org: string, shipment: string, body = quoteBody()) {
+  await ensureQuotationFleet(owner, person.personId, org, shipment);
   const reply = await quote(person, org, shipment, body);
   assert.equal(reply.status, 201, reply.text);
   return reply.body.quotation as Quotation;
@@ -1590,4 +1593,883 @@ test("POD-5: operations uploads a paper POD on the driver's behalf; with file st
     () => loadConfig({ NODE_ENV: 'test', DATABASE_URL: database.url, FILE_STORAGE: 'local' }),
     /FILE_STORAGE_DIR must be set/,
   );
+});
+
+test('18c: booking parties agree to the latest version and release only its own hold', async () => {
+  const { id, shipper, carrier, driver } = await delivered();
+  const operations = await operator();
+  const finance = await newStaff(['staff_admin']);
+  const outsider = await newPerson();
+  const staffPath = `/staff/operations/bookings/${id}/disputes`;
+  const pathFor = (side: Party) => `/organisations/${side.org}/bookings/${id}/disputes`;
+  const send = (token: string, route: string, body: Record<string, unknown>, retry = key()) =>
+    call('POST', route, { token, body, key: retry });
+  const staff = (body: Record<string, unknown>, retry?: string) =>
+    send(operations.token, staffPath, body, retry);
+  const claim = {
+    action: 'open',
+    kind: 'damage',
+    description: 'Damage reported',
+    requestedOutcome: 'Review evidence',
+    amount: '10',
+    scope: 'One damaged carton',
+  };
+  assert.equal((await send(outsider.token, pathFor(shipper), claim)).status, 404);
+  assert.equal((await send(driver.token, pathFor(carrier), claim)).status, 404);
+  assert.equal((await send(finance.token, staffPath, claim)).status, 403);
+  const snapshot = async () =>
+    (
+      await owner.query(
+        `SELECT to_jsonb(b) AS booking,
+       (SELECT count(*) FROM trucker.fee_payment WHERE booking_id = b.id) AS payments,
+       (SELECT count(*) FROM trucker.resource_release WHERE booking_id = b.id) AS releases
+     FROM trucker.booking b WHERE b.id = $1`,
+        [id],
+      )
+    ).rows[0];
+  const before = await snapshot();
+  const path = pathFor(shipper);
+  const retry = key();
+  const create = await Promise.all([
+    send(shipper.person.token, path, claim, retry),
+    send(shipper.person.token, path, claim, retry),
+  ]);
+  assert.deepEqual(
+    create.map((reply) => reply.status),
+    [200, 200],
+    JSON.stringify(create),
+  );
+  assert.deepEqual(create[0]!.body, create[1]!.body);
+  const disputeId = create[0]!.body.disputeId;
+  assert.equal(
+    (await send(shipper.person.token, path, { ...claim, amount: '11' }, retry)).status,
+    409,
+  );
+  const second = await send(shipper.person.token, path, {
+    ...claim,
+    description: 'Separate carton',
+  });
+  const nonFinancial = await send(shipper.person.token, path, {
+    action: 'open',
+    kind: 'delay',
+    description: 'Late arrival',
+    requestedOutcome: 'Explanation',
+  });
+  assert.equal(second.status, 200, second.text);
+  assert.equal(nonFinancial.status, 200, nonFinancial.text);
+  assert.equal(await count('settlement_hold', 'booking_id = $1', [id]), 2);
+
+  assert.equal(
+    (await staff({ action: 'internal_note', disputeId, note: 'Internal only' })).status,
+    200,
+  );
+  const evidenceRoute = `${path}/${disputeId}/evidence`;
+  const file = fictionalFile('signature');
+  const evidenceKey = key();
+  const upload = (bytes: Buffer) =>
+    fetch(base + evidenceRoute, {
+      method: 'PUT',
+      headers: {
+        authorization: `Bearer ${shipper.person.token}`,
+        'content-type': file.declared.mediaType,
+        'idempotency-key': evidenceKey,
+      },
+      body: new Uint8Array(bytes),
+    });
+  const uploaded = await upload(file.bytes);
+  assert.equal(uploaded.status, 200);
+  const receipt = (await uploaded.json()) as { eventId: string };
+  assert.deepEqual(await (await upload(file.bytes)).json(), receipt);
+  assert.equal((await upload(Buffer.from('different bytes'))).status, 409);
+  assert.equal(
+    await count('booking_dispute_event', "dispute_id = $1 AND kind = 'evidence'", [disputeId]),
+    1,
+  );
+  const downloadRoute = `${staffPath}/${disputeId}/evidence/${receipt.eventId}`;
+  const download = await fetch(base + downloadRoute, {
+    headers: { authorization: `Bearer ${operations.token}` },
+  });
+  assert.equal(download.status, 200);
+  assert.equal(download.headers.get('cache-control'), 'private, no-store');
+  assert.deepEqual(Buffer.from(await download.arrayBuffer()), file.bytes);
+  assert.equal(
+    await count(
+      'staff_audit_entry',
+      "actor_staff_id = $1 AND action = 'staff.operations.dispute_file'",
+      [operations.id],
+    ),
+    1,
+  );
+  assert.equal(
+    (await call('GET', `${evidenceRoute}/${receipt.eventId}`, { token: outsider.token })).status,
+    404,
+  );
+  const queue = await call('GET', '/staff/operations/disputes', { token: operations.token });
+  assert.equal(queue.status, 200, queue.text);
+  assert.equal(queue.text.includes(String(disputeId)), true);
+  const publicView = await call('GET', pathFor(carrier), { token: carrier.person.token });
+  assert.equal(publicView.status, 200, publicView.text);
+  assert.equal(publicView.text.includes('Internal only'), false);
+  assert.equal(publicView.text.includes('storageKey'), false);
+  assert.equal(
+    (await call('GET', staffPath, { token: operations.token })).text.includes('Internal only'),
+    true,
+  );
+
+  const previous = await staff({ action: 'propose', disputeId, note: 'First recommendation' });
+  const current = await staff({ action: 'propose', disputeId, note: 'Revised recommendation' });
+  assert.equal(current.status, 200, current.text);
+  const accept = { action: 'accept', disputeId, proposalId: current.body.eventId };
+  assert.equal((await staff(accept)).status, 403);
+  assert.equal(
+    (await send(shipper.person.token, path, { ...accept, proposalId: previous.body.eventId }))
+      .status,
+    409,
+  );
+  const release = { action: 'release', disputeId, note: 'Both parties accepted' };
+  assert.equal((await send(finance.token, staffPath, release)).status, 409);
+  const acceptKey = key();
+  const first = await send(shipper.person.token, path, accept, acceptKey);
+  assert.equal(first.status, 200, first.text);
+  assert.deepEqual((await send(shipper.person.token, path, accept, acceptKey)).body, first.body);
+  assert.equal((await send(finance.token, staffPath, release)).status, 409);
+  const accepted = await send(carrier.person.token, pathFor(carrier), accept);
+  assert.equal(accepted.status, 200, accepted.text);
+  assert.equal((await staff(release)).status, 403);
+  const releaseKey = key();
+  const released = await send(finance.token, staffPath, release, releaseKey);
+  assert.equal(released.status, 200, released.text);
+  assert.deepEqual((await send(finance.token, staffPath, release, releaseKey)).body, released.body);
+  assert.equal(await count('settlement_hold', 'booking_id = $1 AND released_at IS NULL', [id]), 1);
+
+  const linkedMilestone = (
+    await owner.query<{ id: string }>(
+      'SELECT m.id FROM trucker.trip_milestone m JOIN trucker.trip t ON t.id = m.trip_id WHERE t.booking_id = $1 ORDER BY m.seq LIMIT 1',
+      [id],
+    )
+  ).rows[0]!.id;
+  const followUp = await send(shipper.person.token, path, {
+    action: 'open',
+    kind: 'pod',
+    description: 'Follow-up evidence',
+    requestedOutcome: 'Review attachment',
+    relatedDisputeId: disputeId,
+    tripMilestoneId: linkedMilestone,
+  });
+  assert.equal(followUp.status, 200, followUp.text);
+  const linked = await owner.query(
+    'SELECT related_dispute_id, trip_milestone_id FROM trucker.booking_dispute WHERE id = $1',
+    [followUp.body.disputeId],
+  );
+  assert.deepEqual(linked.rows[0], {
+    related_dispute_id: disputeId,
+    trip_milestone_id: linkedMilestone,
+  });
+  const otherDispute = second.body.disputeId;
+  assert.equal(
+    (await staff({ action: 'close', disputeId: otherDispute, note: 'Administrative closure' }))
+      .status,
+    200,
+  );
+  assert.equal(
+    (await send(finance.token, staffPath, { ...release, disputeId: otherDispute })).status,
+    409,
+  );
+  assert.deepEqual(await snapshot(), before);
+});
+
+test('18c: a revoked administrator cannot replay after the lock, and withdrawal preserves counterclaims', async () => {
+  const { id, shipper, carrier } = await delivered();
+  const finance = await newStaff(['staff_admin']);
+  const operations = await operator();
+  const shipperRoute = `/organisations/${shipper.org}/bookings/${id}/disputes`;
+  const carrierRoute = `/organisations/${carrier.org}/bookings/${id}/disputes`;
+  const staffRoute = `/staff/operations/bookings/${id}`;
+  const send = (route: string, token: string, body: Record<string, unknown>, retry = key()) =>
+    call('POST', route, { token, body, key: retry });
+  const claim = {
+    action: 'open',
+    kind: 'shortage',
+    description: 'Short shipment',
+    requestedOutcome: 'Check manifest',
+    financial: true,
+  };
+  const retry = key();
+  const opened = await send(shipperRoute, shipper.person.token, claim, retry);
+  assert.equal(opened.status, 200, opened.text);
+  const { disputeId } = opened.body;
+  const hold = (
+    await owner.query<{ id: string }>(
+      "SELECT id FROM trucker.settlement_hold WHERE owner_id = $1 AND owner_kind = 'booking_dispute'",
+      [disputeId],
+    )
+  ).rows[0]!;
+  assert.equal(
+    (
+      await send(`${staffRoute}/cargo`, operations.token, {
+        command: 'release_hold',
+        holdId: hold.id,
+        note: 'Attempt through cargo',
+      })
+    ).status,
+    404,
+  );
+  assert.equal(
+    (
+      await send(carrierRoute, carrier.person.token, {
+        action: 'counterclaim',
+        disputeId,
+        note: 'Counterclaim on manifest',
+      })
+    ).status,
+    200,
+  );
+  const withdrawal = { action: 'withdraw', disputeId };
+  const withdrawalKey = key();
+  assert.equal(
+    (await send(shipperRoute, shipper.person.token, withdrawal, withdrawalKey)).status,
+    200,
+  );
+  assert.equal(
+    (
+      await send(`${staffRoute}/disputes`, finance.token, {
+        action: 'release',
+        disputeId,
+        note: 'Withdrawal alone',
+      })
+    ).status,
+    409,
+  );
+  assert.equal(await count('settlement_hold', 'id = $1 AND released_at IS NULL', [hold.id]), 1);
+
+  const uncontested = await send(shipperRoute, shipper.person.token, claim);
+  assert.equal(uncontested.status, 200, uncontested.text);
+  const uncontestedId = uncontested.body.disputeId;
+  const withdrawn = await send(shipperRoute, shipper.person.token, {
+    action: 'withdraw',
+    disputeId: uncontestedId,
+  });
+  assert.equal(withdrawn.status, 200, withdrawn.text);
+
+  const manualRelease = (target: unknown) =>
+    send(`${staffRoute}/disputes`, finance.token, {
+      action: 'release',
+      disputeId: target,
+      note: 'Reviewed the recorded basis',
+    });
+
+  const release = await manualRelease(uncontestedId);
+  assert.equal(release.status, 200, release.text);
+  assert.equal(
+    await count('settlement_hold', 'owner_id = $1 AND released_at IS NOT NULL', [uncontestedId]),
+    1,
+  );
+  assert.equal(await count('settlement_hold', 'id = $1 AND released_at IS NULL', [hold.id]), 1);
+
+  const contested = await send(shipperRoute, shipper.person.token, claim);
+  assert.equal(contested.status, 200, contested.text);
+  const contestedId = contested.body.disputeId;
+  const staffDisputes = `${staffRoute}/disputes`;
+  const propose = (counterclaimTerms?: string) =>
+    send(staffDisputes, operations.token, {
+      action: 'propose',
+      disputeId: contestedId,
+      note: 'Proposed settlement',
+      ...(counterclaimTerms ? { counterclaimTerms } : {}),
+    });
+  const counterclaim = (note: string) =>
+    send(carrierRoute, carrier.person.token, {
+      action: 'counterclaim',
+      disputeId: contestedId,
+      note,
+    });
+  const acceptByBoth = async (proposalId: unknown) => {
+    const body = { action: 'accept', disputeId: contestedId, proposalId };
+    const first = await send(shipperRoute, shipper.person.token, body);
+    assert.equal(first.status, 200, first.text);
+    const second = await send(carrierRoute, carrier.person.token, body);
+    assert.equal(second.status, 200, second.text);
+  };
+
+  assert.equal((await counterclaim('First counterclaim')).status, 200);
+  const omitted = await propose();
+  assert.equal(omitted.status, 200, omitted.text);
+  await acceptByBoth(omitted.body.eventId);
+  assert.equal((await manualRelease(contestedId)).status, 409);
+
+  const stale = await propose('Resolve the first counterclaim with no adjustment');
+  assert.equal(stale.status, 200, stale.text);
+  assert.equal((await counterclaim('New counterclaim since the proposal')).status, 200);
+  await acceptByBoth(stale.body.eventId);
+  assert.equal((await manualRelease(contestedId)).status, 409);
+
+  const complete = await propose('Settle both counterclaims with no adjustment');
+  assert.equal(complete.status, 200, complete.text);
+  await acceptByBoth(complete.body.eventId);
+  assert.equal(
+    await count('booking_dispute_event', "dispute_id = $1 AND kind = 'agreement'", [contestedId]),
+    1,
+  );
+  const contestedRelease = await manualRelease(contestedId);
+  assert.equal(contestedRelease.status, 200, contestedRelease.text);
+
+  const external = await send(shipperRoute, shipper.person.token, claim);
+  assert.equal(external.status, 200, external.text);
+  const externalId = external.body.disputeId;
+  const recorded = await send(`${staffRoute}/disputes`, operations.token, {
+    action: 'external',
+    disputeId: externalId,
+    reference: 'External decision reference',
+    note: 'Recorded for review',
+  });
+  assert.equal(recorded.status, 200, recorded.text);
+  assert.equal((await manualRelease(externalId)).status, 409);
+  assert.equal(
+    await count('settlement_hold', 'owner_id = $1 AND released_at IS NULL', [externalId]),
+    1,
+  );
+
+  const holder = await owner.connect();
+  await holder.query('BEGIN');
+  await holder.query('SELECT 1 FROM trucker.trip WHERE booking_id = $1 FOR UPDATE', [id]);
+  const result = send(shipperRoute, shipper.person.token, withdrawal, withdrawalKey);
+  try {
+    for (let attempt = 0; ; attempt += 1) {
+      const wait = await owner.query(
+        "SELECT 1 FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%booking_disputes%'",
+        [],
+      );
+      if (wait.rowCount) break;
+      if (attempt >= 200) throw new Error('The replay did not wait for the trip lock');
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    await owner.query(
+      'UPDATE trucker.membership SET ended_at = now() WHERE person_id = $1 AND organisation_id = $2',
+      [shipper.person.personId, shipper.org],
+    );
+  } finally {
+    await holder.query('ROLLBACK');
+    holder.release();
+  }
+  assert.equal((await result).status, 404);
+  assert.equal(
+    await count('booking_dispute_event', "dispute_id = $1 AND kind = 'withdraw'", [disputeId]),
+    1,
+  );
+});
+
+test(
+  '18c browser: shipper, operations and carrier complete a mediated agreement',
+  {
+    skip: process.env.TRUCKER_DISPUTE_BROWSER !== '1',
+  },
+  async () => {
+    const { spawn } = await import('node:child_process');
+    const { createRequire } = await import('node:module');
+    const puppeteer = (await import('puppeteer-core')).default;
+    const { id, shipper, carrier } = await delivered();
+    const operations = await newStaff(['operations', 'staff_admin']);
+    const require = createRequire(import.meta.url);
+    const next = require.resolve('next/dist/bin/next');
+    const root = path.resolve(import.meta.dirname, '../../../..');
+    const endpoints = {
+      web: 'http://localhost:4911',
+      console: 'http://localhost:4912',
+    };
+    const launch = (appName: keyof typeof endpoints, dist: string) =>
+      spawn(process.execPath, [next, 'start', '-p', new URL(endpoints[appName]).port], {
+        cwd: path.join(root, 'apps', appName),
+        stdio: 'ignore',
+        env: { ...process.env, TRUCKER_API_URL: base, TRUCKER_NEXT_BUILD_DIR: dist },
+      });
+    const servers = [launch('web', '.next-review'), launch('console', '.next')];
+    try {
+      for (const endpoint of Object.values(endpoints)) {
+        for (let attempt = 0; ; attempt += 1) {
+          if (
+            await fetch(endpoint)
+              .then((r) => r.status < 500)
+              .catch(() => false)
+          )
+            break;
+          if (attempt === 80) throw new Error(`Browser test app unavailable at ${endpoint}`);
+          await new Promise((resolve) => setTimeout(resolve, 250));
+        }
+      }
+      const browser = await puppeteer.launch({
+        executablePath:
+          process.env.CHROME_PATH ?? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+        args: ['--no-sandbox'],
+        headless: true,
+      });
+      try {
+        async function actor(token: string, staff = false) {
+          const context = await browser.createBrowserContext();
+          await context.setCookie({
+            name: staff ? 'trucker_staff_session' : 'trucker_session',
+            value: token,
+            domain: 'localhost',
+            path: '/',
+            httpOnly: true,
+          });
+          return context.newPage();
+        }
+        const sender = await actor(shipper.person.token);
+        const receiver = await actor(carrier.person.token);
+        const consolePage = await actor(operations.token, true);
+        const bookingPage = (org: string, locale = 'en') =>
+          `${endpoints.web}/${locale}/organisations/${org}/bookings/${id}`;
+        const staffPage = `${endpoints.console}/operations/bookings/${id}`;
+        const navigate = (page: Page, url: string) => page.goto(url, { waitUntil: 'networkidle0' });
+        await navigate(sender, bookingPage(shipper.org));
+        const open = '#disputes [data-dispute-command="open"]';
+        await sender.click('#disputes > details > summary');
+        const checkDisputeInputs = async (page: Page) => {
+          const invalid = await page.$$eval('#disputes input', (inputs) =>
+            inputs.flatMap((input) => {
+              const box = input.getBoundingClientRect();
+              if (!box.width || !box.height) return [];
+              const explicitlyLabelled = [...(input.labels ?? [])].some(
+                (label) => Boolean(input.id) && label.htmlFor === input.id,
+              );
+              return explicitlyLabelled && Math.min(box.width, box.height) >= 24
+                ? []
+                : [input.name];
+            }),
+          );
+          assert.deepEqual(invalid, []);
+        };
+        await checkDisputeInputs(sender);
+        await sender.type(`${open} textarea[name=description]`, 'Browser claim');
+        await sender.type(`${open} textarea[name=requestedOutcome]`, 'Review staff proposal');
+        await sender.type(`${open} input[name=amount]`, '12');
+        const connection = await sender.createCDPSession();
+        await connection.send('Fetch.enable', {
+          patterns: [{ urlPattern: bookingPage(shipper.org), requestStage: 'Response' }],
+        });
+        connection.on('Fetch.requestPaused', (request) => {
+          if (request.request.method === 'POST') {
+            void connection.send('Fetch.failRequest', {
+              requestId: request.requestId,
+              errorReason: 'ConnectionReset',
+            });
+          } else {
+            void connection.send('Fetch.continueRequest', { requestId: request.requestId });
+          }
+        });
+        try {
+          await sender.click(`${open} button[type=submit]`);
+          await sender.waitForFunction(
+            "document.querySelector('#disputes')?.textContent?.includes('The outcome is uncertain')",
+          );
+        } finally {
+          await connection.send('Fetch.disable');
+          await connection.detach();
+        }
+        assert.equal(await count('booking_dispute', 'booking_id = $1', [id]), 1);
+        const retry = await sender.evaluateHandle(
+          "[...document.querySelectorAll('#disputes button')].find((button) => button.textContent === 'Retry the same request')",
+        );
+        const retryButton = retry.asElement();
+        assert.ok(retryButton);
+        await retryButton.click();
+        await sender.waitForSelector('#disputes article');
+        assert.equal((await sender.$$('#disputes article')).length, 1);
+        await sender.click('#disputes article details summary');
+        const attachment = await sender.$('#disputes input[type=file]');
+        assert.ok(attachment);
+        const fixture = path.join(storageDir, 'browser-evidence.png');
+        writeFileSync(fixture, fictionalFile('signature').bytes);
+        await attachment.uploadFile(fixture);
+        await sender.click('#disputes [data-dispute-evidence] button[type=submit]');
+        await sender.waitForSelector('#disputes article ol a');
+
+        await navigate(receiver, bookingPage(carrier.org));
+        await receiver.click('#disputes article details summary');
+        const carrierCommand = '#disputes [data-dispute-command="reply"]';
+        await receiver.select(`${carrierCommand} select[name=action]`, 'counterclaim');
+        await receiver.type(
+          `${carrierCommand} textarea[name=note]`,
+          'The carrier disputes the wait charge',
+        );
+        await receiver.click(`${carrierCommand} button[type=submit]`);
+        await receiver.waitForFunction(
+          "document.querySelector('#disputes ol')?.textContent?.includes('The carrier disputes the wait charge')",
+        );
+
+        await navigate(consolePage, staffPage);
+        await consolePage.click('#disputes article details summary');
+        const staffCommand = '#disputes [data-dispute-command="reply"]';
+        await consolePage.select(`${staffCommand} select[name=action]`, 'internal_note');
+        await consolePage.type(`${staffCommand} textarea[name=note]`, 'Operations-only audit note');
+        await consolePage.click(`${staffCommand} button[type=submit]`);
+        await consolePage.waitForFunction(
+          "document.querySelector('#disputes ol')?.textContent?.includes('Operations-only audit note')",
+        );
+        await consolePage.select(`${staffCommand} select[name=action]`, 'propose');
+        await consolePage.type(
+          `${staffCommand} textarea[name=note]`,
+          'Mediated terms for this version',
+        );
+        await consolePage.type(
+          `${staffCommand} textarea[name=counterclaimTerms]`,
+          'The carrier waives the disputed wait charge',
+        );
+        await consolePage.click(`${staffCommand} button[type=submit]`);
+        await consolePage.waitForFunction(
+          "document.querySelector('#disputes ol')?.textContent?.includes('Mediated terms for this version')",
+        );
+
+        await receiver.setViewport({ width: 390, height: 900 });
+        await navigate(receiver, bookingPage(carrier.org, 'ar'));
+        const evidence = await receiver.$eval(
+          '#disputes article',
+          (element) => element.textContent ?? '',
+        );
+        assert.match(evidence, /Mediated terms for this version/);
+        assert.match(evidence, /The carrier waives the disputed wait charge/);
+        assert.doesNotMatch(evidence, /Operations-only audit note/);
+        assert.equal(await receiver.$eval('html', (element) => element.dir), 'rtl');
+        await receiver.$eval('html', (element) => {
+          element.style.fontSize = '200%';
+        });
+        await checkDisputeInputs(receiver);
+        const acceptance = '#disputes [data-dispute-command="accept"]';
+        await receiver.focus(`${acceptance} input[type=checkbox]`);
+        await receiver.keyboard.press('Space');
+        await receiver.keyboard.press('Tab');
+        await receiver.keyboard.press('Enter');
+        await receiver.waitForSelector(`${acceptance} input[type=checkbox]`, { hidden: true });
+        await navigate(sender, bookingPage(shipper.org));
+        await sender.click(`${acceptance} input[type=checkbox]`);
+        await sender.click(`${acceptance} button[type=submit]`);
+        await sender.waitForFunction(
+          "document.querySelector('#disputes article')?.textContent?.includes('Agreement recorded')",
+        );
+
+        await navigate(consolePage, staffPage);
+        const release = '#disputes [data-dispute-command="release"]';
+        await consolePage.type(
+          `${release} textarea[name=note]`,
+          'Both contracting parties accepted the same version',
+        );
+        await consolePage.click(`${release} button[type=submit]`);
+        await consolePage.waitForFunction(
+          "document.querySelector('#disputes article')?.textContent?.includes('Settlement hold released')",
+        );
+
+        await navigate(sender, bookingPage(shipper.org));
+        const report = '#financial-completion [data-completion-action="report"]';
+        await sender.type(`${report} input[name=amount]`, '1.00');
+        await sender.type(`${report} input[name=reference]`, 'Browser freight payment');
+        await sender.type(`${report} input[name=evidence]`, 'Browser receipt reference');
+        await sender.click(`${report} button[type=submit]`);
+        await sender.waitForFunction(
+          "document.querySelector('#financial-completion ul')?.textContent?.includes('Browser freight payment')",
+        );
+        await navigate(receiver, bookingPage(carrier.org));
+        await receiver.click('#financial-completion [data-completion-action="confirm"] button');
+        await receiver.waitForFunction(
+          "document.querySelector('#financial-completion ul')?.textContent?.includes('Receipt confirmed')",
+        );
+
+        const financePage = `${endpoints.console}/finance/completion?booking=${id}`;
+        await navigate(consolePage, financePage);
+        const reviewForm = '#financial-completion [data-completion-action="review"]';
+        await consolePage.type(`${reviewForm} input[name=note]`, 'Reviewed the browser receipt');
+        await consolePage.click(`${reviewForm} button[type=submit]`);
+        await consolePage.waitForFunction(
+          "document.querySelector('#financial-completion')?.textContent?.includes('An independent administrator')",
+        );
+        const checker = await actor((await newStaff(['staff_admin'])).token, true);
+        await navigate(checker, financePage);
+        const matchForm = '#financial-completion [data-completion-action="reconcile"]';
+        await checker.type(`${matchForm} input[name=reference]`, 'Browser bank line');
+        await checker.type(`${matchForm} input[name=evidence]`, 'Browser bank evidence');
+        await checker.click(`${matchForm} button[type=submit]`);
+        await checker.waitForFunction(
+          "document.querySelector('#financial-completion ul.evidence')?.textContent?.includes('Reconciled')",
+        );
+        await navigate(consolePage, staffPage);
+        await consolePage.click('#operational-closure [data-completion-action="assign"] button');
+        await consolePage.waitForFunction(
+          "document.querySelector('#operational-closure p')?.textContent?.includes('Test Staff')",
+        );
+
+        const outsider = await actor((await newPerson()).token);
+        const refused = await navigate(outsider, bookingPage(shipper.org));
+        assert.equal(refused?.status(), 404);
+      } finally {
+        await browser.close();
+      }
+    } finally {
+      for (const server of servers) server.kill();
+    }
+  },
+);
+
+test('19/20: parties confirm freight, independent staff reconcile, and eligible closure is recorded once', async () => {
+  const trip = await delivered();
+  const { id, shipper, carrier } = trip;
+  const finance1 = await newStaff(['staff_admin']);
+  const finance2 = await newStaff(['staff_admin']);
+  const operations = await operator();
+  const outsider = await newPerson();
+  const root = (party: Party) => `/organisations/${party.org}/bookings/${id}`;
+  const staff = `/staff/operations/bookings/${id}`;
+  const path = '/financial-completion';
+  const command = (token: string, route: string, body: Record<string, unknown>, retry = key()) =>
+    call('POST', route, { token, body, key: retry });
+  const list = `/organisations/${shipper.org}/financial-completion`;
+  const listed = await call('GET', list, { token: shipper.person.token });
+  assert.equal(listed.status, 200, listed.text);
+  assert.ok(listed.text.includes(id));
+  assert.equal((await call('GET', list, { token: outsider.token })).status, 404);
+  const financial = await call('GET', root(shipper) + path, { token: shipper.person.token });
+  assert.equal(financial.status, 200, financial.text);
+  const { amount, currency } = (
+    financial.body.obligations as {
+      kind: string;
+      amount: string;
+      currency: string;
+    }[]
+  ).find(({ kind }) => kind === 'freight')!;
+  const payment = {
+    action: 'report',
+    kind: 'freight',
+    amount,
+    currency,
+    reference: 'External payment reference',
+    evidence: 'Private payment evidence identifier',
+  };
+  assert.equal((await call('GET', root(shipper) + path, { token: outsider.token })).status, 404);
+  assert.equal((await command(carrier.person.token, root(carrier) + path, payment)).status, 404);
+  assert.equal((await call('GET', staff + path, { token: operations.token })).status, 403);
+  const retry = key();
+  const recorded = await command(shipper.person.token, root(shipper) + path, payment, retry);
+  assert.equal(recorded.status, 200, recorded.text);
+  assert.deepEqual(
+    (await command(shipper.person.token, root(shipper) + path, payment, retry)).body,
+    recorded.body,
+  );
+  assert.equal(
+    (await command(shipper.person.token, root(shipper) + path, { ...payment, amount: '1' }, retry))
+      .status,
+    409,
+  );
+
+  const paymentId = recorded.body.paymentId;
+  const confirm = { action: 'confirm', paymentId };
+  assert.equal((await command(shipper.person.token, root(shipper) + path, confirm)).status, 403);
+  const confirmed = await command(carrier.person.token, root(carrier) + path, confirm);
+  assert.equal(confirmed.status, 200, confirmed.text);
+
+  const reviewed = await command(finance1.token, staff + path, {
+    action: 'review',
+    paymentId,
+    note: 'Compared the payment evidence',
+  });
+  assert.equal(reviewed.status, 200, reviewed.text);
+  const match = {
+    action: 'reconcile',
+    paymentId,
+    amount,
+    currency,
+    reference: 'Statement line 13',
+    evidence: 'Statement evidence 13',
+  };
+  assert.equal((await command(finance1.token, staff + path, match)).status, 403);
+
+  const dispute = await command(shipper.person.token, root(shipper) + '/disputes', {
+    action: 'open',
+    kind: 'freight_commission',
+    description: 'Pending freight issue',
+    requestedOutcome: 'Check the agreed freight amount',
+    financial: true,
+  });
+  assert.equal(dispute.status, 200, dispute.text);
+  const holdView = await call('GET', staff + path, { token: finance1.token });
+  assert.ok((holdView.body.blockers as string[]).includes('settlement_hold'));
+  const discrepancy = await command(finance2.token, staff + path, {
+    ...match,
+    amount: '1',
+    note: 'Bank line differed',
+  });
+  assert.equal(discrepancy.status, 200, discrepancy.text);
+  let staffLedger = await call('GET', staff + path, { token: finance1.token });
+  assert.ok((staffLedger.body.blockers as string[]).includes('freight_unreconciled'));
+  assert.equal(
+    (
+      await command(finance1.token, staff + path, {
+        action: 'review',
+        paymentId,
+        note: 'Found the correct evidence',
+      })
+    ).status,
+    200,
+  );
+  const reconciled = await command(finance2.token, staff + path, match);
+  assert.equal(reconciled.status, 200, reconciled.text);
+  staffLedger = await call('GET', staff + path, { token: finance1.token });
+  assert.ok(!(staffLedger.body.blockers as string[]).includes('freight_unreconciled'));
+  assert.ok((staffLedger.body.blockers as string[]).includes('settlement_hold'));
+  const withdrawn = await command(shipper.person.token, root(shipper) + '/disputes', {
+    action: 'withdraw',
+    disputeId: dispute.body.disputeId,
+  });
+  assert.equal(withdrawn.status, 200, withdrawn.text);
+  const releaseHold = await command(finance1.token, staff + '/disputes', {
+    action: 'release',
+    disputeId: dispute.body.disputeId,
+    note: 'Uncontested withdrawal',
+  });
+  assert.equal(releaseHold.status, 200, releaseHold.text);
+  const publicLedger = await call('GET', root(shipper) + path, { token: shipper.person.token });
+  assert.equal(publicLedger.text.includes('Statement line 13'), false);
+
+  const assign = await command(operations.token, staff + '/closure', { ownerId: operations.id });
+  assert.equal(assign.status, 200, assign.text);
+  const queue = await call('GET', '/staff/operations/closure', { token: operations.token });
+  assert.equal(queue.status, 200, queue.text);
+  assert.ok(queue.text.includes(operations.id));
+  assert.ok(queue.text.includes('pod_not_accepted'));
+  assert.ok(queue.text.includes('resources_not_released'));
+  const watch = async () =>
+    (await app.query<{ count: number }>('SELECT trucker.booking_closure_watch() AS count')).rows[0]!
+      .count;
+  assert.equal(await watch(), 0);
+
+  await capture(trip.driver, id, [fictionalFile('signature')]);
+  const pod = (await podOf(shipper, id)).versions[0]!;
+  const accepted = await call('POST', podRoute(shipper.org, id, '/review'), {
+    token: shipper.person.token,
+    body: { podId: pod.id, version: 1, decision: 'accepted', note: null },
+  });
+  assert.equal(accepted.status, 200, accepted.text);
+  assert.equal(await watch(), 0);
+  for (const role of ['truck', 'driver']) {
+    const released = await call('POST', root(carrier) + `/resources/${role}/release`, {
+      token: carrier.person.token,
+    });
+    assert.equal(released.status, 200, released.text);
+  }
+  assert.equal(await watch(), 0);
+  const fee = (
+    await owner.query<{ id: string; amount: string; currency_code: string }>(
+      'SELECT id,amount::text,currency_code FROM trucker.fee_payment WHERE booking_id=$1 AND status=$2',
+      [id, 'approved'],
+    )
+  ).rows[0]!;
+  const feeReconciliation = await command(finance2.token, '/staff/reconciliations', {
+    subjectType: 'payment',
+    subjectId: fee.id,
+    source: 'bank_statement',
+    sourceReference: 'Trucker fee statement line',
+    amount: fee.amount,
+    currency: fee.currency_code,
+  });
+  assert.equal(feeReconciliation.status, 201, feeReconciliation.text);
+  const ticks = await Promise.all([watch(), watch()]);
+  assert.deepEqual(ticks.sort(), [0, 1]);
+  assert.equal(await count('booking_closure', 'booking_id=$1', [id]), 1);
+  const closed = await call('GET', root(shipper) + '/closure', { token: shipper.person.token });
+  assert.deepEqual(closed.body, { state: 'closed' });
+
+  const reopened = await command(finance1.token, staff + path, {
+    action: 'review',
+    paymentId,
+    note: 'Recheck the original statement line',
+  });
+  assert.equal(reopened.status, 200, reopened.text);
+  const correctionPending = await call('GET', root(shipper) + '/closure', {
+    token: shipper.person.token,
+  });
+  assert.deepEqual(correctionPending.body, { state: 'review_required' });
+  const rechecked = await command(finance2.token, staff + path, match);
+  assert.equal(rechecked.status, 200, rechecked.text);
+  assert.deepEqual(
+    (await call('GET', root(shipper) + '/closure', { token: shipper.person.token })).body,
+    { state: 'closed' },
+  );
+
+  const laterIssue = await command(shipper.person.token, root(shipper) + '/disputes', {
+    action: 'open',
+    kind: 'freight_commission',
+    description: 'Later financial issue',
+    requestedOutcome: 'Review fees',
+    financial: true,
+  });
+  assert.equal(laterIssue.status, 200, laterIssue.text);
+  const review = await call('GET', root(shipper) + '/closure', { token: shipper.person.token });
+  assert.deepEqual(review.body, { state: 'review_required' });
+  assert.equal(await watch(), 0);
+  assert.equal(await count('booking_closure', 'booking_id=$1', [id]), 1);
+});
+
+test('record photos are private, scoped to the owning company and safe to retry', async () => {
+  const company = await verifiedShipper();
+  const outsider = await verifiedShipper();
+  const shipment = await draft(company.person, company.org);
+  const root = '/organisations/' + company.org + '/shipments/' + shipment.id + '/photos';
+  const id = randomUUID();
+  const bytes = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+cIioAAAAASUVORK5CYII=',
+    'base64',
+  );
+  const send = (token: string) =>
+    fetch(base + root + '/' + id, {
+      method: 'PUT',
+      body: new Uint8Array(bytes),
+      headers: { authorization: 'Bearer ' + token, 'content-type': 'image/png' },
+    });
+  assert.equal((await send(outsider.person.token)).status, 404);
+  const first = await send(company.person.token);
+  assert.equal(first.status, 200, await first.clone().text());
+  assert.deepEqual(await first.json(), { id, outcome: 'stored' });
+  assert.deepEqual(await (await send(company.person.token)).json(), {
+    id,
+    outcome: 'already_stored',
+  });
+  const list = await call('GET', root, { token: company.person.token });
+  assert.equal(list.status, 200, list.text);
+  const photos = list.body.photos as Record<string, unknown>[];
+  assert.equal(photos.length, 1);
+  assert.equal(photos[0]?.id, id);
+  assert.equal('storageKey' in photos[0]!, false);
+  assert.equal((await call('GET', root, { token: outsider.person.token })).status, 404);
+  const image = await fetch(base + root + '/' + id, {
+    headers: { authorization: 'Bearer ' + company.person.token },
+  });
+  assert.equal(image.headers.get('cache-control'), 'private, no-store');
+  assert.deepEqual(Buffer.from(await image.arrayBuffer()), bytes);
+  assert.equal(
+    (
+      await fetch(base + root + '/' + id, {
+        headers: { authorization: 'Bearer ' + outsider.person.token },
+      })
+    ).status,
+    404,
+  );
+  assert.equal((await fetch(base + '/public/shipments')).status, 200);
+});
+
+test('vehicle photos are isolated from other companies and cannot be faked by a media header', async () => {
+  const carrier = await verifiedCarrier();
+  const outsider = await verifiedCarrier();
+  const vehicle = await rigid(carrier);
+  const root = '/organisations/' + carrier.org + '/vehicles/' + vehicle.id + '/photos';
+  const id = randomUUID();
+  const image = new Uint8Array([255, 216, 255, 224, 0, 255, 217]);
+  const upload = (bytes: Uint8Array<ArrayBuffer>, token: string) =>
+    fetch(base + root + '/' + id, {
+      method: 'PUT',
+      body: bytes,
+      headers: { authorization: 'Bearer ' + token, 'content-type': 'image/jpeg' },
+    });
+  assert.equal((await upload(new Uint8Array([0, 1, 2, 3]), carrier.person.token)).status, 415);
+  assert.equal((await upload(image, outsider.person.token)).status, 404);
+  assert.equal((await upload(image, carrier.person.token)).status, 200);
+  const list = await call('GET', root, { token: carrier.person.token });
+  assert.equal(list.status, 200);
+  assert.equal((list.body.photos as { id: string }[])[0]?.id, id);
 });

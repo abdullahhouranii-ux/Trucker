@@ -7,3 +7,9 @@ node_modules/
 .next/
 next-env.d.ts
 *.tsbuildinfo
+.expo/
+**/.gradle/
+**/.next-review/
+**/dist-review/
+apps/mobile/android/
+apps/mobile/ios/

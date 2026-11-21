@@ -11,3 +11,13 @@ apps/web/tests/output/
 *.tsbuildinfo
 apps/console/tests/output/
 .data/
+# Expo local caches and native build outputs (source stays versioned).
+**/.expo/
+apps/mobile/dist/
+apps/mobile/dist-review/
+apps/mobile/.gradle/
+apps/mobile/android/
+apps/mobile/ios/
+apps/mobile/android/.gradle/
+apps/mobile/ios/Pods/
+**/.next-review/

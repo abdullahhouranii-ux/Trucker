@@ -259,7 +259,7 @@ function run(file, args, env) {
   });
 }
 
-async function main() {
+async function main(databaseUrl) {
   if (!process.env.DATABASE_URL)
     throw new Error('DATABASE_URL must be set: the journey checks use the real API and database.');
   if (!existsSync(apiMain)) throw new Error('Build the API first: npm run build -w @trucker/api');
@@ -267,6 +267,7 @@ async function main() {
   // development configuration.
   const apiEnv = {
     ...process.env,
+    DATABASE_URL: databaseUrl,
     NODE_ENV: 'development',
     PORT: String(apiPort),
     SIGN_IN_CODE_DELIVERY: 'development-display',
@@ -314,7 +315,7 @@ async function main() {
   // removed when the checks end.
   const owner = new (createRequire(new URL('../../api/package.json', import.meta.url))(
     'pg',
-  ).Client)({ connectionString: process.env.DATABASE_URL });
+  ).Client)({ connectionString: databaseUrl });
   await owner.connect();
   await owner.query(
     `INSERT INTO trucker.country_time_zone (country_code, zone_name)
@@ -661,25 +662,42 @@ async function main() {
     // ------------------------------------------------------------------------------------
     mkdirSync(outDir, { recursive: true });
     // At most five pictures, for design review only.
-    const shots = {
-      'en:booking refund': 'booking-refund-en-390',
-      'ar:booking refund': 'booking-refund-ar-390',
-      'en:trip for carrier': 'trip-carrier-en-390',
-      'en:trip for shipper': 'cargo-shipper-en-390',
-      'ur:trip for shipper': 'cargo-shipper-ur-390',
-      'ar:driver trip': 'driver-trip-ar-390',
-    };
+    const formReview = process.env.TRUCKER_REVIEW_SHIPMENT_FORM === '1';
+    const shots = formReview
+      ? {
+          'en:shipment new': 'shipment-new-en-1280',
+          'ar:shipment new': 'shipment-new-ar-390',
+        }
+      : {
+          'en:booking refund': 'booking-refund-en-390',
+          'ar:booking refund': 'booking-refund-ar-390',
+          'en:trip for carrier': 'trip-carrier-en-390',
+          'en:trip for shipper': 'cargo-shipper-en-390',
+          'ur:trip for shipper': 'cargo-shipper-ur-390',
+          'ar:driver trip': 'driver-trip-ar-390',
+        };
     // Fictional numbers: country code 999 is not assigned. Unique per run.
     const stamp = String(Date.now()).slice(-7);
     const phoneFor = (index) => `+9995${index}${stamp}`;
     const text = (selector) =>
       page.evaluate((s) => document.querySelector(s)?.textContent?.trim() ?? null, selector);
     const focusedId = () => page.evaluate(() => document.activeElement?.id ?? '');
+    const openRecordOptions = async (selector) => {
+      await page.waitForSelector(selector);
+      await page.$eval(selector, (element) => {
+        const menu = element.closest('details.record-options');
+        if (menu && !menu.open) menu.querySelector('summary')?.click();
+      });
+    };
     const submit = async (selector) => {
+      await openRecordOptions(selector);
+      await page.waitForSelector(selector, { visible: true });
       await Promise.all([
         page.waitForNavigation({ waitUntil: 'networkidle0' }),
         page.click(selector),
       ]);
+      // A server-action redirect can show the route loading boundary after navigation.
+      await page.waitForSelector('main > [aria-busy="true"]', { hidden: true });
       await page.evaluate(() => document.fonts.ready);
     };
     // Checks one state of one screen: layout at several widths, doubled text, rules, direction.
@@ -692,7 +710,11 @@ async function main() {
       }
       await page.setViewport({ width: 390, height: 900 });
       const shot = shots[`${locale}:${state}`];
-      if (shot) await page.screenshot({ path: `${outDir}${shot}.png`, fullPage: true });
+      if (shot && process.env.TRUCKER_BROWSER_SCREENSHOTS !== 'off') {
+        if (formReview && locale === 'en') await page.setViewport({ width: 1280, height: 900 });
+        await page.screenshot({ path: `${outDir}${shot}.png`, fullPage: true });
+        if (formReview && locale === 'en') await page.setViewport({ width: 390, height: 900 });
+      }
       await page.evaluate(() => (document.documentElement.style.fontSize = '200%'));
       const doubled = await page.evaluate(findOverflow);
       check(
@@ -1246,6 +1268,11 @@ async function main() {
       await page.type('#pickupUntilDate', '2026-07-01');
       await page.type('#pickupUntilTime', '12:30');
       await page.select('#deliveryCountry', 'XB');
+      check(
+        'shipment',
+        (await valueOf('#deliveryZone')) === 'Etc/GMT-3',
+        `${locale}: selecting a country with one time zone suggests it`,
+      );
       await page.select('#deliveryZone', 'Etc/GMT-3');
       await page.type('#deliveryFromDate', '2026-07-01');
       await page.type('#deliveryFromTime', '11:45');
@@ -2667,6 +2694,31 @@ async function main() {
     // ------------------------------------------------------------------------------------
     // Quotations: terms, problems by field, lost answers, comparison, rejection
     // ------------------------------------------------------------------------------------
+
+    const addQuotationTruck = async (shipmentId) => {
+      const { rows } = await owner.query(
+        `INSERT INTO trucker.vehicle (
+           organisation_id, kind, category_code, equipment_type, registration_country,
+           registration_number, ownership, ownership_decided_at, created_by, created_at, updated_at
+         )
+         SELECT $2, 'truck', 'fictional_rigid_truck', s.equipment_type, s.pickup_country,
+                $3, 'verified', now(), m.person_id, now(), now()
+         FROM trucker.shipment_draft s
+         CROSS JOIN LATERAL (
+           SELECT person_id FROM trucker.membership WHERE organisation_id = $2 AND ended_at IS NULL
+           ORDER BY id LIMIT 1
+         ) m
+         WHERE s.id = $1 AND NOT trucker.quotation_fleet_matches(s, $2)
+         RETURNING id`,
+        [shipmentId, carrierOrg, randomBytes(8).toString('hex').toUpperCase()],
+      );
+      return rows[0]?.id;
+    };
+    const removeQuotationTruck = async (id) => {
+      if (id) await owner.query('DELETE FROM trucker.vehicle WHERE id = $1', [id]);
+    };
+    const firstQuoteTruck = await addQuotationTruck(pubShipment);
+
     const quotesPath = (locale) =>
       `/${locale}/organisations/${verifyOrg}/shipments/${pubShipment}/quotations`;
     const quotePath = (locale) => `${discoverPath(locale)}/${pubShipment}`;
@@ -2885,6 +2937,7 @@ async function main() {
     // ------------------------------------------------------------------------------------
     // Fleet and drivers: register, lose an answer, documents, staff decisions, a driver joins
     // ------------------------------------------------------------------------------------
+    await removeQuotationTruck(firstQuoteTruck);
     const fleetPath = (locale) => `/${locale}/organisations/${carrierOrg}/fleet`;
     const enFleet = messagesFor('en').fleet;
     const urFleet = messagesFor('ur').fleet;
@@ -3174,6 +3227,7 @@ async function main() {
       { version: 0, currency: 'XTS' },
       'terms',
     );
+    const bookingQuoteTruck = await addQuotationTruck(bookShipment);
     const bookQuote = await post(
       `/organisations/${carrierOrg}/discovery/shipments/${bookShipment}/quotations`,
       {
@@ -3184,6 +3238,7 @@ async function main() {
       },
       'quote',
     );
+    await removeQuotationTruck(bookingQuoteTruck);
     const bookQuotation = bookQuote.body.quotation?.id;
     const bookQuotes = (locale) =>
       `/${locale}/organisations/${verifyOrg}/shipments/${bookShipment}/quotations`;
@@ -4315,6 +4370,7 @@ async function main() {
     }
     // The customer accepts and chooses what it allows.
     await open(authPath('en', verifyOrg), 390);
+    await openRecordOptions('[data-status="requested"] input[name="mayPublish"]');
     await page.click('[data-status="requested"] input[name="mayPublish"]');
     await page.click('[data-status="requested"] input[name="feePayerAgreed"]');
     await submit('[data-status="requested"] [data-accept]');
@@ -5575,7 +5631,17 @@ async function main() {
   }
 }
 
-main().catch((error) => {
+async function runInIsolatedDatabase() {
+  const { createTestDatabase } = await import('../../api/dist/testing/test-database.js');
+  const database = await createTestDatabase();
+  try {
+    await main(database.url);
+  } finally {
+    await database.drop();
+  }
+}
+
+runInIsolatedDatabase().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });

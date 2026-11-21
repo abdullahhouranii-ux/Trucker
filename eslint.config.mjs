@@ -2,9 +2,38 @@ import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['**/dist/**', '**/node_modules/**', '**/.next/**', '**/next-env.d.ts', 'docs/**'] },
+  {
+    files: ['tools/dev/design-review.mjs'],
+    languageOptions: {
+      globals: {
+        document: 'readonly',
+        innerWidth: 'readonly',
+        getComputedStyle: 'readonly',
+        performance: 'readonly',
+      },
+    },
+  },
+  {
+    ignores: [
+      '**/dist/**',
+      '**/node_modules/**',
+      '**/.next/**',
+      '**/.expo/**',
+      '**/.gradle/**',
+      '**/.next-review/**',
+      '**/dist-review/**',
+      'apps/mobile/android/**',
+      'apps/mobile/ios/**',
+      '**/next-env.d.ts',
+      'docs/**',
+    ],
+  },
   js.configs.recommended,
   ...tseslint.configs.recommended,
+  {
+    files: ['apps/mobile/**/*.ts', 'apps/mobile/**/*.tsx'],
+    languageOptions: { globals: { __DEV__: 'readonly', process: 'readonly' } },
+  },
   {
     // Plain Node.js helper scripts.
     files: [

@@ -3,6 +3,7 @@ import { notFound, redirect } from 'next/navigation';
 import { DraftKeeper } from '../../../../../components/draft-keeper.tsx';
 import { EligibilityTag, fleetProblems } from '../../../../../components/fleet-view.tsx';
 import { describedBy, ErrorSummary, Field } from '../../../../../components/form.tsx';
+import { RecordOptions } from '../../../../../components/record-options.tsx';
 import { isLocale } from '../../../../../i18n/config.ts';
 import { getMessages } from '../../../../../i18n/messages.ts';
 import {
@@ -161,7 +162,7 @@ export default async function FleetPage({ params, searchParams }: Props) {
         {fleet.vehicles.length === 0 ? (
           <p id="no-vehicles">{t.noVehicles}</p>
         ) : (
-          <ol className="organisation-list" id="vehicle-list">
+          <ol className="organisation-list record-collection" id="vehicle-list">
             {fleet.vehicles.map((vehicle) => (
               <li
                 className="card organisation"
@@ -195,6 +196,42 @@ export default async function FleetPage({ params, searchParams }: Props) {
                 >
                   {t.openVehicle}
                 </a>
+                <RecordOptions label={m.publicShipments.options + ' ' + vehicle.registrationNumber}>
+                  <li>
+                    <a
+                      className="button"
+                      href={
+                        '/' +
+                        locale +
+                        '/organisations/' +
+                        id +
+                        '/fleet/vehicles/' +
+                        vehicle.id +
+                        '#documents-title'
+                      }
+                    >
+                      {t.documentsTitle}
+                    </a>
+                  </li>
+                  {vehicle.status === 'active' && fleet.open ? (
+                    <li>
+                      <a
+                        className="button"
+                        href={
+                          '/' +
+                          locale +
+                          '/organisations/' +
+                          id +
+                          '/fleet/vehicles/' +
+                          vehicle.id +
+                          '#document-form-title'
+                        }
+                      >
+                        {t.addDocumentTitle}
+                      </a>
+                    </li>
+                  ) : null}
+                </RecordOptions>
               </li>
             ))}
           </ol>
@@ -264,7 +301,7 @@ export default async function FleetPage({ params, searchParams }: Props) {
         {fleet.drivers.length === 0 ? (
           <p id="no-drivers">{t.noDrivers}</p>
         ) : (
-          <ol className="organisation-list" id="driver-list">
+          <ol className="organisation-list record-collection" id="driver-list">
             {fleet.drivers.map((driver) => {
               const all = driver.authorisations?.some((item) => !item.vehicleId) ?? false;
               return (

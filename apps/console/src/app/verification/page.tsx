@@ -68,7 +68,7 @@ export default async function VerificationQueuePage({ searchParams }: Props) {
             {list.data.applications.length === 0 ? (
               <p id="queue-empty">Nothing is waiting for a decision.</p>
             ) : null}
-            <ul className="organisation-list" id="queue">
+            <ul className="organisation-list record-collection" id="queue">
               {list.data.applications.map((entry) => (
                 <li
                   key={entry.applicationId}

@@ -346,7 +346,7 @@ export default async function FeesPage({ searchParams }: Props) {
                 {reply.data.fees.awaitingApproval.length === 0 ? (
                   <p id="approval-empty">No recorded transfer is waiting.</p>
                 ) : (
-                  <ol className="organisation-list" id="approval-list">
+                  <ol className="organisation-list record-collection" id="approval-list">
                     {reply.data.fees.awaitingApproval.map((payment) => (
                       <li className="card" key={payment.id} data-payment={payment.id}>
                         <PaymentFacts payment={payment} />
@@ -409,7 +409,7 @@ export default async function FeesPage({ searchParams }: Props) {
                 {reply.data.fees.due.length === 0 ? (
                   <p id="due-empty">No fee is due.</p>
                 ) : (
-                  <ol className="organisation-list" id="due-list">
+                  <ol className="organisation-list record-collection" id="due-list">
                     {reply.data.fees.due.map((item) => (
                       <li
                         className="card"
@@ -453,7 +453,7 @@ export default async function FeesPage({ searchParams }: Props) {
                 {reply.data.fees.onlineReview.length === 0 ? (
                   <p id="online-review-empty">Nothing to look into.</p>
                 ) : (
-                  <ol className="organisation-list" id="online-review-list">
+                  <ol className="organisation-list record-collection" id="online-review-list">
                     {reply.data.fees.onlineReview.map((item) => (
                       <li className="card" key={item.id} data-review={item.result}>
                         <ul className="evidence">
@@ -493,7 +493,7 @@ export default async function FeesPage({ searchParams }: Props) {
                 {reply.data.fees.openCheckouts.length === 0 ? (
                   <p id="open-checkouts-empty">No online payment is in progress.</p>
                 ) : (
-                  <ol className="organisation-list" id="open-checkouts-list">
+                  <ol className="organisation-list record-collection" id="open-checkouts-list">
                     {reply.data.fees.openCheckouts.map((item) => (
                       <li className="card" key={item.id} data-checkout={item.id}>
                         <ul className="evidence">
@@ -532,7 +532,7 @@ export default async function FeesPage({ searchParams }: Props) {
                 {reply.data.fees.refunds.length === 0 ? (
                   <p id="refunds-empty">Nothing to return.</p>
                 ) : (
-                  <ol className="organisation-list" id="refund-list">
+                  <ol className="organisation-list record-collection" id="refund-list">
                     {reply.data.fees.refunds.map((refund) => (
                       <li className="card" key={refund.id} data-refund={refund.reason}>
                         <ul className="evidence">
@@ -559,7 +559,7 @@ export default async function FeesPage({ searchParams }: Props) {
                 {reply.data.fees.decided.length === 0 ? (
                   <p id="decided-empty">Nothing decided yet.</p>
                 ) : (
-                  <ol className="organisation-list" id="decided-list">
+                  <ol className="organisation-list record-collection" id="decided-list">
                     {reply.data.fees.decided.map((payment) => (
                       <li
                         className="card"

@@ -21,6 +21,7 @@ import { hashToken } from '../identity/secrets.js';
 import { DEMONSTRATION_TERMS_VERSION } from '../identity/terms.js';
 import { settleFee } from '../testing/fee.js';
 import { createTestClock } from '../testing/test-clock.js';
+import { ensureQuotationFleet } from '../testing/quotation-fleet.js';
 import { createTestDatabase, type TestDatabase } from '../testing/test-database.js';
 
 // Assignment, reservation and confirmation (slice 15). Real PostgreSQL, the API connected as
@@ -525,6 +526,7 @@ const quote = (person: Person, org: string, shipment: string, body = quoteBody()
     body,
   });
 async function quoted(person: Person, org: string, shipment: string, body = quoteBody()) {
+  await ensureQuotationFleet(owner, person.personId, org, shipment);
   const reply = await quote(person, org, shipment, body);
   assert.equal(reply.status, 201, reply.text);
   return reply.body.quotation as Quotation;
@@ -1317,6 +1319,7 @@ test('A-11, P2-2, IA-7: an organiser publishes its own shipments once verified; 
   const own = await quote(coordinator.person, coordinator.org, shipment, quoteBody());
   assert.notEqual(own.status, 201, own.text);
   const rival = await truckOwner();
+  await eligibleVehicle(rival, { equipmentType: 'curtain_side' });
   assert.equal((await quote(rival.person, rival.org, shipment, quoteBody())).status, 201);
 
   // Isolation: the rival reads nothing of the coordinator's account.

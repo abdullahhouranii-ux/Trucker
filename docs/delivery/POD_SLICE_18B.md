@@ -50,6 +50,23 @@ API: `POST /organisations/:id/bookings/:bookingId/pod`, `PUT .../pod/items/:item
 | Builds | Passed |
 | Browser checks | Web: all passed, including the driver sending a signature and a photo of the cargo from the phone page, the shipper seeing it ready, opening a file through the site and accepting it. Found and fixed: the "Open" links were too small to tap. Console: all passed |
 
+## Independent review fixes (19 November 2026)
+
+- Upload failures with an unknown database outcome now retain the uploaded bytes. A lost
+  acknowledgement after COMMIT must not delete a file already referenced by the database.
+  Confirmed refusals and confirmed duplicate uploads still remove only their new copy.
+- This deliberately prefers an unreferenced file over missing evidence. No orphan collector
+  is built: before production, cleanup must reconcile storage keys with committed records
+  and exclude in-flight uploads. Never delete evidence merely because its request failed.
+- The API now sends PDFs as attachments on participant, driver and staff file routes;
+  images remain inline. Existing private/no-store and nosniff headers are unchanged.
+- Six focused fault-injection/controller tests pass, including participant COMMIT-reply loss,
+  staff-function reply loss, retry preserving the original file, confirmed cleanup, and PDF
+  and image response headers. These are simulated database-boundary faults, not live
+  PostgreSQL network interruptions. The five existing POD tests also pass against isolated
+  PostgreSQL test databases on Windows, Node 24.21.0. No full-suite or browser rerun was made
+  for these API-only changes. No CI, merge, deployment or supplier change is claimed.
+
 ## Not done, and limits
 
 - Disputes and holds in general (18c); the "disputed" decision of Part 4 waits for it.

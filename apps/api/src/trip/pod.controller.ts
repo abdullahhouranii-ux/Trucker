@@ -103,7 +103,10 @@ function send(response: ServerResponse, file: PodFile): void {
   response.setHeader('content-length', String(file.bytes.length));
   response.setHeader('cache-control', 'private, no-store');
   response.setHeader('x-content-type-options', 'nosniff');
-  response.setHeader('content-disposition', 'inline');
+  response.setHeader(
+    'content-disposition',
+    file.mediaType === 'application/pdf' ? 'attachment' : 'inline',
+  );
   response.setHeader('x-pod-fingerprint', file.fingerprint);
   response.end(file.bytes);
 }

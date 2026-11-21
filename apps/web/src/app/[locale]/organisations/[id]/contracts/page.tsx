@@ -1,3 +1,4 @@
+import { RecordOptions } from '../../../../../components/record-options.tsx';
 import { notFound, redirect } from 'next/navigation';
 import { ContractTerms, percentText } from '../../../../../components/commission.tsx';
 import { fill } from '../../../../../i18n/format.ts';
@@ -195,7 +196,7 @@ export default async function ContractsPage({ params, searchParams }: Props) {
         {overview.contracts.length === 0 ? (
           <p id="no-contracts">{t.none}</p>
         ) : (
-          <ol className="evidence" id="contracts">
+          <ol className="evidence record-collection" id="contracts">
             {overview.contracts.map((item) => (
               <li
                 className="card organisation"
@@ -212,40 +213,52 @@ export default async function ContractsPage({ params, searchParams }: Props) {
                 <p className="chip">{t.status[item.status]}</p>
                 <p>{item.role === 'carrier' ? t.asCarrier : t.asOrganiser}</p>
                 <ContractTerms t={m.commission} tc={t} contract={item} />
-                {item.status === 'proposed' && item.role === 'carrier' ? (
-                  <form className="form-inline" action={decideContractAction}>
-                    {hidden}
-                    <input type="hidden" name="contractId" value={item.id} />
-                    <input type="hidden" name="version" value={item.version} />
-                    <button
-                      className="button button-primary"
-                      type="submit"
-                      name="decision"
-                      value="accept"
-                      data-accept
-                    >
-                      {t.accept}
-                    </button>
-                    <button
-                      className="button"
-                      type="submit"
-                      name="decision"
-                      value="decline"
-                      data-decline
-                    >
-                      {t.decline}
-                    </button>
-                  </form>
-                ) : null}
-                {item.status === 'active' || item.status === 'proposed' ? (
-                  <form action={endContractAction}>
-                    {hidden}
-                    <input type="hidden" name="contractId" value={item.id} />
-                    <input type="hidden" name="version" value={item.version} />
-                    <button className="button button-danger" type="submit" data-end>
-                      {item.status === 'proposed' && item.role === 'organiser' ? t.withdraw : t.end}
-                    </button>
-                  </form>
+                {item.status === 'proposed' || item.status === 'active' ? (
+                  <RecordOptions label={m.operationsWorkspace.actions + ' ' + item.id.slice(0, 8)}>
+                    {item.status === 'proposed' && item.role === 'carrier' ? (
+                      <li>
+                        {' '}
+                        <form className="form-inline" action={decideContractAction}>
+                          {hidden}
+                          <input type="hidden" name="contractId" value={item.id} />
+                          <input type="hidden" name="version" value={item.version} />
+                          <button
+                            className="button button-primary"
+                            type="submit"
+                            name="decision"
+                            value="accept"
+                            data-accept
+                          >
+                            {t.accept}
+                          </button>
+                          <button
+                            className="button"
+                            type="submit"
+                            name="decision"
+                            value="decline"
+                            data-decline
+                          >
+                            {t.decline}
+                          </button>
+                        </form>{' '}
+                      </li>
+                    ) : null}
+                    {item.status === 'active' || item.status === 'proposed' ? (
+                      <li>
+                        {' '}
+                        <form action={endContractAction}>
+                          {hidden}
+                          <input type="hidden" name="contractId" value={item.id} />
+                          <input type="hidden" name="version" value={item.version} />
+                          <button className="button button-danger" type="submit" data-end>
+                            {item.status === 'proposed' && item.role === 'organiser'
+                              ? t.withdraw
+                              : t.end}
+                          </button>
+                        </form>{' '}
+                      </li>
+                    ) : null}
+                  </RecordOptions>
                 ) : null}
               </li>
             ))}

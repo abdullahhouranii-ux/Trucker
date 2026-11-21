@@ -1,3 +1,4 @@
+import { RecordOptions } from '../../../../../components/record-options.tsx';
 import { notFound, redirect } from 'next/navigation';
 import { ErrorSummary } from '../../../../../components/form.tsx';
 import { Ltr } from '../../../../../components/ltr.tsx';
@@ -182,7 +183,7 @@ export default async function DiscoverPage({ params, searchParams }: Props) {
             {cursor ? t.endOfList : t.empty}
           </p>
         ) : null}
-        <ol className="organisation-list" id="discovery-list">
+        <ol className="organisation-list record-collection" id="discovery-list">
           {page.items.map((item) => {
             const s = item.shipment;
             return (
@@ -232,6 +233,13 @@ export default async function DiscoverPage({ params, searchParams }: Props) {
                 <a className="button" href={`${here}/${item.id}`} data-open={item.id}>
                   {t.open}
                 </a>
+                <RecordOptions label={m.operationsWorkspace.actions + ' ' + item.id.slice(0, 8)}>
+                  <li>
+                    <a className="button" href={here + '/' + item.id}>
+                      {t.open}
+                    </a>
+                  </li>
+                </RecordOptions>
               </li>
             );
           })}

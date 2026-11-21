@@ -1,37 +1,58 @@
+import {
+  WorkspaceGroups,
+  type WorkspaceGroup,
+} from '../../../web/src/components/workspace-groups.tsx';
 import type { StaffAccount } from '../server/types.ts';
 
 export function ConsoleHeader({ staff, current }: { staff?: StaffAccount; current?: string }) {
   const admin = staff?.privileges.includes('staff_admin') ?? false;
   const reviewer = staff?.privileges.includes('reviewer') ?? false;
   const operations = staff?.privileges.includes('operations') ?? false;
-  const link = (href: string, label: string) => (
-    <li>
-      <a href={href} aria-current={current === href ? 'page' : undefined}>
-        {label}
-      </a>
-    </li>
-  );
+  function links(...items: Array<readonly [string, string, boolean]>): WorkspaceGroup['links'] {
+    return items.filter(([, , allowed]) => allowed).map(([href, label]) => [href, label]);
+  }
+  const groups: WorkspaceGroup[] = [
+    { links: [['/', 'My account']] },
+    {
+      label: 'Freight operations',
+      links: links(
+        ['/shipments', 'Published shipments', reviewer || admin],
+        ['/bookings', 'Bookings', reviewer || admin],
+        ['/fleet', 'Fleet', reviewer || admin],
+        ['/operations', 'Operations', operations],
+      ),
+    },
+    {
+      label: 'Verification and staff',
+      links: links(
+        ['/verification', 'Verification', reviewer],
+        ['/verification/withdraw', 'Withdraw a verification', admin],
+        ['/staff', 'Staff accounts', admin],
+        ['/audit', 'Audit', admin],
+      ),
+    },
+    {
+      label: 'Finance',
+      links: links(
+        ['/finance', 'Financial settings', admin],
+        ['/fees', 'Fee payments', admin],
+        ['/refunds', 'Refunds', admin],
+      ),
+    },
+  ];
   return (
-    <header className="console-header">
+    <header className={`console-header${staff ? ' console-workspace workspace-rail' : ''}`}>
       <a className="brand" href="/">
         Trucker staff console
       </a>
+      {staff ? <p className="console-identity">{staff.displayName}</p> : null}
       {staff ? (
         <nav aria-label="Console">
-          <ul>
-            {link('/', 'My account')}
-            {reviewer ? link('/verification', 'Verification') : null}
-            {reviewer || admin ? link('/shipments', 'Published shipments') : null}
-            {reviewer || admin ? link('/fleet', 'Fleet') : null}
-            {reviewer || admin ? link('/bookings', 'Bookings') : null}
-            {operations ? link('/operations', 'Operations') : null}
-            {admin ? link('/verification/withdraw', 'Withdraw a verification') : null}
-            {admin ? link('/staff', 'Staff accounts') : null}
-            {admin ? link('/finance', 'Financial settings') : null}
-            {admin ? link('/fees', 'Fee payments') : null}
-            {admin ? link('/refunds', 'Refunds') : null}
-            {admin ? link('/audit', 'Audit') : null}
-          </ul>
+          <WorkspaceGroups
+            groups={groups}
+            idPrefix="staff-workspace"
+            isCurrent={(href) => current === href}
+          />
         </nav>
       ) : null}
     </header>

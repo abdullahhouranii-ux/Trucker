@@ -1,3 +1,4 @@
+import { RecordOptions } from '../../../../../components/record-options.tsx';
 import { notFound, redirect } from 'next/navigation';
 import { PartiesList } from '../../../../../components/shipment-parties.tsx';
 import { isLocale } from '../../../../../i18n/config.ts';
@@ -123,7 +124,7 @@ export default async function AuthoritiesPage({ params, searchParams }: Props) {
         {overview.authorities.length === 0 ? (
           <p id="no-authorities">{t.none}</p>
         ) : (
-          <ol className="evidence" id="authorities">
+          <ol className="evidence record-collection" id="authorities">
             {overview.authorities.map((item) => (
               <li
                 className="card organisation"
@@ -145,51 +146,61 @@ export default async function AuthoritiesPage({ params, searchParams }: Props) {
                     <li>{item.feePayerAgreed ? t.allowsFee : t.noFee}</li>
                   </ul>
                 ) : null}
-                {item.status === 'requested' && item.role === 'customer' ? (
-                  <form className="form" action={decideAuthorityAction}>
-                    {hidden}
-                    <input type="hidden" name="authorityId" value={item.id} />
-                    <input type="hidden" name="version" value={item.version} />
-                    <div className="check">
-                      <input id={`publish-${item.id}`} name="mayPublish" type="checkbox" />
-                      <label htmlFor={`publish-${item.id}`}>{t.mayPublish}</label>
-                    </div>
-                    <div className="check">
-                      <input id={`fee-${item.id}`} name="feePayerAgreed" type="checkbox" />
-                      <label htmlFor={`fee-${item.id}`}>{t.feePayerAgreed}</label>
-                    </div>
-                    <div className="form-inline">
-                      <button
-                        className="button button-primary"
-                        type="submit"
-                        name="decision"
-                        value="accept"
-                        data-accept
-                      >
-                        {t.accept}
-                      </button>
-                      <button
-                        className="button"
-                        type="submit"
-                        name="decision"
-                        value="decline"
-                        data-decline
-                      >
-                        {t.decline}
-                      </button>
-                    </div>
-                  </form>
-                ) : null}
-                {item.status === 'active' ||
-                (item.status === 'requested' && item.role === 'organiser') ? (
-                  <form action={endAuthorityAction}>
-                    {hidden}
-                    <input type="hidden" name="authorityId" value={item.id} />
-                    <input type="hidden" name="version" value={item.version} />
-                    <button className="button button-danger" type="submit" data-end>
-                      {t.end}
-                    </button>
-                  </form>
+                {item.status === 'requested' || item.status === 'active' ? (
+                  <RecordOptions label={m.operationsWorkspace.actions + ' ' + item.id.slice(0, 8)}>
+                    {item.status === 'requested' && item.role === 'customer' ? (
+                      <li>
+                        {' '}
+                        <form className="form" action={decideAuthorityAction}>
+                          {hidden}
+                          <input type="hidden" name="authorityId" value={item.id} />
+                          <input type="hidden" name="version" value={item.version} />
+                          <div className="check">
+                            <input id={`publish-${item.id}`} name="mayPublish" type="checkbox" />
+                            <label htmlFor={`publish-${item.id}`}>{t.mayPublish}</label>
+                          </div>
+                          <div className="check">
+                            <input id={`fee-${item.id}`} name="feePayerAgreed" type="checkbox" />
+                            <label htmlFor={`fee-${item.id}`}>{t.feePayerAgreed}</label>
+                          </div>
+                          <div className="form-inline">
+                            <button
+                              className="button button-primary"
+                              type="submit"
+                              name="decision"
+                              value="accept"
+                              data-accept
+                            >
+                              {t.accept}
+                            </button>
+                            <button
+                              className="button"
+                              type="submit"
+                              name="decision"
+                              value="decline"
+                              data-decline
+                            >
+                              {t.decline}
+                            </button>
+                          </div>
+                        </form>{' '}
+                      </li>
+                    ) : null}
+                    {item.status === 'active' ||
+                    (item.status === 'requested' && item.role === 'organiser') ? (
+                      <li>
+                        {' '}
+                        <form action={endAuthorityAction}>
+                          {hidden}
+                          <input type="hidden" name="authorityId" value={item.id} />
+                          <input type="hidden" name="version" value={item.version} />
+                          <button className="button button-danger" type="submit" data-end>
+                            {t.end}
+                          </button>
+                        </form>{' '}
+                      </li>
+                    ) : null}
+                  </RecordOptions>
                 ) : null}
               </li>
             ))}
@@ -202,9 +213,9 @@ export default async function AuthoritiesPage({ params, searchParams }: Props) {
         {overview.arranged.length === 0 ? (
           <p id="no-arranged">{t.noneArranged}</p>
         ) : (
-          <div id="arranged">
+          <div className="record-collection" id="arranged">
             {overview.arranged.map((item) => (
-              <div className="section" key={item.id} data-arranged={item.id}>
+              <div className="card" key={item.id} data-arranged={item.id}>
                 <h3>
                   {t.shipment} <bdi>{item.reference ?? item.id.slice(0, 8)}</bdi>
                 </h3>

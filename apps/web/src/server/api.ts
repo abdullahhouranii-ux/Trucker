@@ -57,7 +57,7 @@ export async function api<T>(
 /** Sends a file's own bytes (proof of delivery, slice 18b). */
 export async function apiPutFile<T>(
   path: string,
-  options: { token?: string; mediaType: string; bytes: ArrayBuffer },
+  options: { token?: string; mediaType: string; bytes: ArrayBuffer; retryKey?: string },
 ): Promise<ApiReply<T>> {
   let response: Response;
   try {
@@ -65,6 +65,7 @@ export async function apiPutFile<T>(
       method: 'PUT',
       headers: {
         'content-type': options.mediaType,
+        ...(options.retryKey ? { 'idempotency-key': options.retryKey } : {}),
         ...(options.token ? { authorization: `Bearer ${options.token}` } : {}),
       },
       cache: 'no-store',
@@ -467,7 +468,19 @@ export interface Quotation {
   };
   lane?: { origin: string; destination: string };
 }
+export interface PublicShipmentPage {
+  items: {
+    id: string;
+    origin: string;
+    destination: string;
+    equipment: Record<'en' | 'ar' | 'ur', string>;
+    deadline: string;
+  }[];
+  next: string | null;
+}
+
 export interface QuotationContext {
+  fleetMatches: boolean;
   terms: QuotationTerms | null;
   pickupWindow: { timeZone: string; from: string; until: string };
   quotationDeadline: { at: string; local: string; timeZone: string };

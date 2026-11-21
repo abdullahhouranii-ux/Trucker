@@ -32,6 +32,7 @@ import {
   type FeePayment,
 } from '../testing/fee.js';
 import { createTestClock } from '../testing/test-clock.js';
+import { ensureQuotationFleet } from '../testing/quotation-fleet.js';
 import { createTestDatabase, type TestDatabase } from '../testing/test-database.js';
 
 // Online payment of Trucker's fee, and receipts (slice 27). Real PostgreSQL, the API connected as
@@ -512,6 +513,7 @@ const quote = (person: Person, org: string, shipment: string, body = quoteBody()
     body,
   });
 async function quoted(person: Person, org: string, shipment: string, body = quoteBody()) {
+  await ensureQuotationFleet(owner, person.personId, org, shipment);
   const reply = await quote(person, org, shipment, body);
   assert.equal(reply.status, 201, reply.text);
   return reply.body.quotation as Quotation;
@@ -1198,6 +1200,12 @@ test('PAY-2, R-12, G-8, G-10: a return from the checkout is not proof; the signe
   assert.equal(await notificationsOf(), before);
   assert.equal((await feeRow(booking.id)).status, 'due');
 
+  const invoicePath = (party: Party) =>
+    `/organisations/${party.org}/bookings/${booking.id}/fee-invoice-draft`;
+  const pendingDraft = await call('GET', invoicePath(shipper), { token: shipper.person.token });
+  assert.equal(pendingDraft.status, 200, pendingDraft.text);
+  assert.deepEqual(pendingDraft.body, { draft: null });
+
   // The signed notice: paid, confirmed and a receipt, in one transaction.
   const applied = await notify(body, notice.headers);
   assert.equal(applied.status, 200, applied.text);
@@ -1212,6 +1220,18 @@ test('PAY-2, R-12, G-8, G-10: a return from the checkout is not proof; the signe
   assert.equal(receipts.length, 1);
   assert.match(receipts[0]!.number, /^TR-[0-9]{8}$/);
   assert.deepEqual([receipts[0]!.method, receipts[0]!.amount], ['online', checkout.amount]);
+  const prepared = await call('GET', invoicePath(shipper), { token: shipper.person.token });
+  assert.equal(prepared.status, 200, prepared.text);
+  const draft = prepared.body.draft as Record<string, unknown>;
+  assert.equal(draft.status, 'pending_issuer_and_tax');
+  assert.equal(draft.currency, checkout.currency);
+  assert.equal(draft.recordedFee, checkout.amount);
+  assert.equal(draft.illustration, null);
+  assert.equal(
+    (await call('GET', invoicePath(carrier), { token: carrier.person.token })).status,
+    404,
+  );
+  assert.equal(await count('fee_invoice_draft', 'booking_id = $1', [booking.id]), 1);
   const forShipper = (await viewOf(shipper, booking.id)).feePayment;
   assert.deepEqual(
     [forShipper.status, forShipper.receipts!.map((item) => item.number), forShipper.checkout],
@@ -1381,6 +1401,10 @@ test('PAY-5: a transfer verified by two administrators gets a receipt too; numbe
   );
   assert.notEqual(a[0]!.number, b[0]!.number);
   assert.equal(
+    await count('fee_invoice_draft', 'booking_id IN ($1,$2)', [one.booking.id, two.booking.id]),
+    2,
+  );
+  assert.equal(
     (await viewOf(one.shipper, one.booking.id)).feePayment.receipts![0]!.number,
     a[0]!.number,
   );
@@ -1392,6 +1416,7 @@ test('PAY-5: a transfer verified by two administrators gets a receipt too; numbe
 
 test('PAY-6, R-13: the same notice delivered twice at once, or a notice and a status check for one payment, apply it once', async () => {
   const carrier = await verifiedCarrier();
+  await rigid(carrier);
   const { shipper, booking } = await booked(carrier);
   const checkout = await opened(shipper, booking.id);
   assert.equal((await complete(checkout.providerReference!, 'paid', false)).status, 200);
@@ -1520,6 +1545,7 @@ test('PAY-8: money a provider takes on a checkout Trucker had already replaced i
   );
   assert.equal(await count('fee_payment', 'booking_id = $1', [made.booking.id]), 2);
   assert.equal((await receiptsOf(made.booking.id)).length, 1);
+  assert.equal(await count('fee_invoice_draft', 'booking_id = $1', [made.booking.id]), 1);
 });
 
 test("PAY-9, R-15: with the provider unreachable, nothing settles on the payer's word; an unanswered payment holds the booking past the grace period for at most the longest wait, then it lapses, and other bookings still lapse; the notification that arrives later is returned; a captured notice replayed after the signature window is refused", async () => {

@@ -9,7 +9,10 @@ import type pg from 'pg';
 import type { AppConfig } from './config/config.js';
 import { AccessGuard } from './database/access.js';
 import { createPool } from './database/pool.js';
-import { DiscoveryController } from './discovery/discovery.controller.js';
+import {
+  DiscoveryController,
+  PublicShipmentsController,
+} from './discovery/discovery.controller.js';
 import { DiscoveryService } from './discovery/discovery.service.js';
 import { HealthController } from './health/health.controller.js';
 import { HealthService } from './health/health.service.js';
@@ -41,7 +44,10 @@ import {
 } from './trip/trip.controller.js';
 import { TripService } from './trip/trip.service.js';
 import { DriverPodController, PodController, StaffPodController } from './trip/pod.controller.js';
+import { BookingCompletionController } from './trip/booking-completion.controller.js';
+import { DisputesController } from './trip/disputes.controller.js';
 import { PodService } from './trip/pod.service.js';
+import { RecordPhotosController } from './storage/record-photos.controller.js';
 import { LocalFileStore } from './storage/file-store.js';
 import { FleetService } from './fleet/fleet.service.js';
 import { QuotationController } from './quotation/quotation.controller.js';
@@ -85,6 +91,7 @@ export class AppModule {
       module: AppModule,
       controllers: [
         DiscoveryController,
+        PublicShipmentsController,
         HealthController,
         IdentityController,
         OrganisationController,
@@ -96,6 +103,8 @@ export class AppModule {
         DriverTripController,
         OrganiserCargoController,
         PodController,
+        DisputesController,
+        BookingCompletionController,
         DriverPodController,
         StaffPodController,
         AuthorityController,
@@ -105,6 +114,7 @@ export class AppModule {
         DriverController,
         FleetStaffController,
         ShipmentController,
+        RecordPhotosController,
         StaffController,
         VerificationController,
         PaymentController,

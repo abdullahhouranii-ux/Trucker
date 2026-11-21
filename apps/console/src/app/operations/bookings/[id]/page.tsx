@@ -1,6 +1,16 @@
 import { notFound, redirect } from 'next/navigation';
 import { ErrorSummary } from '../../../../../../web/src/components/form.tsx';
 import { api, type TripCargo, type TripPod } from '../../../../../../web/src/server/api.ts';
+import {
+  AssignClosure,
+  type ClosureQueueItem,
+} from '../../../../../../web/src/components/booking-completion.tsx';
+import { closureBlockerLabels } from '../../../../../../web/src/components/booking-completion-labels.ts';
+import { sendCompletion } from '../../../../../../web/src/server/booking-completion.ts';
+import {
+  DisputePanel,
+  type BookingDisputes,
+} from '../../../../../../web/src/components/dispute-panel.tsx';
 import { CargoOpsPanel } from '../../../../components/cargo-ops.tsx';
 import { PodOpsPanel } from '../../../../components/pod-ops.tsx';
 import { ConsoleHeader, Unavailable } from '../../../../components/console-header.tsx';
@@ -21,7 +31,7 @@ import {
   operationsReleaseAction,
   withdrawMilestoneAction,
 } from '../../../../server/operations-actions.ts';
-import { requireStaff } from '../../../../server/session.ts';
+import { requireStaff, staffToken } from '../../../../server/session.ts';
 
 // One booking for Trucker operations (slice 17b): block its dispatch or lift the block; once
 // dispatched, put the trip on hold or resume it, record a milestone on the driver's behalf,
@@ -94,8 +104,8 @@ interface Milestone {
 }
 interface Detail {
   id: string;
-  shipper: { legalName: string };
-  carrier: { legalName: string };
+  shipper: { id: string; legalName: string };
+  carrier: { id: string; legalName: string };
   plannedReservation: { startAt: string; endAt: string };
   cancelled: boolean;
   confirmed: boolean;
@@ -206,6 +216,29 @@ export default async function OperationsBookingPage({ params, searchParams }: Pr
   const hidden = <input type="hidden" name="bookingId" value={id} />;
   const now = new Date().toISOString().slice(0, 16);
   const b = reply.ok ? reply.data.booking : null;
+  const disputePath = `/staff/operations/bookings/${id}/disputes`;
+  const disputeView = b
+    ? await api<BookingDisputes>('GET', disputePath, { token: found.token })
+    : null;
+  async function submitDispute(key: string, body: Record<string, unknown>) {
+    'use server';
+    const token = await staffToken();
+    if (!token) return 'refused';
+    const result = await api('POST', disputePath, { token, retryKey: key, body });
+    if (result.ok) return 'ok';
+    if (result.status === 0 || result.status >= 500 || result.code === 'unavailable')
+      return 'unknown';
+    return result.status === 409 ? 'conflict' : 'refused';
+  }
+  const closurePath = `/staff/operations/bookings/${id}/closure`;
+  const closureReply = b?.trip
+    ? await api<ClosureQueueItem[]>('GET', closurePath, { token: found.token })
+    : null;
+  const closure = closureReply?.ok ? closureReply.data[0] : null;
+  async function assignClosure(key: string, body: Record<string, unknown>) {
+    'use server';
+    return sendCompletion(closurePath, await staffToken(), key, body);
+  }
   const blockInForce = b?.blocks.find((item) => item.liftedAt === null) ?? null;
   return (
     <>
@@ -465,6 +498,56 @@ export default async function OperationsBookingPage({ params, searchParams }: Pr
                       ? one('key')
                       : null
                   }
+                />
+              ) : null}
+
+              {closure ? (
+                <section
+                  id="operational-closure"
+                  className="section"
+                  aria-labelledby="closure-title"
+                >
+                  <h2 id="closure-title">Operational closure</h2>
+                  <p>
+                    {closure.state === 'closed'
+                      ? 'Closed'
+                      : closure.state === 'review_required'
+                        ? 'Needs review'
+                        : 'Open'}{' '}
+                    · {closure.ownerName ?? 'Unassigned'}
+                  </p>
+                  {closure.closedAt ? (
+                    <p>
+                      Closure recorded <bdi>{closure.closedAt}</bdi>
+                    </p>
+                  ) : null}
+                  {closure.blockers.length ? (
+                    <ul>
+                      {closure.blockers.map((blocker) => (
+                        <li key={blocker}>{closureBlockerLabels[blocker] ?? blocker}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  {closure.state !== 'closed' && closure.ownerId !== found.staff.id ? (
+                    <AssignClosure ownerId={found.staff.id} submit={assignClosure} />
+                  ) : null}
+                  {found.staff.privileges.includes('staff_admin') ? (
+                    <a href={`/finance/completion?booking=${id}`}>Open financial records</a>
+                  ) : null}
+                </section>
+              ) : null}
+              {disputeView?.ok ? (
+                <DisputePanel
+                  view={disputeView.data}
+                  bookingId={id}
+                  submit={submitDispute}
+                  locale="en"
+                  podVersions={b.trip?.pod?.versions ?? []}
+                  parties={[b.shipper, b.carrier].map((party) => ({
+                    id: party.id,
+                    label: party.legalName,
+                  }))}
+                  canRelease={found.staff.privileges.includes('staff_admin')}
                 />
               ) : null}
 

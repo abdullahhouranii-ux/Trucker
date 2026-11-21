@@ -107,7 +107,7 @@ export default async function StaffPage({ searchParams }: Props) {
             You can change other people&apos;s accounts, never your own. Everything done here, and
             every refused attempt, is recorded in the audit list.
           </p>
-          <ul className="organisation-list" id="staff-list">
+          <ul className="organisation-list record-collection" id="staff-list">
             {list.data.accounts.map((account) => {
               const own = account.id === me;
               return (

@@ -1,3 +1,4 @@
+import { RecordPhotos } from '../../../../../../components/record-photos.tsx';
 import { randomUUID } from 'node:crypto';
 import { notFound, redirect } from 'next/navigation';
 import { CommissionSection } from '../../../../../../components/commission.tsx';
@@ -245,11 +246,16 @@ export default async function ShipmentPage({ params, searchParams }: Props) {
   };
 
   return (
-    <div className="page page-narrow">
+    <div className="page page-narrow shipment-editor">
       <div className="form-inline">
         <a className="button" href={list}>
           {t.backToList}
         </a>
+        {state === 'expired' || state === 'withdrawn' ? (
+          <a className="button" href="#copy-title">
+            {m.pub.copy}
+          </a>
+        ) : null}
       </div>
       <h1>
         {shipment.shipperReference ? (
@@ -404,7 +410,12 @@ export default async function ShipmentPage({ params, searchParams }: Props) {
               {t.fixtureNotice}
             </p>
           ) : null}
-          <form className="form card" id={formId} action={updateShipmentAction} noValidate>
+          <form
+            className="form card shipment-editor-form"
+            id={formId}
+            action={updateShipmentAction}
+            noValidate
+          >
             <input type="hidden" name="locale" value={locale} />
             <input type="hidden" name="organisationId" value={id} />
             <input type="hidden" name="shipmentId" value={shipment.id} />
@@ -468,6 +479,63 @@ export default async function ShipmentPage({ params, searchParams }: Props) {
         <section className="section" aria-labelledby="publish-title">
           <h2 id="publish-title">{m.pub.sectionTitle}</h2>
           <p>{m.pub.publishLead}</p>
+          <section className="card shipment-review" aria-labelledby="shipment-review-title">
+            <h3 id="shipment-review-title">{t.reviewTitle}</h3>
+            <dl className="facts">
+              {[
+                {
+                  key: 'pickup',
+                  title: t.sectionPickup,
+                  edit: t.editPickup,
+                  place: shipment.pickup,
+                },
+                {
+                  key: 'delivery',
+                  title: t.sectionDelivery,
+                  edit: t.editDelivery,
+                  place: shipment.delivery,
+                },
+              ].map(({ key, title, edit, place }) => (
+                <div key={key}>
+                  <dt>{title}</dt>
+                  <dd>
+                    <p>
+                      {text(place.address)}
+                      {place.countryCode ? (
+                        <>
+                          {' '}
+                          · <bdi>{countryName(place.countryCode)}</bdi>
+                        </>
+                      ) : null}
+                    </p>
+                    <p>
+                      {t.windowFrom}: {end(place.from, place)}
+                    </p>
+                    <p>
+                      {t.windowUntil}: {end(place.until, place)}
+                    </p>
+                    <a className="button" href={`#${key}-fields`}>
+                      {edit}
+                    </a>
+                  </dd>
+                </div>
+              ))}
+              <div>
+                <dt>{t.sectionCargo}</dt>
+                <dd>
+                  <p>{text(shipment.cargoDescription)}</p>
+                  {shipment.grossWeightKg ? (
+                    <p>
+                      <Ltr>{shipment.grossWeightKg}</Ltr> {t.kilograms}
+                    </p>
+                  ) : null}
+                  <a className="button" href="#cargo-fields">
+                    {t.editCargo}
+                  </a>
+                </dd>
+              </div>
+            </dl>
+          </section>
           {catalogues.cargoCategories.length > 0 ? (
             <p className="notice notice-development" role="note" id="catalogue-notice">
               {m.pub.fictionalNotice}
@@ -517,6 +585,11 @@ export default async function ShipmentPage({ params, searchParams }: Props) {
           catalogues={catalogues}
         />
       ) : null}
+      <RecordPhotos
+        endpoint={'/' + locale + '/files/record-photos/' + id + '/shipments/' + shipmentId}
+        copy={m.recordPhotos}
+        editable={open || live}
+      />
       {live ? (
         <section className="section" aria-labelledby="change-title">
           <h2 id="change-title">{m.pub.changeTitle}</h2>

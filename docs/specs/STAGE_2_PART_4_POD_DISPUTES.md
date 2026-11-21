@@ -58,6 +58,9 @@ All seven surfaces remain in scope.
 
 ## 5. Journey J10a: disputes
 
+The slice 18c implementation follows the separate-hold model in DI-401. Both contracting organisations must explicitly accept one immutable proposal version to record agreement. Operations facilitates and records the facts and recommendations. Abdullah approved manual release on 19 November 2026. An authorised staff administrator records a reason and releases only the owning hold after either both contracting organisations accept the same proposal version or the claimant withdraws without a counterclaim. Administrative closure or a reported external decision leaves the hold active. Under the counterclaim rule approved on 20 November 2026, an agreement supports release only if the accepted version explicitly records settlement terms for the counterclaims and was sent after the latest recorded counterclaim. See [the implementation record](../delivery/DISPUTES_SLICE_18C.md) for the local behaviour and pending policy work.
+
+
 | Aspect | Specification |
 |---|---|
 | Who may raise | A permitted user of the shipper, or of the carrier or owner, on their own booking. Operations may open one on a party's behalf with a reason. Drivers report exceptions; they are not parties to a dispute |
@@ -65,14 +68,14 @@ All seven surfaces remain in scope.
 | Time limit to raise | **Approved rule TBD (R-403)** with legal and insurance review |
 | Fields | Booking; subject; description; amount or quantity claimed, if any (recorded, not adjudicated here); evidence files; the POD version and trip events relied on |
 | Evidence | Each side submits within a period; submissions are versioned and cannot be edited or removed. Trip events are taken with their effective times after reconciliation (Part 3, 5.4); unverified times are shown as such. Each side sees the other's submissions unless staff restrict an item for a recorded reason |
-| Who handles and decides | Support staff run the case. Who has authority to decide, and whether the decision binds the parties, is an **approved rule TBD (R-404)** that follows the contract terms under D-001 |
-| Decision | Upheld, partly upheld or rejected, with reasons. It may contain an adjustment proposal (section 7) |
-| Appeal | Once, within a period, decided by a different staff member. The platform's decision does not replace a court, an insurer or an authority; wording needs legal review |
-| Settlement hold | Opening a dispute sets the booking's hold flag. Whether the hold covers the whole booking or only the disputed part is an **approved rule TBD (R-405)**, with D-002 and D-008. The flag is released only by a recorded decision, withdrawal or closure |
-| Failure paths | Raised after the time limit (refused with the reason, once R-403 exists); evidence period lapses (decided on what was submitted); a party is suspended (the case continues; access for that purpose only); duplicate dispute on the same subject (linked to the first) |
+| Who handles and decides | Operations coordinates evidence and mediation. Both contracting organisations explicitly accept the same proposal version to record agreement. External authority is governed by R-404. |
+| Decision | The case records an agreement, withdrawal, administrative closure, or reported external decision and its reference. An agreement preserves proposed obligations for later processing under section 7. |
+| Appeal | A later dispute can link to a closed case and retain its history. Any formal challenge or appeal procedure requires approved terms. |
+| Settlement hold | Create an independent hold for a financial dispute. Record the disputed amount or item when known and scope under review when undecided. An active hold restricts settlement eligibility within its scope. Release requires the owning case, its recorded authority, a reason, and the independent permission defined under R-405. |
+| Failure paths | Reject a stale proposal response or a revoked authority at mutation time. Record silence and elapsed time without changing agreement or releasing a hold. R-403 governs future opening windows. |
 | Notifications | Every step to both parties; deadlines approaching; decision and appeal outcome |
 | Audit events | `dispute.raised`, `dispute.acknowledged`, `dispute.evidence_submitted`, `dispute.evidence_restricted`, `dispute.decided`, `dispute.appealed`, `dispute.appeal_decided`, `dispute.withdrawn`, `dispute.closed`, `booking.hold_set`, `booking.hold_released` |
-| Acceptance | AT-421 only a party to the booking, or staff, can read a dispute. AT-422 submitted evidence cannot be altered or deleted, including by staff. AT-423 an open dispute sets the hold flag and the flag stays until a recorded release. AT-424 an appeal cannot be decided by the person who made the first decision. AT-425 a second dispute on the same subject is linked, not duplicated. AT-426 every decision records who decided, when and on which evidence |
+| Acceptance | AT-421 authorisation is checked against the booking and active privileges. AT-422 evidence is immutable. AT-423 separate holds release independently on an eligible recorded basis. AT-424 agreement requires the same proposal version and both parties. AT-425 related cases preserve prior history. AT-426 the timeline preserves the actor, time and authority for each result. |
 
 ## 6. Journey J10b: cancellation after dispatch and failed deliveries
 

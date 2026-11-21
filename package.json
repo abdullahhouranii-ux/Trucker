@@ -8,7 +8,9 @@
     "npm": ">=11.6.0 <12"
   },
   "workspaces": [
-    "apps/*"
+    "apps/api",
+    "apps/web",
+    "apps/console"
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
@@ -45,7 +47,9 @@
     "dev:settings": "node tools/dev/with-env.mjs npm run db:settings --",
     "staff:bootstrap": "npm run staff:bootstrap -w @trucker/api --",
     "dev:staff:bootstrap": "node tools/dev/with-env.mjs npm run staff:bootstrap --",
-    "start:console": "npm run start -w @trucker/console"
+    "start:console": "npm run start -w @trucker/console",
+    "mobile:check": "npm run typecheck --prefix apps/mobile --workspaces=false && npm run test --prefix apps/mobile --workspaces=false",
+    "mobile:start": "npm run start --prefix apps/mobile --workspaces=false"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

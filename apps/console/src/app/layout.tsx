@@ -1,9 +1,7 @@
-import '@fontsource/barlow/400.css';
-import '@fontsource/barlow/500.css';
-import '@fontsource/barlow/600.css';
-import '@fontsource/barlow/700.css';
+import { latinFont } from '../../../web/src/design/fonts.ts';
 import '../../../web/src/design/tokens.css';
 import '../../../web/src/styles/site.css';
+import '../../../web/src/styles/experience.css';
 import '../styles/console.css';
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
@@ -14,10 +12,13 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
+// Staff pages are always request-scoped, including enrolment and error responses.
+export const dynamic = 'force-dynamic';
+
 // The console is in English only: the language staff work in is not decided.
 export default function ConsoleLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" dir="ltr">
+    <html lang="en" dir="ltr" className={latinFont.variable}>
       <body>
         <a className="skip-link" href="#main">
           Skip to the content

@@ -1,3 +1,4 @@
+import { RecordPhotos } from '../../../../../../../components/record-photos.tsx';
 import { randomUUID } from 'node:crypto';
 import { notFound, redirect } from 'next/navigation';
 import { DraftKeeper } from '../../../../../../../components/draft-keeper.tsx';
@@ -165,6 +166,11 @@ export default async function VehiclePage({ params, searchParams }: Props) {
           </>
         ) : null}
       </section>
+      <RecordPhotos
+        endpoint={'/' + locale + '/files/record-photos/' + id + '/vehicles/' + vehicleId}
+        copy={m.recordPhotos}
+        editable={vehicle.status === 'active'}
+      />
       {vehicle.status === 'active' ? (
         <form className="form-inline" id="retire-form" action={retireVehicleAction}>
           {hidden('retire')}
