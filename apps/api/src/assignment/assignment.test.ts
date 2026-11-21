@@ -22,6 +22,7 @@ import { DEMONSTRATION_TERMS_VERSION } from '../identity/terms.js';
 import { settleFee } from '../testing/fee.js';
 import { createTestClock } from '../testing/test-clock.js';
 import { blockedRequests } from '../testing/blocked-request.js';
+import { ensureQuotationFleet } from '../testing/quotation-fleet.js';
 import { createTestDatabase, type TestDatabase } from '../testing/test-database.js';
 
 // Assignment, reservation and confirmation (slice 15). Real PostgreSQL, the API connected as
@@ -537,6 +538,7 @@ const quote = (person: Person, org: string, shipment: string, body = quoteBody()
     body,
   });
 async function quoted(person: Person, org: string, shipment: string, body = quoteBody()) {
+  await ensureQuotationFleet(owner, person.personId, org, shipment);
   const reply = await quote(person, org, shipment, body);
   assert.equal(reply.status, 201, reply.text);
   return reply.body.quotation as Quotation;
@@ -1291,8 +1293,8 @@ test('ASG-1, ASG-3: a partial set confirms nothing; a complete, eligible, reserv
 test('ASG-1: every hard requirement is checked for the whole planned interval and none can be waived; each refusal names the role and the first reason, and changes nothing', async () => {
   const carrier = await verifiedCarrier();
   const other = await verifiedCarrier();
-  const { booking } = await booked(carrier);
   const good = await rigid(carrier);
+  const { booking } = await booked(carrier);
   const box = await eligibleVehicle(carrier);
   const claimed = await registered(carrier.person, carrier.org, { equipmentType: 'curtain_side' });
   const theirs = await rigid(other);

@@ -798,7 +798,8 @@
       "freight_dueDays_out_of_range": "Enter whole days from 0 to {n}.",
       "freight_dueDays_not_applicable": "Days apply only to a bank transfer.",
       "freightMethod_required": "Choose how the freight will be paid.",
-      "freightMethod_not_offered": "Choose one of the ways this quotation offers."
+      "freightMethod_not_offered": "Choose one of the ways this quotation offers.",
+      "fleet_mismatch": "Your fleet has no eligible equipment for this shipment."
     },
     "carrierIndividual": "Truck owner (an individual)",
     "carrierCompany": "Transport company",
@@ -1953,5 +1954,19 @@
       "cargo_photo": "A photo of the cargo is needed.",
       "photo": "A photo is needed."
     }
+  },
+  "publicShipments": {
+    "openQuotation": "Open quotation",
+    "chooseAccount": "Choose a carrier account",
+    "noQuoteAccounts": "You have no carrier account eligible to quote for this shipment.",
+    "options": "Record options",
+    "title": "Published shipments",
+    "fleetRule": "You can browse all open shipments. To submit a quote, your fleet must match the required equipment.",
+    "empty": "No open shipments right now.",
+    "unavailable": "Shipments could not be loaded.",
+    "deadline": "Quote deadline",
+    "more": "More shipments",
+    "first": "First page",
+    "accounts": "Company accounts"
   }
 }

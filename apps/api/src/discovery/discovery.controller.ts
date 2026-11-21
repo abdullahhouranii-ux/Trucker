@@ -52,6 +52,20 @@ const identifier = (value: string): string => {
  * Discovery for a verified carrier: the shipments it is eligible for, and one of them. Every
  * answer is for this request only and is never to be stored by a cache.
  */
+@Controller('public/shipments')
+export class PublicShipmentsController {
+  constructor(@Inject(DiscoveryService) private readonly discovery: DiscoveryService) {}
+
+  @Get()
+  @Header('Cache-Control', 'no-store')
+  list(@Query('after') after?: string) {
+    if (after !== undefined && (typeof after !== 'string' || !UUID.test(after))) {
+      throw new ApiError(422, 'validation_failed', 'The pagination cursor is not valid.');
+    }
+    return this.discovery.publicShipments(after ?? null);
+  }
+}
+
 @Controller('organisations/:organisationId/discovery')
 export class DiscoveryController {
   constructor(
