@@ -13,6 +13,7 @@ import {
   DiscoveryController,
   PublicShipmentsController,
 } from './discovery/discovery.controller.js';
+import { RecordPhotosController } from './storage/record-photos.controller.js';
 import { BookingCompletionController } from './trip/booking-completion.controller.js';
 import { DisputesController } from './trip/disputes.controller.js';
 import { DiscoveryService } from './discovery/discovery.service.js';
@@ -93,6 +94,7 @@ export class AppModule {
         PublicShipmentsController,
         DisputesController,
         BookingCompletionController,
+        RecordPhotosController,
         HealthController,
         IdentityController,
         OrganisationController,

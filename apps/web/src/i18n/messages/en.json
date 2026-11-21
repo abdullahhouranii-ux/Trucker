@@ -1968,5 +1968,16 @@
     "more": "More shipments",
     "first": "First page",
     "accounts": "Company accounts"
+  },
+  "recordPhotos": {
+    "title": "Private photos",
+    "load": "Show photos",
+    "select": "Choose an image",
+    "upload": "Upload",
+    "uploaded": "Photo uploaded.",
+    "open": "Open photo",
+    "empty": "No photos on this record.",
+    "failed": "The photo operation could not be completed. Try again.",
+    "invalid": "Choose a JPEG or PNG of up to 10 MB."
   }
 }

@@ -16,6 +16,7 @@ import {
   submitVehicleDocumentAction,
 } from '../../../../../../../server/fleet-actions.ts';
 import { requirePerson } from '../../../../../../../server/session.ts';
+import { RecordPhotos } from '../../../../../../../components/record-photos.tsx';
 
 // One vehicle of the carrier: its ownership claim, its documents and whether it is eligible now.
 
@@ -165,6 +166,11 @@ export default async function VehiclePage({ params, searchParams }: Props) {
           </>
         ) : null}
       </section>
+      <RecordPhotos
+        endpoint={'/' + locale + '/files/record-photos/' + id + '/vehicles/' + vehicleId}
+        copy={m.recordPhotos}
+        editable={vehicle.status === 'active'}
+      />
       {vehicle.status === 'active' ? (
         <form className="form-inline" id="retire-form" action={retireVehicleAction}>
           {hidden('retire')}

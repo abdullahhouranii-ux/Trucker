@@ -321,6 +321,7 @@ test('every table has row security: a policy, or no right at all for the API', a
   // barrier. A new table is on neither list, so it must carry row security and a policy, or
   // this test fails.
   const closed = [
+    'record_photo',
     'booking_closure',
     'booking_closure_assignment',
     'booking_payment_event',
