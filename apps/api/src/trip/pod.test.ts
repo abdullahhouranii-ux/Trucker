@@ -1873,6 +1873,13 @@ test('18c: booking parties agree to the latest version and release only its own 
     (await call('GET', `${evidenceRoute}/${receipt.eventId}`, { token: outsider.token })).status,
     404,
   );
+  // The sweep of unrecorded files keeps evidence: its key is recorded in the evidence event.
+  const sweep = await nest.get(PodService).sweepUnrecorded(new Date(Date.now() + 60_000));
+  assert.equal(sweep.removed, 0);
+  const afterSweep = await fetch(base + downloadRoute, {
+    headers: { authorization: `Bearer ${operations.token}` },
+  });
+  assert.deepEqual(Buffer.from(await afterSweep.arrayBuffer()), file.bytes);
   const queue = await call('GET', '/staff/operations/disputes', { token: operations.token });
   assert.equal(queue.status, 200, queue.text);
   assert.equal(queue.text.includes(String(disputeId)), true);
