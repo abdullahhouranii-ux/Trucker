@@ -229,6 +229,11 @@ export default async function FinancePage({ searchParams }: Props) {
         <div className="page" data-state="finance">
           <h1>Financial settings</h1>
           <p>
+            <a className="button" href="/finance/completion">
+              Booking financial records
+            </a>
+          </p>
+          <p>
             Every change is drafted by one administrator, with its reason and its effective time,
             and approved by a different administrator. An approved version is never changed. Each
             booking records the version in force when it was accepted, and later versions never

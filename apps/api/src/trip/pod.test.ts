@@ -2364,6 +2364,44 @@ test(
           "document.querySelector('#disputes article')?.textContent?.includes('Settlement hold released')",
         );
 
+        await navigate(sender, bookingPage(shipper.org));
+        const report = '#financial-completion [data-completion-action="report"]';
+        await sender.type(`${report} input[name=amount]`, '1.00');
+        await sender.type(`${report} input[name=reference]`, 'Browser freight payment');
+        await sender.type(`${report} input[name=evidence]`, 'Browser receipt reference');
+        await sender.click(`${report} button[type=submit]`);
+        await sender.waitForFunction(
+          "document.querySelector('#financial-completion ul')?.textContent?.includes('Browser freight payment')",
+        );
+        await navigate(receiver, bookingPage(carrier.org));
+        await receiver.click('#financial-completion [data-completion-action="confirm"] button');
+        await receiver.waitForFunction(
+          "document.querySelector('#financial-completion ul')?.textContent?.includes('Receipt confirmed')",
+        );
+
+        const financePage = `${endpoints.console}/finance/completion?booking=${id}`;
+        await navigate(consolePage, financePage);
+        const reviewForm = '#financial-completion [data-completion-action="review"]';
+        await consolePage.type(`${reviewForm} input[name=note]`, 'Reviewed the browser receipt');
+        await consolePage.click(`${reviewForm} button[type=submit]`);
+        await consolePage.waitForFunction(
+          "document.querySelector('#financial-completion')?.textContent?.includes('An independent administrator')",
+        );
+        const checker = await actor((await newStaff(['staff_admin'])).token, true);
+        await navigate(checker, financePage);
+        const matchForm = '#financial-completion [data-completion-action="reconcile"]';
+        await checker.type(`${matchForm} input[name=reference]`, 'Browser bank line');
+        await checker.type(`${matchForm} input[name=evidence]`, 'Browser bank evidence');
+        await checker.click(`${matchForm} button[type=submit]`);
+        await checker.waitForFunction(
+          "document.querySelector('#financial-completion ul.evidence')?.textContent?.includes('Reconciled')",
+        );
+        await navigate(consolePage, staffPage);
+        await consolePage.click('#operational-closure [data-completion-action="assign"] button');
+        await consolePage.waitForFunction(
+          "document.querySelector('#operational-closure p')?.textContent?.includes('Test Staff')",
+        );
+
         const outsider = await actor((await newPerson()).token);
         const refused = await navigate(outsider, bookingPage(shipper.org));
         assert.equal(refused?.status(), 404);
@@ -2375,3 +2413,234 @@ test(
     }
   },
 );
+
+test('19/20: parties confirm freight, independent staff reconcile, and eligible closure is recorded once', async () => {
+  const trip = await delivered();
+  const { id, shipper, carrier } = trip;
+  const finance1 = await newStaff(['staff_admin']);
+  const finance2 = await newStaff(['staff_admin']);
+  const operations = await operator();
+  const outsider = await newPerson();
+  const root = (party: Party) => `/organisations/${party.org}/bookings/${id}`;
+  const staff = `/staff/operations/bookings/${id}`;
+  const path = '/financial-completion';
+  const command = (token: string, route: string, body: Record<string, unknown>, retry = key()) =>
+    call('POST', route, { token, body, key: retry });
+  const list = `/organisations/${shipper.org}/financial-completion`;
+  const listed = await call('GET', list, { token: shipper.person.token });
+  assert.equal(listed.status, 200, listed.text);
+  assert.ok(listed.text.includes(id));
+  assert.equal((await call('GET', list, { token: outsider.token })).status, 404);
+  const financial = await call('GET', root(shipper) + path, { token: shipper.person.token });
+  assert.equal(financial.status, 200, financial.text);
+  const { amount, currency } = (
+    financial.body.obligations as {
+      kind: string;
+      amount: string;
+      currency: string;
+    }[]
+  ).find(({ kind }) => kind === 'freight')!;
+  const payment = {
+    action: 'report',
+    kind: 'freight',
+    amount,
+    currency,
+    reference: 'External payment reference',
+    evidence: 'Private payment evidence identifier',
+  };
+  assert.equal((await call('GET', root(shipper) + path, { token: outsider.token })).status, 404);
+  assert.equal((await command(carrier.person.token, root(carrier) + path, payment)).status, 404);
+  assert.equal((await call('GET', staff + path, { token: operations.token })).status, 403);
+  const retry = key();
+  const recorded = await command(shipper.person.token, root(shipper) + path, payment, retry);
+  assert.equal(recorded.status, 200, recorded.text);
+  assert.deepEqual(
+    (await command(shipper.person.token, root(shipper) + path, payment, retry)).body,
+    recorded.body,
+  );
+  assert.equal(
+    (await command(shipper.person.token, root(shipper) + path, { ...payment, amount: '1' }, retry))
+      .status,
+    409,
+  );
+
+  const paymentId = recorded.body.paymentId;
+  const confirm = { action: 'confirm', paymentId };
+  assert.equal((await command(shipper.person.token, root(shipper) + path, confirm)).status, 403);
+  // The person who reported a payment never confirms it, even as an administrator of the
+  // receiving organisation too.
+  const both = await owner.query<{ id: string }>(
+    `INSERT INTO trucker.membership(organisation_id, person_id, role, created_at)
+     VALUES ($1, $2, 'admin', trucker.clock_now()) RETURNING id`,
+    [carrier.org, shipper.person.personId],
+  );
+  assert.equal((await command(shipper.person.token, root(carrier) + path, confirm)).status, 403);
+  await owner.query('UPDATE trucker.membership SET ended_at = trucker.clock_now() WHERE id = $1', [
+    both.rows[0]!.id,
+  ]);
+  const confirmed = await command(carrier.person.token, root(carrier) + path, confirm);
+  assert.equal(confirmed.status, 200, confirmed.text);
+
+  const reviewed = await command(finance1.token, staff + path, {
+    action: 'review',
+    paymentId,
+    note: 'Compared the payment evidence',
+  });
+  assert.equal(reviewed.status, 200, reviewed.text);
+  const match = {
+    action: 'reconcile',
+    paymentId,
+    amount,
+    currency,
+    reference: 'Statement line 13',
+    evidence: 'Statement evidence 13',
+  };
+  assert.equal((await command(finance1.token, staff + path, match)).status, 403);
+
+  const dispute = await command(shipper.person.token, root(shipper) + '/disputes', {
+    action: 'open',
+    kind: 'freight_commission',
+    description: 'Pending freight issue',
+    requestedOutcome: 'Check the agreed freight amount',
+    financial: true,
+  });
+  assert.equal(dispute.status, 200, dispute.text);
+  const holdView = await call('GET', staff + path, { token: finance1.token });
+  assert.ok((holdView.body.blockers as string[]).includes('settlement_hold'));
+  const discrepancy = await command(finance2.token, staff + path, {
+    ...match,
+    amount: '1',
+    note: 'Bank line differed',
+  });
+  assert.equal(discrepancy.status, 200, discrepancy.text);
+  let staffLedger = await call('GET', staff + path, { token: finance1.token });
+  assert.ok((staffLedger.body.blockers as string[]).includes('freight_unreconciled'));
+  assert.equal(
+    (
+      await command(finance1.token, staff + path, {
+        action: 'review',
+        paymentId,
+        note: 'Found the correct evidence',
+      })
+    ).status,
+    200,
+  );
+  const reconciled = await command(finance2.token, staff + path, match);
+  assert.equal(reconciled.status, 200, reconciled.text);
+  staffLedger = await call('GET', staff + path, { token: finance1.token });
+  assert.ok(!(staffLedger.body.blockers as string[]).includes('freight_unreconciled'));
+  assert.ok((staffLedger.body.blockers as string[]).includes('settlement_hold'));
+  const withdrawn = await command(shipper.person.token, root(shipper) + '/disputes', {
+    action: 'withdraw',
+    disputeId: dispute.body.disputeId,
+  });
+  assert.equal(withdrawn.status, 200, withdrawn.text);
+  const releaseHold = await command(finance1.token, staff + '/disputes', {
+    action: 'release',
+    disputeId: dispute.body.disputeId,
+    note: 'Uncontested withdrawal',
+  });
+  assert.equal(releaseHold.status, 200, releaseHold.text);
+  const publicLedger = await call('GET', root(shipper) + path, { token: shipper.person.token });
+  assert.equal(publicLedger.text.includes('Statement line 13'), false);
+
+  const assign = await command(operations.token, staff + '/closure', { ownerId: operations.id });
+  assert.equal(assign.status, 200, assign.text);
+  const queue = await call('GET', '/staff/operations/closure', { token: operations.token });
+  assert.equal(queue.status, 200, queue.text);
+  assert.ok(queue.text.includes(operations.id));
+  assert.ok(queue.text.includes('pod_not_accepted'));
+  assert.ok(queue.text.includes('resources_not_released'));
+  const watch = async () =>
+    (await app.query<{ count: number }>('SELECT trucker.booking_closure_watch() AS count')).rows[0]!
+      .count;
+  assert.equal(await watch(), 0);
+
+  await capture(trip.driver, id, [fictionalFile('signature')]);
+  const pod = (await podOf(shipper, id)).versions[0]!;
+  const accepted = await call('POST', podRoute(shipper.org, id, '/review'), {
+    token: shipper.person.token,
+    body: { podId: pod.id, version: 1, decision: 'accepted', note: null },
+  });
+  assert.equal(accepted.status, 200, accepted.text);
+  assert.equal(await watch(), 0);
+  for (const role of ['truck', 'driver']) {
+    const released = await call('POST', root(carrier) + `/resources/${role}/release`, {
+      token: carrier.person.token,
+    });
+    assert.equal(released.status, 200, released.text);
+  }
+  assert.equal(await watch(), 0);
+  const fee = (
+    await owner.query<{ id: string; amount: string; currency_code: string }>(
+      'SELECT id,amount::text,currency_code FROM trucker.fee_payment WHERE booking_id=$1 AND status=$2',
+      [id, 'approved'],
+    )
+  ).rows[0]!;
+  const feeReconciliation = await command(finance2.token, '/staff/reconciliations', {
+    subjectType: 'payment',
+    subjectId: fee.id,
+    source: 'bank_statement',
+    sourceReference: 'Trucker fee statement line',
+    amount: fee.amount,
+    currency: fee.currency_code,
+  });
+  assert.equal(feeReconciliation.status, 201, feeReconciliation.text);
+  const ticks = await Promise.all([watch(), watch()]);
+  assert.deepEqual(ticks.sort(), [0, 1]);
+  assert.equal(await count('booking_closure', 'booking_id=$1', [id]), 1);
+  const closed = await call('GET', root(shipper) + '/closure', { token: shipper.person.token });
+  assert.deepEqual(closed.body, { state: 'closed' });
+
+  const reopened = await command(finance1.token, staff + path, {
+    action: 'review',
+    paymentId,
+    note: 'Recheck the original statement line',
+  });
+  assert.equal(reopened.status, 200, reopened.text);
+  const correctionPending = await call('GET', root(shipper) + '/closure', {
+    token: shipper.person.token,
+  });
+  assert.deepEqual(correctionPending.body, { state: 'review_required' });
+  const rechecked = await command(finance2.token, staff + path, match);
+  assert.equal(rechecked.status, 200, rechecked.text);
+  assert.deepEqual(
+    (await call('GET', root(shipper) + '/closure', { token: shipper.person.token })).body,
+    { state: 'closed' },
+  );
+
+  const laterIssue = await command(shipper.person.token, root(shipper) + '/disputes', {
+    action: 'open',
+    kind: 'freight_commission',
+    description: 'Later financial issue',
+    requestedOutcome: 'Review fees',
+    financial: true,
+  });
+  assert.equal(laterIssue.status, 200, laterIssue.text);
+  const review = await call('GET', root(shipper) + '/closure', { token: shipper.person.token });
+  assert.deepEqual(review.body, { state: 'review_required' });
+  assert.equal(await watch(), 0);
+  assert.equal(await count('booking_closure', 'booking_id=$1', [id]), 1);
+});
+
+test('19/20: refused cargo still on the vehicle blocks operational closure', async () => {
+  const { id } = await delivered('refused', {
+    shortfall: {
+      reason: 'receiver_refused',
+      location: 'Gate (fictional)',
+      cargoCondition: 'Sealed',
+      quantityUnit: 'crates',
+      quantityDelivered: 0,
+      quantityRemaining: 14,
+      contactAttempts: 2,
+    },
+  });
+  const blockers = (
+    await owner.query<{ blockers: string[] }>(
+      'SELECT trucker.booking_closure_blockers($1) AS blockers',
+      [id],
+    )
+  ).rows[0]!.blockers;
+  assert.ok(blockers.includes('cargo_in_custody'), blockers.join(', '));
+  assert.equal(await count('booking_closure', 'booking_id = $1', [id]), 0);
+});

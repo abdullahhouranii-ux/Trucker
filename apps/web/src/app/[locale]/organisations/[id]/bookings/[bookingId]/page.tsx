@@ -7,6 +7,11 @@ import {
   podReviewAction,
   podSendAction,
 } from '../../../../../../server/pod-actions.ts';
+import {
+  BookingCompletionPanel,
+  type ClosureStatus,
+  type FinancialCompletion,
+} from '../../../../../../components/booking-completion.tsx';
 import { DisputePanel, type BookingDisputes } from '../../../../../../components/dispute-panel.tsx';
 import { DraftKeeper } from '../../../../../../components/draft-keeper.tsx';
 import {
@@ -48,6 +53,7 @@ import {
   stateEstimateAction,
   waitForCarrierAction,
 } from '../../../../../../server/assignment-actions.ts';
+import { sendCompletion } from '../../../../../../server/booking-completion.ts';
 import { requirePerson } from '../../../../../../server/session.ts';
 
 // One booking, for its shipper or its carrier. The carrier assigns its resources here; the
@@ -137,6 +143,17 @@ export default async function BookingPage({ params, searchParams }: Props) {
   const cancelled = booking.status === 'cancelled';
   const trip = booking.trip ?? null;
   const disputeLocale: Locale = locale;
+  const bookingPath = `/organisations/${id}/bookings/${bookingId}`;
+  const financialPath = bookingPath + '/financial-completion';
+  const [financial, closure] = await Promise.all([
+    api<FinancialCompletion>('GET', financialPath, { token: person.token }),
+    api<ClosureStatus>('GET', bookingPath + '/closure', { token: person.token }),
+  ]);
+  async function submitFinancial(key: string, body: Record<string, unknown>) {
+    'use server';
+    const session = await requirePerson(disputeLocale);
+    return sendCompletion(financialPath, session.token, key, body);
+  }
   const disputePath = `/organisations/${id}/bookings/${bookingId}/disputes`;
   const disputeView = await api<BookingDisputes>('GET', disputePath, { token: person.token });
   async function submitDispute(key: string, body: Record<string, unknown>) {
@@ -359,6 +376,12 @@ export default async function BookingPage({ params, searchParams }: Props) {
         )}
       </section>
 
+      <BookingCompletionPanel
+        financial={financial.ok ? financial.data : null}
+        closure={closure.ok ? closure.data : null}
+        locale={locale}
+        submit={submitFinancial}
+      />
       {disputeView.ok ? (
         <DisputePanel
           view={disputeView.data}
