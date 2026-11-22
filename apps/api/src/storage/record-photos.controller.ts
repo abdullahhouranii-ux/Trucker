@@ -15,6 +15,8 @@ interface PhotoRequest {
 }
 const root = 'organisations/:org/:kind/:record/photos';
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** The largest photo accepted, in bytes: 5 MB. The database refuses anything larger too. */
+export const PHOTO_MAX_BYTES = 5 * 1024 * 1024;
 const missing = () => new ApiError(404, 'not_found', 'The record or photo was not found.');
 const unavailable = () => new ApiError(503, 'file_storage_closed', 'Photo storage is unavailable.');
 const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
@@ -91,6 +93,9 @@ export class RecordPhotosController {
       ) {
         throw new ApiError(415, 'unsupported_media_type', 'Send a JPEG or PNG image.');
       }
+      // At most 5 MB a photo (decided by Abdullah, 22 November 2026); checked before storing.
+      if (bytes.length > PHOTO_MAX_BYTES)
+        throw new ApiError(413, 'payload_too_large', 'A photo can be at most 5 MB.');
       if (!this.store) throw unavailable();
       await this.query(client, kind, record, null, null);
       key = await this.store.put(bytes);

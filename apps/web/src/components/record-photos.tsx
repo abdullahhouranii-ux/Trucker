@@ -77,7 +77,7 @@ export function RecordPhotos({
                 if (!file) return;
                 if (
                   !file.size ||
-                  file.size > 10 * 1024 * 1024 ||
+                  file.size > 5 * 1024 * 1024 ||
                   !['image/jpeg', 'image/png'].includes(file.type)
                 ) {
                   setSelected(null);

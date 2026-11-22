@@ -1978,6 +1978,6 @@
     "open": "Open photo",
     "empty": "No photos on this record.",
     "failed": "The photo operation could not be completed. Try again.",
-    "invalid": "Choose a JPEG or PNG of up to 10 MB."
+    "invalid": "Choose a JPEG or PNG of up to 5 MB."
   }
 }

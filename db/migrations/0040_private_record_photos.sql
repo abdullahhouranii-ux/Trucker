@@ -5,7 +5,8 @@ CREATE TABLE trucker.record_photo (
   shipment_id uuid REFERENCES trucker.shipment_draft(id),
   vehicle_id uuid REFERENCES trucker.vehicle(id),
   media_type text NOT NULL CHECK (media_type IN ('image/jpeg', 'image/png')),
-  byte_size integer NOT NULL CHECK (byte_size BETWEEN 1 AND 10485760),
+  -- At most 5 MB a photo (decided by Abdullah, 22 November 2026).
+  byte_size integer NOT NULL CHECK (byte_size BETWEEN 1 AND 5242880),
   fingerprint text NOT NULL CHECK (fingerprint ~ '^[0-9a-f]{64}$'),
   storage_key uuid NOT NULL UNIQUE,
   created_at timestamptz NOT NULL,
@@ -25,6 +26,19 @@ BEGIN
   ALTER TABLE trucker.audit_entry DROP CONSTRAINT audit_entry_action_check;
   EXECUTE format('ALTER TABLE trucker.audit_entry ADD CONSTRAINT audit_entry_action_check CHECK ((%s) OR action = %L)',
     previous, 'record_photo.uploaded');
+  SELECT pg_get_expr(conbin, conrelid) INTO STRICT previous
+    FROM pg_constraint
+    WHERE conrelid = 'trucker.audit_entry'::regclass AND conname = 'audit_entry_action_check';
+  ALTER TABLE trucker.audit_entry DROP CONSTRAINT audit_entry_action_check;
+  EXECUTE format('ALTER TABLE trucker.audit_entry ADD CONSTRAINT audit_entry_action_check CHECK ((%s) OR action = %L)',
+    previous, 'record_photo.removed_by_retention');
+  -- Removal by the keeping time is done by nobody: its entry carries no actor.
+  SELECT pg_get_expr(conbin, conrelid) INTO STRICT previous
+    FROM pg_constraint
+    WHERE conrelid = 'trucker.audit_entry'::regclass AND conname = 'audit_entry_one_actor';
+  ALTER TABLE trucker.audit_entry DROP CONSTRAINT audit_entry_one_actor;
+  EXECUTE format('ALTER TABLE trucker.audit_entry ADD CONSTRAINT audit_entry_one_actor CHECK ((%s) OR (actor_person_id IS NULL AND actor_staff_id IS NULL AND action = %L))',
+    previous, 'record_photo.removed_by_retention');
   SELECT pg_get_expr(conbin, conrelid) INTO STRICT previous
     FROM pg_constraint
     WHERE conrelid = 'trucker.audit_entry'::regclass AND conname = 'audit_entry_record_type_check';
@@ -129,3 +143,47 @@ END
 $function$;
 REVOKE ALL ON FUNCTION trucker.pod_storage_keys_in_use(jsonb) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION trucker.pod_storage_keys_in_use(jsonb) TO trucker_app;
+
+-- How long photos are kept once their record has ended without a booking: a shipment withdrawn,
+-- expired or discarded, or a vehicle retired. 0 keeps them (development default). A setting, so
+-- that it is changed like the other limits (npm run db:settings), not by a code change.
+ALTER TABLE trucker.security_setting
+  ADD COLUMN record_photo_retention_days integer NOT NULL DEFAULT 0
+    CHECK (record_photo_retention_days BETWEEN 0 AND 3650);
+
+-- Removes the records of photos past their keeping time, at most 200 at a time, and audits each.
+-- The files are removed afterwards by the sweep of unrecorded files. A booked shipment's photos
+-- are never removed here.
+CREATE FUNCTION trucker.record_photo_retention_sweep() RETURNS integer
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, trucker, pg_temp AS $$
+DECLARE
+  days integer;
+  removed integer := 0;
+  p trucker.record_photo;
+BEGIN
+  SELECT g.record_photo_retention_days INTO days FROM trucker.security_setting g;
+  IF days IS NULL OR days = 0 THEN RETURN 0; END IF;
+  FOR p IN
+    SELECT f.* FROM trucker.record_photo f
+    LEFT JOIN trucker.shipment_draft d ON d.id = f.shipment_id
+    LEFT JOIN trucker.vehicle v ON v.id = f.vehicle_id
+    WHERE coalesce(
+            CASE WHEN NOT EXISTS (SELECT 1 FROM trucker.booking b WHERE b.shipment_id = d.id)
+                 THEN coalesce(d.withdrawn_at, d.expired_at, d.discarded_at) END,
+            v.retired_at)
+          <= trucker.clock_now() - make_interval(days => days)
+    ORDER BY f.created_at, f.id
+    LIMIT 200
+    FOR UPDATE OF f SKIP LOCKED
+  LOOP
+    DELETE FROM trucker.record_photo WHERE id = p.id;
+    INSERT INTO trucker.audit_entry (occurred_at, actor_person_id, organisation_id, action, record_type, record_id, request_id, after_values)
+    VALUES (trucker.clock_now(), NULL, p.organisation_id, 'record_photo.removed_by_retention', 'record_photo', p.id, NULL,
+            jsonb_build_object('recordId', coalesce(p.shipment_id, p.vehicle_id), 'days', days));
+    removed := removed + 1;
+  END LOOP;
+  RETURN removed;
+END
+$$;
+REVOKE ALL ON FUNCTION trucker.record_photo_retention_sweep() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION trucker.record_photo_retention_sweep() TO trucker_app;
