@@ -26,6 +26,7 @@ export function ConsoleHeader({ staff, current }: { staff?: StaffAccount; curren
             {admin ? link('/verification/withdraw', 'Withdraw a verification') : null}
             {admin ? link('/staff', 'Staff accounts') : null}
             {admin ? link('/finance', 'Financial settings') : null}
+            {admin ? link('/fees', 'Fee payments') : null}
             {admin ? link('/audit', 'Audit') : null}
           </ul>
         </nav>

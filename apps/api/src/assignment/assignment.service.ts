@@ -68,6 +68,11 @@ const ERRORS: Record<string, [number, string, string]> = {
     'The assignment deadline has passed. The shipper must choose to wait before resources can be assigned.',
   ],
   not_due: [409, 'assignment_not_overdue', 'The assignment deadline has not passed.'],
+  fee_not_paid: [
+    409,
+    'fee_not_paid',
+    "Trucker's fee was not paid by its deadline. The booking is lapsing and nothing was reserved.",
+  ],
   confirmed: [409, 'booking_confirmed', 'This booking is already confirmed.'],
   invalid: [422, 'validation_failed', 'Some fields are missing or not valid.'],
 };

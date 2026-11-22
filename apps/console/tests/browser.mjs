@@ -231,8 +231,8 @@ async function main() {
     mkdirSync(outDir, { recursive: true });
     // At most five pictures, for design review only.
     const shots = {
-      finance: 'console-finance-390',
-      'finance draft': 'console-finance-draft-390',
+      fees: 'console-fees-390',
+      'fees refused': 'console-fees-refused-390',
     };
 
     /** Helpers bound to one page, so that two staff members can be signed in at once. */
@@ -1430,6 +1430,43 @@ async function main() {
       `approval by the second administrator led to ${two.page.url()} (own approval refused ${ownRefused})`,
     );
     await two.inspect('finance');
+    // The time to pay the fee (slice 26) is one of the values, shown with the others.
+    check(
+      'finance',
+      ((await two.text('#in-force')) ?? '').includes("Time to pay Trucker's fee: 12 hours"),
+      `the settings in force read: ${await two.text('#in-force')}`,
+    );
+
+    // ------------------------------------------------------------------------------------
+    // Fee payments (slice 26). No booking exists in this database, so every list is empty and
+    // a transfer naming a reference that no fee has is refused, named in the summary, and
+    // nothing is recorded. The two-person flow itself is exercised by the API tests.
+    // ------------------------------------------------------------------------------------
+    await one.open('/fees');
+    const feesEmpty =
+      (await one.page.$('[data-state="fees"]')) !== null &&
+      (await one.page.$('#approval-empty')) !== null &&
+      (await one.page.$('#due-empty')) !== null &&
+      (await one.page.$('#refunds-empty')) !== null &&
+      (await one.page.$('#decided-empty')) !== null;
+    await one.inspect('fees');
+    await one.page.type('#reference', 'TF-0000000000');
+    await one.page.type('#amount', '30.00');
+    await one.page.type('#currency', 'XTS');
+    await one.page.type('#valueDate', '2026-01-01');
+    await one.page.type('#statementReference', 'STMT-CONSOLE-1');
+    await one.submit('#record-transfer');
+    const feeRefused =
+      one.page.url().includes('error=validation_failed') &&
+      ((await one.text('#error-summary')) ?? '').includes('no fee has this reference') &&
+      (await one.page.$('#error-summary a[href="#reference"]')) !== null &&
+      (await db.query('SELECT count(*)::int AS n FROM trucker.fee_payment')).rows[0].n === 0;
+    await one.inspect('fees refused');
+    check(
+      'fees',
+      feesEmpty && feeRefused,
+      `the fee payments page ended at ${one.page.url()} (empty lists ${feesEmpty})`,
+    );
 
     // ------------------------------------------------------------------------------------
     // Sign-out whose answer is lost: never reported as done

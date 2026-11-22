@@ -599,12 +599,36 @@ export interface BookingSite {
   pickup: { address: string | null; accessNotes: string | null };
   delivery: { address: string | null; accessNotes: string | null };
 }
+/**
+ * Trucker's fee (slice 26). The payer is shown the amount, the reference to quote and the
+ * deadline; the other parties only whether it is settled and by when.
+ */
+export interface FeePayment {
+  status: 'due' | 'overdue' | 'paid' | 'lapsed' | 'closed' | 'not_required';
+  dueAt: string | null;
+  paidAt: string | null;
+  payer?: 'customer' | 'organiser' | 'carrier' | null;
+  amount?: string;
+  currency?: string;
+  reference?: string | null;
+  paymentHours?: number | null;
+  /** A transfer is in hand and being verified by Trucker's staff. */
+  verifying?: boolean;
+  refunds?: {
+    id: string;
+    reason: 'booking_ended' | 'duplicate_payment' | 'cancelled_after_payment';
+    amount: string;
+    currency: string;
+    status: 'pending';
+  }[];
+}
 export interface Booking {
   id: string;
   /** Confirmed is a fact about the past. Whether dispatch is possible now is `dispatch`. */
-  status: 'awaiting_resources' | 'confirmed' | 'cancelled';
+  status: 'awaiting_resources' | 'awaiting_fee' | 'confirmed' | 'cancelled';
+  feePayment?: FeePayment | null;
   cancellation?: {
-    party: 'shipper' | 'carrier';
+    party: 'shipper' | 'carrier' | 'platform';
     at: string;
     reason: string;
     note: string | null;
@@ -770,6 +794,8 @@ export interface CommissionView {
   limits?: { options: ('percentage' | 'fixed' | 'contract')[]; maxBasisPoints: number };
   /** The organiser's view of the booked price, once the shipment is booked. */
   bookedPrice?: BookingPrice | null;
+  /** Trucker's fee, when the organiser is the one who pays it. */
+  feePayment?: FeePayment | null;
   arranged?: boolean;
   editable?: boolean;
 }

@@ -140,3 +140,13 @@ All Arabic and Urdu text in the repository is a draft written without a native r
 - The days field on the quotation form shows whatever methods are ticked; show it only for a bank transfer.
 - The acceptance lists the offered methods and then asks to choose among them: the list and the choice could be one.
 - Wording of the freight, fee-payer and booked-price messages in English, Arabic and Urdu.
+
+## Slice 26 (Trucker's fee)
+
+- Web: the fee block sits among the price figures in the booking card; a heading or its own card would separate it better.
+- Web: the "how to pay" paragraph is long; the bank-details sentence should become the details themselves once FP-4 is decided.
+- Web: the status chip says "Awaiting the carrier's resources" while the fee is also missing; a chip naming both would be clearer.
+- Console: the fee payments page lists recording first; with many transfers waiting, the approval list may matter more.
+- Console: the reference, amount and currency are typed by hand; choosing the fee from the list of fees due would avoid mistakes.
+- Wording of the fee, lapse and refund messages in English, Arabic and Urdu.
+

@@ -1,6 +1,12 @@
 import type { Locale } from '../i18n/config.ts';
 import type { Messages } from '../i18n/messages.ts';
-import type { AcceptancePreview, Booking, BookingPrice, BookingTerms } from '../server/api.ts';
+import type {
+  AcceptancePreview,
+  Booking,
+  BookingPrice,
+  BookingTerms,
+  FeePayment,
+} from '../server/api.ts';
 
 // A booking as both parties see it: the same figures for the shipper and the carrier. Amounts
 // arrive as exact decimal text and are shown as they are; nothing here calculates money.
@@ -116,6 +122,77 @@ export function FreightLine({
   );
 }
 
+/**
+ * Trucker's fee. The payer is shown what to pay, the reference to quote and the deadline; the
+ * other parties see only whether it is settled. A slip or a message is not proof: staff check
+ * the money on Trucker's bank statement. Nothing is shown when no fee is due.
+ */
+export function FeePaymentFacts({ t, fee }: { t: B; fee: FeePayment | null | undefined }) {
+  if (!fee || fee.status === 'not_required') return null;
+  const f = t.feePayment;
+  const open = fee.status === 'due' || fee.status === 'overdue';
+  return (
+    <div className="fee-payment" data-fee-status={fee.status}>
+      <p>
+        <strong>{f.title}</strong>: <span data-fee-state>{f.status[fee.status]}</span>
+      </p>
+      <dl className="facts">
+        {fee.amount && fee.currency ? (
+          <div>
+            <dt>{f.amount}</dt>
+            <dd data-fee-amount>
+              <Money amount={fee.amount} currency={fee.currency} />
+            </dd>
+          </div>
+        ) : null}
+        {fee.reference ? (
+          <div>
+            <dt>{f.reference}</dt>
+            <dd>
+              <bdi dir="ltr" data-fee-reference>
+                {fee.reference}
+              </bdi>
+            </dd>
+          </div>
+        ) : null}
+        {open && fee.dueAt ? (
+          <div>
+            <dt>{f.dueBy}</dt>
+            <dd data-fee-due>
+              <InstantText at={fee.dueAt} />
+            </dd>
+          </div>
+        ) : null}
+        {fee.paidAt ? (
+          <div>
+            <dt>{f.paidAt}</dt>
+            <dd>
+              <InstantText at={fee.paidAt} />
+            </dd>
+          </div>
+        ) : null}
+      </dl>
+      {open && fee.reference ? <p className="field-hint">{f.howToPay}</p> : null}
+      {open && !fee.reference ? <p className="field-hint">{f.notPayer}</p> : null}
+      {fee.verifying ? (
+        <p className="notice" role="note" data-fee-verifying>
+          {f.verifying}
+        </p>
+      ) : null}
+      {fee.refunds && fee.refunds.length > 0 ? (
+        <ul className="evidence" data-fee-refunds>
+          {fee.refunds.map((refund) => (
+            <li key={refund.id} data-refund={refund.reason}>
+              {f.refund[refund.reason]}: <Money amount={refund.amount} currency={refund.currency} />{' '}
+              ({f.refundPending})
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
 /** Which terms version applies. Only demonstration terms exist. */
 function TermsLine({ t, terms }: { t: B; terms: BookingTerms }) {
   return (
@@ -172,7 +249,9 @@ export function BookingCard({
           ? t.cancelledNote
           : confirmed
             ? a.confirmedNote
-            : t.statusNote}
+            : booking.status === 'awaiting_fee'
+              ? t.awaitingFeeNote
+              : t.statusNote}
       </p>
       <BookingFlags a={a} booking={booking} />
       {booking.role ? <p className="field-hint">{t.asRole[booking.role]}</p> : null}
@@ -199,6 +278,7 @@ export function BookingCard({
         carrierNet={booking.carrierNet}
         commission={booking.price.commission}
       />
+      <FeePaymentFacts t={t} fee={booking.feePayment} />
       <ul className="evidence">
         {booking.inclusions.map((item) => (
           <li key={item.code} data-included={item.included ? 'yes' : 'no'}>

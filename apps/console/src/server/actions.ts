@@ -434,6 +434,7 @@ export async function draftFinancialAction(form: FormData): Promise<void> {
     commissionMaxBasisPoints: whole(form, 'commissionMaxBasisPoints') ?? -1,
     commissionSettlementMaxDays: whole(form, 'commissionSettlementMaxDays') ?? -1,
     freightDueDays: whole(form, 'freightDueDays') ?? -1,
+    feePaymentHours: whole(form, 'feePaymentHours') ?? -1,
     note: text(form, 'note'),
     // A time in UTC, as the form says; anything else is refused by the database.
     effectiveFrom: at ? `${date}T${time}:00Z` : null,
@@ -473,4 +474,81 @@ export async function moveFinancialAction(form: FormData): Promise<void> {
   if (reply.status === 401) await sessionEnded();
   if (unknown(reply)) redirect('/finance?error=unconfirmed');
   redirect(`/finance?error=${FINANCE_REFUSALS.includes(reply.code) ? reply.code : 'refused'}`);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Trucker's fee: a transfer seen on the bank statement, recorded by one administrator and
+// approved or rejected by another (db/migrations/0024).
+// ---------------------------------------------------------------------------------------------
+const FEE_REFUSALS = [
+  'staff_privilege_required',
+  'different_person_required',
+  'receipt_already_decided',
+  'record_changed',
+  'retry_key_conflict',
+  'not_found',
+];
+
+/** Record a receipt matched to a fee by its reference. */
+export async function recordFeeAction(form: FormData): Promise<void> {
+  const token = await signedIn();
+  const key = text(form, 'retryKey');
+  const retryKey = RETRY_KEY.test(key) ? key : randomUUID();
+  const note = text(form, 'note').trim();
+  const reply = await api<{ outcome: string }>('POST', '/staff/fee-payments', {
+    token,
+    retryKey,
+    body: {
+      reference: text(form, 'reference').slice(0, 40),
+      amount: text(form, 'amount').trim().slice(0, 20),
+      currency: text(form, 'currency').trim().toUpperCase().slice(0, 3),
+      valueDate: text(form, 'valueDate').trim().slice(0, 10),
+      statementReference: text(form, 'statementReference').slice(0, 200),
+      note: note === '' ? null : note.slice(0, 2000),
+    },
+  });
+  if (reply.ok) redirect(`/fees?done=${reply.data.outcome}`);
+  if (reply.status === 401) await sessionEnded();
+  if (unknown(reply)) redirect(`/fees?error=unconfirmed&retry=${retryKey}`);
+  if (reply.code === 'validation_failed') {
+    const problems = Array.isArray(reply.details.problems)
+      ? (reply.details.problems as { field: string; code: string }[])
+      : [];
+    const codes = problems
+      .map((problem) => `${problem.field}:${problem.code}`)
+      .filter((code) => /^[A-Za-z]{1,40}:[a-z_]{1,40}$/.test(code));
+    const fields = codes.length > 0 ? codes : ['reference:invalid'];
+    redirect(`/fees?error=validation_failed&fields=${fields.join(',')}&retry=${retryKey}`);
+  }
+  redirect(`/fees?error=${FEE_REFUSALS.includes(reply.code) ? reply.code : 'refused'}`);
+}
+
+/** Approve or reject a recorded receipt. A rejection says why. */
+export async function decideFeeAction(form: FormData): Promise<void> {
+  const token = await signedIn();
+  const id = text(form, 'paymentId');
+  const decision = text(form, 'decision');
+  if (!UUID.test(id) || !['approve', 'reject'].includes(decision))
+    redirect('/fees?error=not_found');
+  const note = text(form, 'note').trim();
+  const reply = await api<{ outcome: string; booking?: { status?: string } }>(
+    'POST',
+    `/staff/fee-payments/${id}/decision`,
+    {
+      token,
+      body: {
+        version: Number(text(form, 'version')),
+        decision,
+        note: note === '' ? null : note.slice(0, 2000),
+      },
+    },
+  );
+  if (reply.ok)
+    redirect(
+      `/fees?done=${reply.data.outcome}${reply.data.booking?.status === 'confirmed' ? '_confirmed' : ''}`,
+    );
+  if (reply.status === 401) await sessionEnded();
+  if (unknown(reply)) redirect('/fees?error=unconfirmed');
+  if (reply.code === 'validation_failed') redirect(`/fees?error=note_required&payment=${id}`);
+  redirect(`/fees?error=${FEE_REFUSALS.includes(reply.code) ? reply.code : 'refused'}`);
 }
