@@ -656,11 +656,11 @@ async function main() {
     mkdirSync(outDir, { recursive: true });
     // At most five pictures, for design review only.
     const shots = {
-      'en:authority requested': 'authority-requested-en-390',
-      'en:shipment roles': 'shipment-roles-en-390',
-      'ar:shipment roles': 'shipment-roles-ar-390',
-      'en:authority in force': 'authority-in-force-en-390',
-      'ar:authority in force': 'authority-in-force-ar-390',
+      'en:shipment commission': 'shipment-commission-en-390',
+      'ar:shipment commission': 'shipment-commission-ar-390',
+      'en:commission acceptance': 'commission-acceptance-en-390',
+      'ar:commission acceptance': 'commission-acceptance-ar-390',
+      'en:commission accepted': 'commission-accepted-en-390',
     };
     // Fictional numbers: country code 999 is not assigned. Unique per run.
     const stamp = String(Date.now()).slice(-7);
@@ -3985,6 +3985,39 @@ async function main() {
       await open(arrangedPath(locale), 390);
       await inspect(locale, 'shipment roles');
     }
+    // Commission (slice 23): the organiser states it on the draft, in the browser.
+    await open(arrangedPath('en'), 390);
+    await page.select('#commissionOption', 'percentage');
+    await page.type('#commissionPercent', '7.5');
+    await submit('#save-commission');
+    const savedCommission = (
+      await urApi(`/organisations/${personalOrg}/shipments/${arrangedShipment}/commission`)
+    ).body;
+    check(
+      'commission',
+      (await page.$('#commission-saved')) !== null &&
+        savedCommission.commission?.option === 'percentage' &&
+        savedCommission.commission.basisPoints === 750 &&
+        ((await text('#commission-current')) ?? '').includes('7.5%'),
+      `saving 7.5% led to ${page.url()} with ${JSON.stringify(savedCommission.commission)}`,
+    );
+    // More than the limit is refused where it was typed, and nothing changes.
+    await page.$eval('#commissionPercent', (input) => (input.value = ''));
+    await page.type('#commissionPercent', '26');
+    await submit('#save-commission');
+    check(
+      'commission',
+      ((await text('#commission-error')) ?? '').includes(
+        messagesFor('en').commission.errors.commissionPercentage_out_of_range,
+      ) &&
+        (await urApi(`/organisations/${personalOrg}/shipments/${arrangedShipment}/commission`)).body
+          .commission?.basisPoints === 750,
+      `26% answered ${page.url()}`,
+    );
+    for (const locale of locales) {
+      await open(arrangedPath(locale), 390);
+      await inspect(locale, 'shipment commission');
+    }
     const arrangedPublished = await post(
       `/organisations/${personalOrg}/shipments/${arrangedShipment}/publish`,
       {
@@ -4000,6 +4033,81 @@ async function main() {
     );
     await open(arrangedPath('en'), 390);
     const rolesFixed = (await page.$('#roles-form')) === null && (await page.$('#roles')) !== null;
+    const commissionFixed =
+      (await page.$('#commission-form')) === null && (await page.$('#commission')) !== null;
+    // The carrier is told the commission before it prices, is refused without accepting the
+    // exact figures, and is shown them; ticking and sending again makes the quotation.
+    const arrangedTerms = await post(
+      `/organisations/${personalOrg}/shipments/${arrangedShipment}/quotation-terms`,
+      { version: 0, currency: 'XTS' },
+      'arranged-terms',
+    );
+    const arrangedQuote = (locale, query = '') =>
+      `/${locale}/organisations/${carrierOrg}/discover/${arrangedShipment}${query}`;
+    const commissionRows = async () =>
+      (
+        await owner.query(
+          `SELECT c.commission_amount::text AS commission, c.net_amount::text AS net
+           FROM trucker.quotation q JOIN trucker.quotation_commission c ON c.quotation_id = q.id
+           WHERE q.shipment_id = $1`,
+          [arrangedShipment],
+        )
+      ).rows;
+    await open(arrangedQuote('en'), 390);
+    const toldBefore = (await text('#commission-terms')) ?? '';
+    const offeredBefore = (await page.$('#commissionAccept')) !== null;
+    await fillQuotation('1000');
+    await submit('#submit-quotation');
+    const askedText = (await text('#commission-acceptance')) ?? '';
+    check(
+      'commission',
+      commissionFixed &&
+        arrangedTerms.status === 200 &&
+        toldBefore.includes('7.5%') &&
+        !offeredBefore &&
+        page.url().includes('commission_acceptance_required') &&
+        askedText.includes('75.00') &&
+        askedText.includes('925.00') &&
+        (await commissionRows()).length === 0,
+      `a quotation without acceptance answered ${page.url()} and asked: ${askedText.slice(0, 160)}`,
+    );
+    for (const locale of locales) {
+      await open(
+        arrangedQuote(locale, '?qError=commission_acceptance_required&cc=75.00&cn=925.00'),
+        390,
+      );
+      await inspect(locale, 'commission acceptance');
+    }
+    await open(
+      arrangedQuote('en', '?qError=commission_acceptance_required&cc=75.00&cn=925.00'),
+      390,
+    );
+    await fillQuotation('1000');
+    await page.click('#commissionAccept');
+    await submit('#submit-quotation');
+    const ownCommission = await page.evaluate(() => ({
+      commission: document.querySelector('#own-quotation-commission [data-commission]')?.dataset
+        .commission,
+      net: document.querySelector('#own-quotation-commission [data-net]')?.dataset.net,
+    }));
+    check(
+      'commission',
+      page.url().includes('qDone=submitted') &&
+        ownCommission.commission === '75.00' &&
+        ownCommission.net === '925.00' &&
+        JSON.stringify(await commissionRows()) === '[{"commission":"75.00","net":"925.00"}]',
+      `after accepting, ${page.url()} shows ${JSON.stringify(ownCommission)} with ${JSON.stringify(await commissionRows())}`,
+    );
+    await inspect('en', 'commission accepted');
+    // The customer reads the quotation: the shipping price, and no commission anywhere.
+    await open(`/en/organisations/${verifyOrg}/shipments/${arrangedShipment}/quotations`, 390);
+    const customerSees = await page.evaluate(() => document.body.innerText);
+    check(
+      'commission',
+      customerSees.includes('1000.00') && !/commission|925\.00|75\.00/i.test(customerSees),
+      `the customer's quotation page reads: ${customerSees.slice(0, 200)}`,
+    );
+    await open(arrangedPath('en'), 390);
     // The customer sees the shipment arranged in its name, with who arranged it.
     await open(authPath('en', verifyOrg), 390);
     const arrangedText = (await text(`[data-arranged="${arrangedShipment}"]`)) ?? '';

@@ -30,6 +30,10 @@ const moment = z.object({
 // The amount stays a string end to end: it is never turned into a binary number.
 const content = z.object({
   amount: z.string().max(20),
+  // The commission and the net the carrier accepts, on a shipment that carries a commission.
+  commissionAccepted: z
+    .object({ commission: z.string().max(20), net: z.string().max(20) })
+    .optional(),
   inclusions: z.record(z.string().regex(/^[a-z][a-z0-9_]{1,39}$/), z.boolean()),
   validUntil: moment,
   earliestPickup: moment,

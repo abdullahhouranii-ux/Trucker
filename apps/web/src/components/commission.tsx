@@ -1,0 +1,233 @@
+import { fill } from '../i18n/format.ts';
+import type { Locale } from '../i18n/config.ts';
+import type { Messages } from '../i18n/messages.ts';
+import {
+  api,
+  type CommissionLine,
+  type CommissionTerms,
+  type CommissionView,
+} from '../server/api.ts';
+import { setShipmentCommissionAction } from '../server/authority-actions.ts';
+import { Ltr } from './ltr.tsx';
+
+type T = Messages['commission'];
+
+/** Basis points as a percentage, without a rounding error: 750 is 7.5, 1000 is 10. */
+export const percentText = (basisPoints: number): string =>
+  `${Math.floor(basisPoints / 100)}${
+    basisPoints % 100 === 0
+      ? ''
+      : `.${String(basisPoints % 100)
+          .padStart(2, '0')
+          .replace(/0$/, '')}`
+  }`;
+
+/** The commission as one phrase: "10% of the shipping price" or "100.00 XTS". */
+export function CommissionPhrase({ t, terms }: { t: T; terms: CommissionTerms }) {
+  return terms.option === 'percentage' ? (
+    <>{fill(t.isPercentage, { percent: percentText(terms.basisPoints ?? 0) })}</>
+  ) : (
+    <Ltr>
+      {terms.amount} {terms.currency}
+    </Ltr>
+  );
+}
+
+/**
+ * The organiser's commission on a shipment it arranges for a customer, on the shipment's own
+ * page. Set while the shipment is a draft; fixed once it has been published. An account that
+ * is the customer of the shipment is never shown this section: the API gives it nothing.
+ */
+export async function CommissionSection({
+  locale,
+  t,
+  organisationId,
+  shipmentId,
+  version,
+  token,
+  done,
+  error,
+}: {
+  locale: Locale;
+  t: T;
+  organisationId: string;
+  shipmentId: string;
+  version: number;
+  token: string;
+  done: string | undefined;
+  error: string | undefined;
+}) {
+  const reply = await api<CommissionView>(
+    'GET',
+    `/organisations/${organisationId}/shipments/${shipmentId}/commission`,
+    { token },
+  );
+  if (!reply.ok || !reply.data.arranged) return null;
+  const { commission, editable } = reply.data;
+  const errors = (error ?? '')
+    .split(',')
+    .filter((code) => code !== '')
+    .map((code) => (t.errors as Record<string, string>)[code] ?? t.errors.invalid);
+  return (
+    <section className="section" aria-labelledby="commission-title" id="commission">
+      <h2 id="commission-title">{t.title}</h2>
+      {errors.length > 0 ? (
+        <div className="notice notice-error" role="alert" id="commission-error">
+          {errors.map((message) => (
+            <p key={message}>{message}</p>
+          ))}
+        </div>
+      ) : done ? (
+        <p className="notice notice-success" role="status" id="commission-saved">
+          {t.saved}
+        </p>
+      ) : null}
+      <p id="commission-current" data-option={commission?.option ?? 'none'}>
+        {commission ? <CommissionPhrase t={t} terms={commission} /> : t.none}
+      </p>
+      {editable ? (
+        <form className="form card" id="commission-form" action={setShipmentCommissionAction}>
+          <input type="hidden" name="locale" value={locale} />
+          <input type="hidden" name="organisationId" value={organisationId} />
+          <input type="hidden" name="shipmentId" value={shipmentId} />
+          <input type="hidden" name="version" value={version} />
+          <p>{t.lead}</p>
+          <div className="field">
+            <label htmlFor="commissionOption">{t.option}</label>
+            <select
+              id="commissionOption"
+              name="commissionOption"
+              defaultValue={commission?.option ?? 'none'}
+            >
+              {(['none', 'percentage', 'fixed'] as const).map((option) => (
+                <option value={option} key={option}>
+                  {t.options[option]}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor="commissionPercent">{t.percent}</label>
+            <p className="field-hint" id="commissionPercent-hint">
+              {t.percentHint}
+            </p>
+            <input
+              id="commissionPercent"
+              name="commissionPercent"
+              type="text"
+              inputMode="decimal"
+              dir="ltr"
+              maxLength={5}
+              aria-describedby="commissionPercent-hint"
+              defaultValue={
+                commission?.option === 'percentage' ? percentText(commission.basisPoints ?? 0) : ''
+              }
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="commissionAmount">{t.amount}</label>
+            <p className="field-hint" id="commissionAmount-hint">
+              {t.amountHint}
+            </p>
+            <input
+              id="commissionAmount"
+              name="commissionAmount"
+              type="text"
+              inputMode="decimal"
+              dir="ltr"
+              maxLength={20}
+              aria-describedby="commissionAmount-hint"
+              defaultValue={commission?.option === 'fixed' ? (commission.amount ?? '') : ''}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="commissionCurrency">{t.currency}</label>
+            <p className="field-hint" id="commissionCurrency-hint">
+              {t.currencyHint}
+            </p>
+            <input
+              id="commissionCurrency"
+              name="commissionCurrency"
+              type="text"
+              dir="ltr"
+              maxLength={3}
+              aria-describedby="commissionCurrency-hint"
+              defaultValue={commission?.option === 'fixed' ? (commission.currency ?? '') : ''}
+            />
+          </div>
+          <button className="button button-primary" type="submit" id="save-commission">
+            {t.save}
+          </button>
+        </form>
+      ) : (
+        <p className="field-hint">{t.fixed}</p>
+      )}
+    </section>
+  );
+}
+
+/** What a carrier is told before it prices a shipment that carries a commission. */
+export function CarrierCommissionNotice({ t, terms }: { t: T; terms: CommissionTerms }) {
+  return (
+    <p className="notice" role="note" id="commission-terms" data-option={terms.option}>
+      {t.carrierLead} <CommissionPhrase t={t} terms={terms} />. {t.carrierNote}
+    </p>
+  );
+}
+
+/**
+ * The carrier's acceptance of the exact figures for the price it sent. Shown after the server
+ * refused the quotation for want of it and named the figures; they travel back with the form.
+ */
+export function CommissionAcceptance({
+  t,
+  commission,
+  net,
+  currency,
+}: {
+  t: T;
+  commission: string;
+  net: string;
+  currency: string;
+}) {
+  return (
+    <div className="check" id="commission-acceptance">
+      <input type="hidden" name="commissionFigure" value={commission} />
+      <input type="hidden" name="netFigure" value={net} />
+      <input
+        id="commissionAccept"
+        name="commissionAccept"
+        type="checkbox"
+        aria-describedby="commissionAccept-hint"
+      />
+      <label htmlFor="commissionAccept">{fill(t.accept, { commission, net, currency })}</label>
+      <p className="field-hint" id="commissionAccept-hint">
+        {t.acceptHint}
+      </p>
+    </div>
+  );
+}
+
+/** The commission and the net of the carrier's own quotation, beside its price. */
+export function CommissionFacts({ t, line }: { t: T; line: CommissionLine }) {
+  return (
+    <dl className="facts" id="own-quotation-commission">
+      <div>
+        <dt>{t.commissionLine}</dt>
+        <dd data-commission={line.commission}>
+          <Ltr>
+            {line.commission} {line.currency}
+          </Ltr>
+        </dd>
+      </div>
+      <div>
+        <dt>{t.netLine}</dt>
+        <dd data-net={line.net}>
+          <Ltr>
+            {line.net} {line.currency}
+          </Ltr>
+        </dd>
+      </div>
+    </dl>
+  );
+}

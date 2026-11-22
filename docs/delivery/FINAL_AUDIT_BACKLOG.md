@@ -114,3 +114,9 @@ All Arabic and Urdu text in the repository is a draft written without a native r
 - Slice 22: native-reader review of the authority and roles messages (`roles`) in Arabic and Urdu; "nothing is allowed until it accepts" and the two permissions must remain exact.
 - Slice 22: the publication form shows the general message when publication is refused for a missing authority or fee agreement; give those their own sentences. The roles section shows no field-level error links.
 - At 390 px a registration can wrap between its country and its number (seen in the Arabic list of vehicles replaced after confirmation, `vehicle-changes-ar-390`). Proposed: keep a registration on one line. Layout only; the arrow direction in that list and in substitution differences was a meaning defect and is fixed (`e350bcb` and PR #22).
+
+## Slice 23 (commission)
+
+- The acceptance hint ("If you change the price…") sits beside the tick box label at 390 px; it should sit under it.
+- Wording of the commission messages in English, Arabic and Urdu, including the percentage phrase in right-to-left text.
+- The commission form shows the percentage, amount and currency fields together; show only those of the chosen option.

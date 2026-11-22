@@ -27,6 +27,7 @@ export interface QuotationInput {
   readonly validUntil: WindowInput;
   readonly earliestPickup: WindowInput;
   readonly notes: string | null;
+  readonly commissionAccepted?: { readonly commission: string; readonly net: string };
 }
 export type QuotationView = Record<string, unknown> & { id: string };
 
@@ -93,6 +94,51 @@ const ERRORS: Record<string, [number, string, string]> = {
     'Quotation terms can be set only on an open shipment.',
   ],
 };
+
+/**
+ * Runs a command that writes a quotation version. What the carrier accepted of the commission
+ * is given to the database for this transaction only; the database refuses the version unless
+ * it is exactly what follows from the price. The acceptance is not part of the quotation's
+ * content, so a retry of the same quotation is recognised whether or not it repeats it.
+ */
+async function withCommission<T>(
+  client: pg.PoolClient,
+  input: QuotationInput,
+  work: (content: Omit<QuotationInput, 'commissionAccepted'>) => Promise<T>,
+): Promise<T> {
+  const { commissionAccepted, ...content } = input;
+  await client.query("SELECT set_config('trucker.commission_accepted', $1, true)", [
+    commissionAccepted ? `${commissionAccepted.commission}|${commissionAccepted.net}` : '',
+  ]);
+  try {
+    return await work(content);
+  } catch (error) {
+    const { code, detail } = error as { code?: string; detail?: string };
+    if (code === 'TR010') {
+      const [commission, net] = (detail ?? '').split('|');
+      throw new ApiError(
+        409,
+        'commission_acceptance_required',
+        'This shipment carries an organiser commission. Accept the commission and your net earnings to send the quotation.',
+        { commission, net },
+      );
+    }
+    if (code === 'TR011')
+      throw new ApiError(
+        409,
+        'commission_currency',
+        'The organiser commission is a fixed amount in another currency. Quote in that currency.',
+        { currency: detail },
+      );
+    if (code === 'TR012')
+      throw new ApiError(
+        409,
+        'commission_leaves_nothing',
+        'The price does not cover the organiser commission.',
+      );
+    throw error;
+  }
+}
 
 function refuse(status: string, detail: unknown): never {
   if (status === 'invalid') {
@@ -194,13 +240,15 @@ export class QuotationService {
     input: QuotationInput,
   ): Promise<{ outcome: 'submitted' | 'already_submitted'; quotation: QuotationView }> {
     return this.asCaller(caller, organisationId, async (client, allowFixtures) => {
-      const result = await client.query<{
-        status: string;
-        quotation_id: string | null;
-        detail: unknown;
-      }>(
-        'SELECT status, quotation_id, detail FROM trucker.submit_quotation($1, $2, $3::jsonb, $4)',
-        [shipmentId, retryKey, JSON.stringify(input), allowFixtures],
+      const result = await withCommission(client, input, (content) =>
+        client.query<{
+          status: string;
+          quotation_id: string | null;
+          detail: unknown;
+        }>(
+          'SELECT status, quotation_id, detail FROM trucker.submit_quotation($1, $2, $3::jsonb, $4)',
+          [shipmentId, retryKey, JSON.stringify(content), allowFixtures],
+        ),
       );
       const row = result.rows[0]!;
       if (row.status !== 'submitted' && row.status !== 'repeated') refuse(row.status, row.detail);
@@ -220,9 +268,11 @@ export class QuotationService {
     input: QuotationInput,
   ): Promise<{ outcome: 'revised' | 'already_revised'; quotation: QuotationView }> {
     return this.asCaller(caller, organisationId, async (client, allowFixtures) => {
-      const result = await client.query<{ status: string; detail: unknown }>(
-        'SELECT status, detail FROM trucker.revise_quotation($1, $2, $3, $4::jsonb, $5)',
-        [quotationId, version, retryKey, JSON.stringify(input), allowFixtures],
+      const result = await withCommission(client, input, (content) =>
+        client.query<{ status: string; detail: unknown }>(
+          'SELECT status, detail FROM trucker.revise_quotation($1, $2, $3, $4::jsonb, $5)',
+          [quotationId, version, retryKey, JSON.stringify(content), allowFixtures],
+        ),
       );
       const row = result.rows[0]!;
       if (row.status !== 'revised' && row.status !== 'repeated') refuse(row.status, row.detail);

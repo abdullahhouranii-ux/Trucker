@@ -24,6 +24,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const CODE = /^[a-z][a-z0-9_]{1,39}$/;
 const DATE = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/;
 const TIME = /^[0-9]{2}:[0-9]{2}$/;
+const FIGURE = /^[0-9]{1,13}(\.[0-9]{1,3})?$/;
 
 const unknown = (reply: Extract<ApiReply<unknown>, { ok: false }>): boolean =>
   reply.status === 0 || reply.status >= 500 || reply.code === 'unavailable';
@@ -137,6 +138,14 @@ async function carrierCommand(
   let body: Record<string, unknown> = {};
   if (operation === 'submit' || operation === 'revisions') body = quotationContent(form, problems);
   if (operation !== 'submit') body.version = version;
+  // The figures the carrier was shown and ticked. The server holds them to its own.
+  const figures = [text(form, 'commissionFigure'), text(form, 'netFigure')];
+  if (
+    (operation === 'submit' || operation === 'revisions') &&
+    form.get('commissionAccept') === 'on' &&
+    figures.every((figure) => FIGURE.test(figure))
+  )
+    body.commissionAccepted = { commission: figures[0], net: figures[1] };
   if (problems.length > 0) back(problems.join(','), true);
   const path =
     operation === 'submit'
@@ -147,6 +156,16 @@ async function carrierCommand(
   if (reply.status === 401) await signedOut(locale);
   if (unknown(reply)) back(`${operation}_unconfirmed`, true);
   if (reply.code === 'validation_failed') back(problemCodes(reply.details), true);
+  if (reply.code === 'commission_acceptance_required') {
+    const { commission, net } = reply.details as { commission?: unknown; net?: unknown };
+    if (
+      typeof commission === 'string' &&
+      typeof net === 'string' &&
+      FIGURE.test(commission) &&
+      FIGURE.test(net)
+    )
+      redirect(withQuery(here, { qError: reply.code, cc: commission, cn: net }) + '#quotation');
+  }
   back(reply.code, false);
 }
 

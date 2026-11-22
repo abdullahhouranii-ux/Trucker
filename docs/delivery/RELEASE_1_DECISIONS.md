@@ -97,6 +97,16 @@ No legal or tax rule is stated here. Every value that is not approved is a prote
 | Slice 22 | **Approved** with S22-1, S22-2 and S22-3 as recommended. Added tests: two organisers serving one customer; shipment-specific access; revocation while a command waits; explicit fee-payer agreement; preserved booking snapshots; first-time broker onboarding. The organiser is recorded on its own shipments as well as those arranged for a customer. Built on `feat/shipment-roles` |
 | Not authorised | Merging, deployment, and DD-1 to DD-10 |
 
+
+## 1H. Instruction of 17 November 2026 (11:46): "proceed all slices"
+
+| Subject | Status |
+|---|---|
+| Reading | Build the remaining slices in order without a scope approval for each, using the recommendations as development defaults. Stated to Abdullah when work began; not yet confirmed or corrected by him |
+| What it does not do | It does not merge, deploy, approve any production financial policy, or approve D-1 to D-12, O-1 to O-7 or DD-1 to DD-10. Each default used is listed in the record of the slice that uses it |
+| Dispatch | DD-1 to DD-10 will be taken as development defaults when the dispatch slice is reached, unless Abdullah says otherwise |
+| Slice 23 | Built with D-1, D-2, D-3 and O-1 as development defaults: `COMMISSION_SLICE_23.md` |
+
 ## 2. Exceptions to the proposed structures
 
 | ID | Exception | Effect on the build |

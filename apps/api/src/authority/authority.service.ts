@@ -136,6 +136,52 @@ export class AuthorityService {
     return detail as Detail;
   }
 
+  async setCommission(
+    caller: Caller,
+    organisationId: string,
+    shipmentId: string,
+    version: number,
+    body: Detail,
+  ) {
+    const { detail } = await this.run(
+      caller,
+      organisationId,
+      'SELECT status, detail FROM trucker.set_shipment_commission($1, $2, $3)',
+      [shipmentId, version, JSON.stringify(body)],
+      { saved: 'saved' },
+    );
+    return { outcome: 'saved', commission: detail };
+  }
+
+  /** The commission terms of a shipment, and the figures for a price when one is given. */
+  async commissionTerms(
+    caller: Caller,
+    organisationId: string,
+    shipmentId: string,
+    amount: string,
+    currency: string,
+  ): Promise<Detail> {
+    const { detail } = await this.run(
+      caller,
+      organisationId,
+      'SELECT status, detail FROM trucker.shipment_commission_terms($1, $2, $3)',
+      [shipmentId, amount, currency],
+      { ok: 'ok' },
+    );
+    return detail as Detail;
+  }
+
+  async commissions(caller: Caller, organisationId: string): Promise<Detail> {
+    const { detail } = await this.run(
+      caller,
+      organisationId,
+      'SELECT status, detail FROM trucker.commission_overview()',
+      [],
+      { ok: 'ok' },
+    );
+    return detail as Detail;
+  }
+
   async setParties(
     caller: Caller,
     organisationId: string,
