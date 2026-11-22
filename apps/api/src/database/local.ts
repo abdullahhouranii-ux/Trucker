@@ -115,6 +115,29 @@ interface FixtureFile {
   currencies?: { code: string; minorUnits: number; name: string; countries: string[] }[];
   /** Fictional until the real register is approved: not a statement of what a price includes. */
   quotationInclusions?: { code: string; name: { en: string; ar: string; ur: string } }[];
+  /** Fictional: not a statement of what any law requires or what any licence permits. */
+  vehicleCategories?: {
+    code: string;
+    kind: string;
+    name: { en: string; ar: string; ur: string };
+  }[];
+  licenceClasses?: {
+    country: string;
+    code: string;
+    name: { en: string; ar: string; ur: string };
+    categories: string[];
+  }[];
+  fleetDocumentTypes?: {
+    country: string;
+    subject: string;
+    code: string;
+    required: boolean;
+    carriesLicence: boolean;
+    /** How the stated expiry date is read: configuration, not a finding about real documents. */
+    expiryConvention: 'last_day_included' | 'last_day_excluded';
+    expiryTimeZone: string;
+    name: { en: string; ar: string; ur: string };
+  }[];
 }
 
 /**
@@ -235,6 +258,65 @@ export async function loadCountryFixtures(
          SET name_en = EXCLUDED.name_en, name_ar = EXCLUDED.name_ar, name_ur = EXCLUDED.name_ur,
              position = EXCLUDED.position`,
       [inclusion.code, inclusion.name.en, inclusion.name.ar, inclusion.name.ur, index + 1],
+    );
+  }
+  for (const [index, category] of (data.vehicleCategories ?? []).entries()) {
+    await owner.query(
+      `INSERT INTO trucker.vehicle_category (code, kind, name_en, name_ar, name_ur, position)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (code) DO UPDATE
+         SET kind = EXCLUDED.kind, name_en = EXCLUDED.name_en, name_ar = EXCLUDED.name_ar,
+             name_ur = EXCLUDED.name_ur, position = EXCLUDED.position`,
+      [
+        category.code,
+        category.kind,
+        category.name.en,
+        category.name.ar,
+        category.name.ur,
+        index + 1,
+      ],
+    );
+  }
+  for (const [index, licence] of (data.licenceClasses ?? []).entries()) {
+    await owner.query(
+      `INSERT INTO trucker.licence_class (country_code, code, name_en, name_ar, name_ur, position)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (country_code, code) DO UPDATE
+         SET name_en = EXCLUDED.name_en, name_ar = EXCLUDED.name_ar, name_ur = EXCLUDED.name_ur,
+             position = EXCLUDED.position`,
+      [licence.country, licence.code, licence.name.en, licence.name.ar, licence.name.ur, index + 1],
+    );
+    for (const category of licence.categories)
+      await owner.query(
+        `INSERT INTO trucker.licence_class_category (country_code, class_code, category_code)
+         VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+        [licence.country, licence.code, category],
+      );
+  }
+  for (const [index, type] of (data.fleetDocumentTypes ?? []).entries()) {
+    await owner.query(
+      `INSERT INTO trucker.fleet_document_type
+         (country_code, subject_kind, code, name_en, name_ar, name_ur, required, carries_licence, position,
+          expiry_convention, expiry_time_zone)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+       ON CONFLICT (country_code, subject_kind, code) DO UPDATE
+         SET name_en = EXCLUDED.name_en, name_ar = EXCLUDED.name_ar, name_ur = EXCLUDED.name_ur,
+             required = EXCLUDED.required, carries_licence = EXCLUDED.carries_licence,
+             position = EXCLUDED.position, expiry_convention = EXCLUDED.expiry_convention,
+             expiry_time_zone = EXCLUDED.expiry_time_zone`,
+      [
+        type.country,
+        type.subject,
+        type.code,
+        type.name.en,
+        type.name.ar,
+        type.name.ur,
+        type.required,
+        type.carriesLicence,
+        index + 1,
+        type.expiryConvention,
+        type.expiryTimeZone,
+      ],
     );
   }
   return data.countries.map((country) => country.code);

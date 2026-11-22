@@ -153,6 +153,16 @@ export default async function AccountPage({ params, searchParams }: Props) {
         </div>
       </section>
 
+      <section className="section" aria-labelledby="driver-title">
+        <h2 id="driver-title">{m.fleet.driverLink}</h2>
+        <p>{m.fleet.driverLead}</p>
+        <div className="form-inline">
+          <a className="button" href={`/${locale}/driver`} id="open-driver">
+            {m.fleet.driverLink}
+          </a>
+        </div>
+      </section>
+
       <section className="section" aria-labelledby="sessions-title">
         <h2 id="sessions-title">{t.sessionsTitle}</h2>
         <p>{t.sessionsLead}</p>

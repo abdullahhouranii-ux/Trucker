@@ -225,6 +225,9 @@ export default async function CarrierPage({ params, searchParams }: Props) {
               href={`/${locale}/organisations/${id}/discover`}
             >
               {t.discoverLink}
+            </a>{' '}
+            <a className="button" id="open-fleet" href={`/${locale}/organisations/${id}/fleet`}>
+              {m.fleet.link}
             </a>
           </p>
         ) : null}

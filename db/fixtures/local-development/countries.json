@@ -258,5 +258,219 @@
         "ur": "فرضی شامل چیز 3 (نمائشی)"
       }
     }
+  ],
+  "_fleet_notice": "Fictional vehicle categories, licence classes and document types for development only. Not a statement of what any law requires or what any licence permits. The expiry convention and time zone of each document type are configuration for development, not a finding about any real document.",
+  "vehicleCategories": [
+    {
+      "code": "fictional_rigid_truck",
+      "kind": "truck",
+      "name": {
+        "en": "Fictional rigid truck (demonstration)",
+        "ar": "شاحنة صلبة وهمية (تجريبي)",
+        "ur": "فرضی رِجڈ ٹرک (نمائشی)"
+      }
+    },
+    {
+      "code": "fictional_tractor_unit",
+      "kind": "truck",
+      "name": {
+        "en": "Fictional tractor unit (demonstration)",
+        "ar": "رأس قاطرة وهمي (تجريبي)",
+        "ur": "فرضی ٹریکٹر یونٹ (نمائشی)"
+      }
+    },
+    {
+      "code": "fictional_semi_trailer",
+      "kind": "trailer",
+      "name": {
+        "en": "Fictional semi-trailer (demonstration)",
+        "ar": "نصف مقطورة وهمية (تجريبي)",
+        "ur": "فرضی سیمی ٹریلر (نمائشی)"
+      }
+    }
+  ],
+  "licenceClasses": [
+    {
+      "country": "XA",
+      "code": "fictional_class_1",
+      "name": {
+        "en": "Fictional licence class 1 (demonstration)",
+        "ar": "فئة رخصة وهمية 1 (تجريبي)",
+        "ur": "فرضی لائسنس کلاس 1 (نمائشی)"
+      },
+      "categories": ["fictional_rigid_truck"]
+    },
+    {
+      "country": "XA",
+      "code": "fictional_class_2",
+      "name": {
+        "en": "Fictional licence class 2 (demonstration)",
+        "ar": "فئة رخصة وهمية 2 (تجريبي)",
+        "ur": "فرضی لائسنس کلاس 2 (نمائشی)"
+      },
+      "categories": ["fictional_rigid_truck", "fictional_tractor_unit", "fictional_semi_trailer"]
+    },
+    {
+      "country": "XB",
+      "code": "fictional_class_1",
+      "name": {
+        "en": "Fictional licence class 1 (demonstration)",
+        "ar": "فئة رخصة وهمية 1 (تجريبي)",
+        "ur": "فرضی لائسنس کلاس 1 (نمائشی)"
+      },
+      "categories": ["fictional_rigid_truck"]
+    },
+    {
+      "country": "XB",
+      "code": "fictional_class_2",
+      "name": {
+        "en": "Fictional licence class 2 (demonstration)",
+        "ar": "فئة رخصة وهمية 2 (تجريبي)",
+        "ur": "فرضی لائسنس کلاس 2 (نمائشی)"
+      },
+      "categories": ["fictional_rigid_truck", "fictional_tractor_unit", "fictional_semi_trailer"]
+    }
+  ],
+  "fleetDocumentTypes": [
+    {
+      "country": "XA",
+      "subject": "truck",
+      "code": "fictional_registration_card",
+      "required": true,
+      "carriesLicence": false,
+      "name": {
+        "en": "Fictional registration card (demonstration)",
+        "ar": "بطاقة تسجيل وهمية (تجريبي)",
+        "ur": "فرضی رجسٹریشن کارڈ (نمائشی)"
+      },
+      "expiryConvention": "last_day_included",
+      "expiryTimeZone": "Etc/GMT-4"
+    },
+    {
+      "country": "XA",
+      "subject": "truck",
+      "code": "fictional_insurance_certificate",
+      "required": true,
+      "carriesLicence": false,
+      "name": {
+        "en": "Fictional insurance certificate (demonstration)",
+        "ar": "شهادة تأمين وهمية (تجريبي)",
+        "ur": "فرضی انشورنس سرٹیفکیٹ (نمائشی)"
+      },
+      "expiryConvention": "last_day_included",
+      "expiryTimeZone": "Etc/GMT-4"
+    },
+    {
+      "country": "XA",
+      "subject": "trailer",
+      "code": "fictional_registration_card",
+      "required": true,
+      "carriesLicence": false,
+      "name": {
+        "en": "Fictional registration card (demonstration)",
+        "ar": "بطاقة تسجيل وهمية (تجريبي)",
+        "ur": "فرضی رجسٹریشن کارڈ (نمائشی)"
+      },
+      "expiryConvention": "last_day_included",
+      "expiryTimeZone": "Etc/GMT-4"
+    },
+    {
+      "country": "XA",
+      "subject": "driver",
+      "code": "fictional_driving_licence",
+      "required": true,
+      "carriesLicence": true,
+      "name": {
+        "en": "Fictional driving licence (demonstration)",
+        "ar": "رخصة قيادة وهمية (تجريبي)",
+        "ur": "فرضی ڈرائیونگ لائسنس (نمائشی)"
+      },
+      "expiryConvention": "last_day_included",
+      "expiryTimeZone": "Etc/GMT-4"
+    },
+    {
+      "country": "XA",
+      "subject": "driver",
+      "code": "fictional_identity_card",
+      "required": true,
+      "carriesLicence": false,
+      "name": {
+        "en": "Fictional identity card (demonstration)",
+        "ar": "بطاقة هوية وهمية (تجريبي)",
+        "ur": "فرضی شناختی کارڈ (نمائشی)"
+      },
+      "expiryConvention": "last_day_included",
+      "expiryTimeZone": "Etc/GMT-4"
+    },
+    {
+      "country": "XB",
+      "subject": "truck",
+      "code": "fictional_registration_card",
+      "required": true,
+      "carriesLicence": false,
+      "name": {
+        "en": "Fictional registration card (demonstration)",
+        "ar": "بطاقة تسجيل وهمية (تجريبي)",
+        "ur": "فرضی رجسٹریشن کارڈ (نمائشی)"
+      },
+      "expiryConvention": "last_day_included",
+      "expiryTimeZone": "Etc/GMT-3"
+    },
+    {
+      "country": "XB",
+      "subject": "truck",
+      "code": "fictional_insurance_certificate",
+      "required": true,
+      "carriesLicence": false,
+      "name": {
+        "en": "Fictional insurance certificate (demonstration)",
+        "ar": "شهادة تأمين وهمية (تجريبي)",
+        "ur": "فرضی انشورنس سرٹیفکیٹ (نمائشی)"
+      },
+      "expiryConvention": "last_day_included",
+      "expiryTimeZone": "Etc/GMT-3"
+    },
+    {
+      "country": "XB",
+      "subject": "trailer",
+      "code": "fictional_registration_card",
+      "required": true,
+      "carriesLicence": false,
+      "name": {
+        "en": "Fictional registration card (demonstration)",
+        "ar": "بطاقة تسجيل وهمية (تجريبي)",
+        "ur": "فرضی رجسٹریشن کارڈ (نمائشی)"
+      },
+      "expiryConvention": "last_day_included",
+      "expiryTimeZone": "Etc/GMT-3"
+    },
+    {
+      "country": "XB",
+      "subject": "driver",
+      "code": "fictional_driving_licence",
+      "required": true,
+      "carriesLicence": true,
+      "name": {
+        "en": "Fictional driving licence (demonstration)",
+        "ar": "رخصة قيادة وهمية (تجريبي)",
+        "ur": "فرضی ڈرائیونگ لائسنس (نمائشی)"
+      },
+      "expiryConvention": "last_day_included",
+      "expiryTimeZone": "Etc/GMT-3"
+    },
+    {
+      "country": "XB",
+      "subject": "driver",
+      "code": "fictional_identity_card",
+      "required": true,
+      "carriesLicence": false,
+      "name": {
+        "en": "Fictional identity card (demonstration)",
+        "ar": "بطاقة هوية وهمية (تجريبي)",
+        "ur": "فرضی شناختی کارڈ (نمائشی)"
+      },
+      "expiryConvention": "last_day_included",
+      "expiryTimeZone": "Etc/GMT-3"
+    }
   ]
 }

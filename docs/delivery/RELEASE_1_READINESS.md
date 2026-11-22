@@ -30,9 +30,9 @@ Status values: **Open** (nothing done), **Partial** (some of it is built or chec
 |---|---|---|---|
 | R1-F1 | Registration, organisations, verification, staff console | Done on `staging` (slices 4 to 9), demonstration evidence only | Real verification: section 4 |
 | R1-F2 | Shipment drafts, publication, expiry, suspension | Done on `staging` (slices 7 and 10) | — |
-| R1-F3 | Carrier capability and discovery | Partial | PR #15, CI green, awaiting review and merge authorisation |
+| R1-F3 | Carrier capability and discovery | Partial | PR #15, CI green, awaiting a focused dependency review and merge authorisation |
 | R1-F4 | Comparable quotations | Partial | PR #16, CI green, awaiting review and merge authorisation |
-| R1-F5 | Fleet and drivers with eligible documents | Open | Slice 13; decisions DB-4, DB-5 |
+| R1-F5 | Fleet and drivers with eligible documents | Partial | Slice 13 built on `feat/fleet` with fictional registers; awaiting review and merge authorisation. Real document rules: R1-V6 |
 | R1-F6 | Acceptance and booking with an immutable snapshot | Open | Slice 14; decisions DB-1, DB-2, DB-3, DB-6 |
 | R1-F7 | Resource assignment and database-enforced reservations | Open | Slice 15; decisions DB-5, DB-6, DB-7 |
 | R1-F8 | Cancellation before dispatch | Open | Slice 16; decision DB-8 |

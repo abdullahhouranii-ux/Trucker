@@ -19,6 +19,12 @@ import { OrganisationController } from './organisation/organisation.controller.j
 import { OrganisationService } from './organisation/organisation.service.js';
 import { ShipmentController } from './shipment/shipment.controller.js';
 import { ShipmentService } from './shipment/shipment.service.js';
+import {
+  DriverController,
+  FleetController,
+  FleetStaffController,
+} from './fleet/fleet.controller.js';
+import { FleetService } from './fleet/fleet.service.js';
 import { QuotationController } from './quotation/quotation.controller.js';
 import { QuotationService } from './quotation/quotation.service.js';
 import { ReviewService } from './staff/review.service.js';
@@ -53,6 +59,9 @@ export class AppModule {
         IdentityController,
         OrganisationController,
         QuotationController,
+        FleetController,
+        DriverController,
+        FleetStaffController,
         ShipmentController,
         StaffController,
         VerificationController,
@@ -69,6 +78,7 @@ export class AppModule {
         ShipmentService,
         DiscoveryService,
         QuotationService,
+        FleetService,
         StaffService,
         ReviewService,
         VerificationService,

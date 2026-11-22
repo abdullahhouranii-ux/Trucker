@@ -542,6 +542,9 @@ main:focus {
 .field label,
 .check label {
   font-weight: 600;
+  /* A long word in a choice wraps instead of pushing the page sideways at large text. */
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .field-hint {
   color: var(--c-muted);

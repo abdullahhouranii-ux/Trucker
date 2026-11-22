@@ -52,6 +52,9 @@ const REVOCATIONS = [
   // Sending and withdrawing a quotation.
   ['POST', /^\/organisations\/[^/]+\/discovery\/shipments\/[^/]+\/quotations$/],
   ['POST', /^\/organisations\/[^/]+\/quotations\/[^/]+\/withdraw$/],
+  // Registering a vehicle and inviting a driver.
+  ['POST', /^\/organisations\/[^/]+\/fleet\/vehicles$/],
+  ['POST', /^\/organisations\/[^/]+\/fleet\/drivers$/],
 ];
 function startRelay() {
   const server = http.createServer((request, response) => {
@@ -648,11 +651,11 @@ async function main() {
     mkdirSync(outDir, { recursive: true });
     // At most five pictures, for design review only.
     const shots = {
-      'ur:carrier apply': 'carrier-apply-ur-390',
-      'ar:discovery list': 'discovery-list-ar-390',
-      'ar:quotation form': 'quotation-form-ar-390',
-      'ur:quotation errors': 'quotation-errors-ur-390',
-      'en:quotation comparison': 'quotation-comparison-en-390',
+      'ar:fleet': 'fleet-ar-390',
+      'ur:fleet errors': 'fleet-errors-ur-390',
+      'en:vehicle': 'vehicle-en-390',
+      'ar:driver invitation': 'driver-invitation-ar-390',
+      'ur:driver': 'driver-ur-390',
     };
     // Fictional numbers: country code 999 is not assigned. Unique per run.
     const stamp = String(Date.now()).slice(-7);
@@ -2865,6 +2868,262 @@ async function main() {
           () => document.querySelector('#ended-quotation [data-standing]')?.dataset.standing,
         )) === 'rejected',
       `the carrier sees ${await page.evaluate(() => document.querySelector('#ended-quotation')?.textContent)}`,
+    );
+
+    // ------------------------------------------------------------------------------------
+    // Fleet and drivers: register, lose an answer, documents, staff decisions, a driver joins
+    // ------------------------------------------------------------------------------------
+    const fleetPath = (locale) => `/${locale}/organisations/${carrierOrg}/fleet`;
+    const enFleet = messagesFor('en').fleet;
+    const urFleet = messagesFor('ur').fleet;
+    const fleetRows = async (table, where = 'organisation_id = $1') =>
+      (await owner.query(`SELECT * FROM trucker.${table} WHERE ${where} ORDER BY 1`, [carrierOrg]))
+        .rows;
+    const staffFleet = async (route, body) =>
+      fetch(`${apiOrigin}/staff/fleet${route}`, {
+        method: body ? 'POST' : 'GET',
+        headers: { authorization: `Bearer ${reviewerToken}`, 'content-type': 'application/json' },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      });
+    const acceptWaitingDocuments = async () => {
+      const waiting = (await (await staffFleet('')).json()).fleet.documents;
+      const replies = [];
+      for (const item of waiting)
+        replies.push(
+          (
+            await staffFleet(`/documents/${item.id}/decision`, {
+              version: item.version,
+              decision: 'accepted',
+              reason: 'document_accepted',
+              noConflict: true,
+            })
+          ).status,
+        );
+      return replies;
+    };
+    await open(carrierPath('en'), 390);
+    await submit('#open-fleet');
+    check(
+      'fleet',
+      page.url() === `${origin}${fleetPath('en')}` &&
+        (await text('#fleet-notice')) === enFleet.notice &&
+        (await page.$('#no-vehicles')) !== null &&
+        (await page.$('#no-drivers')) !== null,
+      `the carrier page's fleet link led to ${page.url()}`,
+    );
+    // Sent with nothing chosen: refused by field, nothing registered.
+    await open(fleetPath('ur'), 390);
+    await submit('#register-vehicle');
+    const fleetLinks = await page.evaluate(() =>
+      [...document.querySelectorAll('#error-summary a')].map((a) => a.getAttribute('href')),
+    );
+    check(
+      'fleet',
+      (await focusedId()) === 'error-summary' &&
+        [
+          '#kind',
+          '#category',
+          '#equipmentType',
+          '#registrationCountry',
+          '#registrationNumber',
+        ].every((link) => fleetLinks.includes(link)) &&
+        ((await text('#error-summary')) ?? '').includes(urFleet.errors.kind_required) &&
+        (await fleetRows('vehicle')).length === 0,
+      `an empty vehicle answered ${page.url()} with links ${fleetLinks}`,
+    );
+    await inspect('ur', 'fleet errors');
+    // Registered; the server records it and the answer is lost. Not reported as done; the list
+    // then shows the vehicle once, as a claim.
+    await page.select('#kind', 'truck');
+    await page.select('#category', 'fictional_rigid_truck');
+    await page.select('#equipmentType', 'box');
+    await page.select('#registrationCountry', 'XA');
+    await page.type('#registrationNumber', `br ${stamp}`);
+    relay.lost.length = 0;
+    relay.mode = 'lose';
+    await submit('#register-vehicle');
+    relay.mode = 'pass';
+    check(
+      'lost answer',
+      relay.lost[0] === `POST /organisations/${carrierOrg}/fleet/vehicles -> 201` &&
+        page.url().includes('fError=vehicle_unconfirmed') &&
+        (await text('#fleet-confirmation')) === null,
+      `a lost vehicle answer led to ${page.url()}: ${relay.lost}`,
+    );
+    relay.lost.length = 0;
+    await open(fleetPath('ur'), 390);
+    const vehicles = await fleetRows('vehicle');
+    check(
+      'lost answer',
+      vehicles.length === 1 &&
+        vehicles[0].registration_number === `BR${stamp}` &&
+        (await page.$eval('#vehicle-list > li', (li) => li.dataset.ownership)) === 'claimed' &&
+        ((await text('#vehicle-list')) ?? '').includes(urFleet.eligibility.ownership_not_verified),
+      `after a lost vehicle answer there are ${vehicles.length} vehicles`,
+    );
+    const vehiclePath = (locale) => `${fleetPath(locale)}/vehicles/${vehicles[0].id}`;
+    // A document sent empty is refused by field; two documents are then sent.
+    await open(vehiclePath('en'), 390);
+    await submit('#submit-document');
+    const documentLinks = await page.evaluate(() =>
+      [...document.querySelectorAll('#error-summary a')].map((a) => a.getAttribute('href')),
+    );
+    check(
+      'fleet',
+      ['#type'].every((link) => documentLinks.includes(link)) &&
+        (await fleetRows('fleet_document')).length === 0,
+      `an empty document answered ${page.url()} with links ${documentLinks}`,
+    );
+    const expiry = new Date(Date.now() + 200 * 86_400_000).toISOString().slice(0, 10);
+    const sendDocument = async (type, classes = []) => {
+      await page.select('#type', type);
+      await page.type('#documentNumber', `DOC-${type.slice(-4)}-${stamp}`);
+      await page.select('#issuingCountry', 'XA');
+      await page.type('#expiryDate', expiry);
+      for (const item of classes) await page.click(`#licenceClass-${item}`);
+      await submit('#submit-document');
+    };
+    await sendDocument('fictional_registration_card');
+    const firstSent = page.url();
+    await sendDocument('fictional_insurance_certificate');
+    check(
+      'fleet',
+      firstSent.includes('fDone=submitted') &&
+        page.url().includes('fDone=submitted') &&
+        (await fleetRows('fleet_document')).length === 2 &&
+        (await page.$eval('#vehicle-eligibility', (p) => p.dataset.eligibility)) ===
+          'ownership_not_verified',
+      `sending two documents led to ${page.url()}`,
+    );
+    // Staff verify the claim and accept the documents (their own screens are checked in the
+    // console's checks). The vehicle is then eligible, with nothing reserved or assigned.
+    const owned = await staffFleet(`/vehicles/${vehicles[0].id}/ownership`, {
+      version: vehicles[0].row_version,
+      decision: 'verified',
+      reason: 'ownership_evidence_accepted',
+      noConflict: true,
+    });
+    const acceptedVehicleDocuments = await acceptWaitingDocuments();
+    for (const locale of locales) {
+      await open(vehiclePath(locale), 390);
+      await inspect(locale, 'vehicle');
+    }
+    await open(vehiclePath('en'), 390);
+    check(
+      'fleet',
+      owned.status === 200 &&
+        acceptedVehicleDocuments.join() === '200,200' &&
+        (await page.$eval('#vehicle-eligibility', (p) => p.dataset.eligibility)) === 'eligible' &&
+        (await page.$eval('#vehicle-facts', (card) => card.dataset.ownership)) === 'verified',
+      `after the decisions (${owned.status}; ${acceptedVehicleDocuments}) the vehicle page shows ${await page.$eval('#vehicle-eligibility', (p) => p.dataset.eligibility)}`,
+    );
+    // A driver is invited by number; the answer is lost; one invitation exists. The carrier's
+    // administrator invites their own number here, so that the same browser can answer it.
+    const ownPhone = (
+      await owner.query(
+        `SELECT p.phone_e164 FROM trucker.person p JOIN trucker.membership m ON m.person_id = p.id
+         WHERE m.organisation_id = $1`,
+        [carrierOrg],
+      )
+    ).rows[0].phone_e164;
+    await open(fleetPath('ur'), 390);
+    await page.type('#phone', 'not a number');
+    await submit('#invite-driver');
+    check(
+      'fleet',
+      ((await text('#error-summary')) ?? '').includes(urFleet.errors.phone_invalid) &&
+        (await fleetRows('driver_affiliation')).length === 0,
+      `a bad number led to ${page.url()}`,
+    );
+    await page.$eval('#phone', (input) => (input.value = ''));
+    await page.type('#phone', ownPhone);
+    relay.mode = 'lose';
+    await submit('#invite-driver');
+    relay.mode = 'pass';
+    check(
+      'lost answer',
+      relay.lost[0] === `POST /organisations/${carrierOrg}/fleet/drivers -> 201` &&
+        page.url().includes('fError=invite_unconfirmed'),
+      `a lost invitation answer led to ${page.url()}: ${relay.lost}`,
+    );
+    relay.lost.length = 0;
+    await open(fleetPath('en'), 390);
+    check(
+      'lost answer',
+      (await fleetRows('driver_affiliation')).length === 1 &&
+        (await page.$eval('#driver-list > li', (li) => li.dataset.status)) === 'invited',
+      `after a lost invitation there are ${(await fleetRows('driver_affiliation')).length} invitations`,
+    );
+    // The driver's own page, on a phone: the invitation, accepted; then the documents.
+    for (const locale of locales) {
+      await open(`/${locale}/driver`, 390);
+      await inspect(locale, 'driver invitation');
+    }
+    await open('/en/account', 390);
+    await submit('#open-driver');
+    const invitationId = (await fleetRows('driver_affiliation'))[0].id;
+    await submit(`[data-accept="${invitationId}"]`);
+    check(
+      'fleet',
+      page.url().includes('fDone=accepted') &&
+        (await page.$('#driver-affiliation')) !== null &&
+        (await page.$eval('#driver-eligibility', (p) => p.dataset.eligibility)) ===
+          'document_missing' &&
+        (await fleetRows('driver_affiliation'))[0].status === 'active',
+      `accepting the invitation led to ${page.url()}`,
+    );
+    // A licence without its classes is refused at the classes.
+    await sendDocument('fictional_driving_licence');
+    check(
+      'fleet',
+      ((await text('#error-summary')) ?? '').includes(enFleet.errors.licenceClasses_required),
+      `a licence without classes led to ${page.url()}`,
+    );
+    await open('/en/driver', 390);
+    await sendDocument('fictional_driving_licence', ['fictional_class_1']);
+    await sendDocument('fictional_identity_card');
+    const acceptedDriverDocuments = await acceptWaitingDocuments();
+    for (const locale of locales) {
+      await open(`/${locale}/driver`, 390);
+      await inspect(locale, 'driver');
+    }
+    await open('/en/driver', 390);
+    check(
+      'fleet',
+      acceptedDriverDocuments.join() === '200,200' &&
+        (await page.$eval('#driver-eligibility', (p) => p.dataset.eligibility)) === 'eligible' &&
+        ((await text('#document-list')) ?? '').includes(`DOC-ence-${stamp}`),
+      `after the decisions (${acceptedDriverDocuments}) the driver page shows ${await page.$eval('#driver-eligibility', (p) => p.dataset.eligibility)}`,
+    );
+    // The carrier sees the driver working with it and eligible, never the document numbers;
+    // it authorises the driver for every vehicle.
+    for (const locale of locales) {
+      await open(fleetPath(locale), 390);
+      await inspect(locale, 'fleet');
+    }
+    await open(fleetPath('en'), 390);
+    const fleetText = (await page.evaluate(() => document.body.textContent)) ?? '';
+    await submit(`[data-authorise="${invitationId}"]`);
+    check(
+      'fleet',
+      !fleetText.includes(`DOC-ence-${stamp}`) &&
+        !fleetText.includes(`DOC-card-${stamp}`) &&
+        page.url().includes('fDone=changed') &&
+        (await page.$eval('#driver-list > li [data-authorised]', (p) => p.dataset.authorised)) ===
+          'all' &&
+        (await fleetRows('driver_authorisation')).length === 1,
+      `authorising led to ${page.url()}`,
+    );
+    // The carrier ends the affiliation: the driver is listed as ended, with nothing more.
+    await submit(`[data-end="${invitationId}"]`);
+    check(
+      'fleet',
+      page.url().includes('fDone=ended') &&
+        (await page.$eval('#driver-list > li', (li) => li.dataset.status)) === 'ended' &&
+        (await page.$('#driver-list > li [data-eligibility]')) === null &&
+        (await fleetRows('driver_authorisation', `organisation_id = $1 AND status = 'active'`))
+          .length === 0,
+      `ending the affiliation led to ${page.url()}`,
     );
 
     // Suspended when the verification is withdrawn by staff (test accounts, migration role).
