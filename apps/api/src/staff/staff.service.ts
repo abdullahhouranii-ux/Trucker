@@ -24,7 +24,7 @@ import { APP_CONFIG, DB_POOL } from '../tokens.js';
  * password. There is no setting that changes this.
  */
 
-export type Privilege = 'staff_admin' | 'reviewer';
+export type Privilege = 'staff_admin' | 'reviewer' | 'operations';
 export type ParticipantLink = 'not_declared' | 'declared_none' | 'declared';
 
 export interface StaffView {

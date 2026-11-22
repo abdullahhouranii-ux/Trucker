@@ -575,7 +575,9 @@ export type DispatchBlockerCode =
   | 'needs_reassignment'
   | 'resource_occupied'
   | 'resource_overrunning'
-  | 'acknowledgement_missing';
+  | 'acknowledgement_missing'
+  | 'fee_not_paid'
+  | 'operations_block';
 export interface DispatchBlocker {
   code: DispatchBlockerCode;
   /** The shipper is not shown which resource, or why. */
@@ -783,6 +785,32 @@ export interface TripMilestone {
   /** The carrier only. */
   note?: string | null;
   needsReview: boolean;
+  /** Who entered it (slice 17b): the driver, the carrier's administrator or Trucker operations. */
+  enteredAs?: 'driver' | 'carrier' | 'operations';
+}
+export type OperationsReason = 'safety_review' | 'document_concern' | 'suspected_fraud' | 'other';
+export type ExceptionType =
+  | 'delay'
+  | 'breakdown'
+  | 'accident'
+  | 'cargo_damage_or_shortage'
+  | 'refused_at_site'
+  | 'receiver_absent'
+  | 'document_problem'
+  | 'road_closed'
+  | 'safety_concern'
+  | 'no_show'
+  | 'other';
+/** A case on a trip (slice 17b). Parties see that it exists, its type and its state. */
+export interface TripCase {
+  id: string;
+  kind: 'exception' | 'overrun' | 'no_pickup_arrival';
+  type: ExceptionType | null;
+  state: 'open' | 'acknowledged' | 'resolved';
+  reportedAs: 'driver' | 'carrier' | 'shipper' | 'system';
+  reportedAt: string;
+  /** The side that reported it only. */
+  description: string | null;
 }
 export interface Trip {
   id: string;
@@ -791,6 +819,11 @@ export interface Trip {
   late: boolean;
   next: MilestoneCode | null;
   milestones: TripMilestone[];
+  /** Milestones withdrawn by Trucker operations as recorded by mistake (slice 17b). */
+  withdrawn?: { milestone: MilestoneCode; statedAt: string; withdrawnAt: string }[];
+  /** Put on hold by Trucker operations: no milestone is recorded until it is resumed. */
+  hold?: { reason: OperationsReason; heldAt: string } | null;
+  cases?: TripCase[];
   estimate: {
     arrivalAt: string;
     statedAt: string;

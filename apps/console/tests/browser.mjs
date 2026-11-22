@@ -239,6 +239,7 @@ async function main() {
     const shots = {
       refunds: 'console-refunds-390',
       'refunds refused': 'console-refunds-refused-390',
+      operations: 'console-operations-390',
     };
 
     /** Helpers bound to one page, so that two staff members can be signed in at once. */
@@ -288,10 +289,20 @@ async function main() {
           document.body.dataset.kbCount = String(controls.length);
         });
         const total = Number(await page.evaluate(() => document.body.dataset.kbCount));
+        // A date and time field takes a Tab for each of its parts (day, month, year, hour,
+        // minute, and AM or PM where shown).
+        const parts =
+          6 *
+          Number(
+            await page.evaluate(
+              () => document.querySelectorAll('input[type="datetime-local"]').length,
+            ),
+          );
         const reached = new Set();
         const unseen = [];
         let skipWorks = null;
-        for (let press = 0; press < total + 3; press += 1) {
+        let last = null;
+        for (let press = 0; press < total + parts + 3; press += 1) {
           await page.keyboard.press('Tab');
           const focused = await page.evaluate(() => {
             const element = document.activeElement;
@@ -313,8 +324,11 @@ async function main() {
           });
           if (!focused) break;
           if (focused.kb !== null) {
+            // Still in the same field: a date and time field takes several Tabs.
+            if (focused.kb === last) continue;
             if (reached.has(focused.kb)) break;
             reached.add(focused.kb);
+            last = focused.kb;
           }
           if (!focused.shown) unseen.push(focused.name);
           if (focused.skip && skipWorks === null) {
@@ -1671,6 +1685,183 @@ async function main() {
         refundsShown.amount === '20.00' &&
         refundRefused,
       `the refunds page ended at ${one.page.url()} (empty ${refundsEmpty}, shown ${JSON.stringify(refundsShown)})`,
+    );
+
+    // ------------------------------------------------------------------------------------
+    // Operations (slice 17b). The administrator is given the operations privilege directly.
+    // The queue and a booking are first shown empty or as this database has them, then with a
+    // fixed, fictional list in every state. A step sent from them goes to the real API, which
+    // refuses it: no such case or booking.
+    // ------------------------------------------------------------------------------------
+    await db.query(
+      `INSERT INTO trucker.staff_privilege (staff_id, privilege, granted_by, granted_at)
+       VALUES ($1, 'operations', NULL, now())`,
+      [me],
+    );
+    await one.open('/operations');
+    const operationsEmpty =
+      (await one.page.$('[data-state="operations"]')) !== null &&
+      (await one.page.$('#no-open-cases')) !== null &&
+      (await one.page.$('nav a[href="/operations"]')) !== null;
+    await one.inspect('operations empty');
+    const staffBy = 'Fictional Operator';
+    const opsCase = (n, kind, state, extra = {}) => ({
+      id: ids(40 + n),
+      bookingId: ids(60),
+      kind,
+      type: kind === 'exception' ? 'breakdown' : null,
+      state,
+      reportedAs: kind === 'exception' ? 'driver' : 'system',
+      reportedBy: kind === 'exception' ? 'Fictional Driver' : null,
+      reportedAt: at,
+      description: kind === 'exception' ? 'Engine warning light (fictional)' : null,
+      version: state === 'open' ? 1 : 2,
+      atRisk: kind === 'overrun' ? [ids(61)] : [],
+      events:
+        state === 'open'
+          ? []
+          : [
+              { action: 'acknowledged', at, note: null, by: staffBy },
+              ...(state === 'resolved'
+                ? [{ action: 'resolved', at, note: 'Cleared (fictional)', by: staffBy }]
+                : []),
+            ],
+      ...extra,
+    });
+    relay.canned['GET /staff/operations'] = {
+      operations: {
+        open: [
+          opsCase(1, 'exception', 'open'),
+          opsCase(2, 'overrun', 'acknowledged'),
+          opsCase(3, 'no_pickup_arrival', 'open'),
+        ],
+        resolved: [opsCase(4, 'exception', 'resolved')],
+        blocks: [{ bookingId: ids(62), reason: 'safety_review', blockedAt: at }],
+        holds: [{ bookingId: ids(60), reason: 'document_concern', heldAt: at }],
+      },
+    };
+    await one.open('/operations');
+    const queueShown = await one.page.evaluate(() => ({
+      open: document.querySelectorAll('#open-cases [data-case]').length,
+      acknowledge: document.querySelectorAll('#open-cases button[value="acknowledge"]').length,
+      resolve: document.querySelectorAll('#open-cases button[value="resolve"]').length,
+      blocks: document.querySelectorAll('#blocks li').length,
+      holds: document.querySelectorAll('#holds li').length,
+    }));
+    await one.inspect('operations');
+    await one.submit(`[data-case="${ids(41)}"] button[value="acknowledge"]`);
+    const caseRefused =
+      one.page.url().includes('error=not_found') &&
+      ((await one.text('#error-summary')) ?? '').includes('not found') &&
+      (await db.query('SELECT count(*)::int AS n FROM trucker.trip_case_event')).rows[0].n === 0;
+    delete relay.canned['GET /staff/operations'];
+    const milestone = (name, basis, extra = {}) => ({
+      milestone: name,
+      statedAt: at,
+      recordedAt: at,
+      basis,
+      about: 'Fictional Driver',
+      enteredBy: basis === 'observed' ? null : staffBy,
+      enteredAs: basis === 'observed' ? 'driver' : 'operations',
+      reason: basis === 'observed' ? null : 'no_signal',
+      note: basis === 'observed' ? null : 'Called the driver (fictional)',
+      needsReview: false,
+      ...extra,
+    });
+    const bookingShape = (trip, blocks, blockers) => ({
+      booking: {
+        id: ids(60),
+        shipper: { id: ids(70), legalName: 'Fictional Shipper LLC' },
+        carrier: { id: ids(71), legalName: 'Fictional Carrier LLC' },
+        plannedReservation: { startAt: at, endAt: at },
+        cancelled: false,
+        confirmed: true,
+        blockers,
+        blocks,
+        trip,
+        cases: [opsCase(1, 'exception', 'open'), opsCase(2, 'overrun', 'acknowledged')],
+        atRiskFrom: [],
+      },
+    });
+    relay.canned[`GET /staff/operations/bookings/${ids(60)}`] = bookingShape(
+      {
+        id: ids(63),
+        version: 4,
+        dispatchedAt: at,
+        late: false,
+        next: 'loading_started',
+        milestones: [
+          milestone('departed_for_pickup', 'observed'),
+          milestone('arrived_at_pickup', 'reported'),
+        ],
+        withdrawn: [
+          {
+            milestone: 'arrived_at_pickup',
+            statedAt: at,
+            withdrawnAt: at,
+            note: 'Pressed by mistake',
+          },
+        ],
+        hold: null,
+        cases: [],
+        estimate: { arrivalAt: at, statedAt: at, statedAs: 'driver', statedBy: 'Fictional Driver' },
+      },
+      [],
+      [],
+    );
+    await one.open(`/operations/bookings/${ids(60)}`);
+    const bookingShown = await one.page.evaluate(() => ({
+      milestones: document.querySelectorAll('#milestones li').length,
+      withdrawn: document.querySelectorAll('#withdrawn li').length,
+      forms: ['#hold-form', '#ops-milestone-form', '#withdraw-form'].every(
+        (selector) => document.querySelector(selector) !== null,
+      ),
+      dispatch: document.querySelector('#dispatch') === null,
+    }));
+    await one.inspect('operations booking');
+    await one.page.type('#withdraw-note', 'Pressed by mistake (fictional)');
+    await one.submit('#withdraw-milestone');
+    const withdrawRefused =
+      one.page.url().includes('error=not_found') &&
+      ((await one.text('#error-summary')) ?? '').includes('not found');
+    relay.canned[`GET /staff/operations/bookings/${ids(60)}`] = bookingShape(
+      null,
+      [
+        {
+          reason: 'safety_review',
+          note: 'Checking a document (fictional)',
+          blockedAt: at,
+          blockedBy: staffBy,
+          liftedAt: null,
+          liftNote: null,
+          liftedBy: null,
+        },
+      ],
+      [{ code: 'operations_block', reason: 'safety_review' }],
+    );
+    await one.open(`/operations/bookings/${ids(60)}`);
+    const blockShown =
+      (await one.page.$('[data-blocker="operations_block"]')) !== null &&
+      (await one.page.$('#lift-form')) !== null &&
+      (await one.page.$('#trip')) === null;
+    await one.inspect('operations booking blocked');
+    delete relay.canned[`GET /staff/operations/bookings/${ids(60)}`];
+    check(
+      'operations',
+      operationsEmpty &&
+        queueShown.open === 3 &&
+        queueShown.acknowledge === 2 &&
+        queueShown.resolve === 1 &&
+        queueShown.blocks === 1 &&
+        queueShown.holds === 1 &&
+        caseRefused &&
+        bookingShown.milestones === 2 &&
+        bookingShown.withdrawn === 1 &&
+        bookingShown.forms &&
+        bookingShown.dispatch &&
+        withdrawRefused &&
+        blockShown,
+      `the operations pages ended at ${one.page.url()} (empty ${operationsEmpty}, queue ${JSON.stringify(queueShown)}, booking ${JSON.stringify(bookingShown)}, refused ${caseRefused}/${withdrawRefused}, block ${blockShown})`,
     );
 
     // ------------------------------------------------------------------------------------

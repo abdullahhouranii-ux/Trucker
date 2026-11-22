@@ -33,6 +33,32 @@ const onBehalfBody = z.object({
   note: z.union([z.string().max(2000), z.null()]).optional(),
 });
 const estimateBody = z.object({ arrivalAt: z.string().max(40) });
+const EXCEPTION_TYPES = [
+  'delay',
+  'breakdown',
+  'accident',
+  'cargo_damage_or_shortage',
+  'refused_at_site',
+  'receiver_absent',
+  'document_problem',
+  'road_closed',
+  'safety_concern',
+  'no_show',
+  'other',
+] as const;
+const exceptionBody = z.object({
+  type: z.enum(EXCEPTION_TYPES),
+  description: z.string().max(4000),
+});
+function retryKey(key: string | undefined): string {
+  if (!key || !RETRY_KEY.test(key))
+    throw new ApiError(
+      400,
+      'retry_key_required',
+      'Send an Idempotency-Key header of 16 to 128 letters, digits, dots, dashes or underscores.',
+    );
+  return key;
+}
 
 function bearer(request: IncomingRequest): string | undefined {
   const header = request.headers.authorization;
@@ -108,6 +134,26 @@ export class TripController {
     );
   }
 
+  @Post('exceptions')
+  @HttpCode(200)
+  async exception(
+    @Param('organisationId') organisationId: string,
+    @Param('bookingId') bookingId: string,
+    @Headers('idempotency-key') key: string | undefined,
+    @Body() body: unknown,
+    @Req() request: IncomingRequest,
+  ) {
+    const caller = await callerOf(this.identity, request);
+    const checked = retryKey(key);
+    return this.trips.reportException(
+      caller,
+      identifier(organisationId),
+      identifier(bookingId),
+      checked,
+      parse(exceptionBody, body),
+    );
+  }
+
   @Post('estimate')
   @HttpCode(200)
   async estimate(
@@ -159,6 +205,25 @@ export class DriverTripController {
       '',
       identifier(bookingId),
       parse(estimateBody, body).arrivalAt,
+    );
+  }
+
+  @Post('exceptions')
+  @HttpCode(200)
+  async exception(
+    @Param('bookingId') bookingId: string,
+    @Headers('idempotency-key') key: string | undefined,
+    @Body() body: unknown,
+    @Req() request: IncomingRequest,
+  ) {
+    const caller = await callerOf(this.identity, request);
+    const checked = retryKey(key);
+    return this.trips.reportException(
+      caller,
+      '',
+      identifier(bookingId),
+      checked,
+      parse(exceptionBody, body),
     );
   }
 }

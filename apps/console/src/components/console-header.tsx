@@ -3,6 +3,7 @@ import type { StaffAccount } from '../server/types.ts';
 export function ConsoleHeader({ staff, current }: { staff?: StaffAccount; current?: string }) {
   const admin = staff?.privileges.includes('staff_admin') ?? false;
   const reviewer = staff?.privileges.includes('reviewer') ?? false;
+  const operations = staff?.privileges.includes('operations') ?? false;
   const link = (href: string, label: string) => (
     <li>
       <a href={href} aria-current={current === href ? 'page' : undefined}>
@@ -23,6 +24,7 @@ export function ConsoleHeader({ staff, current }: { staff?: StaffAccount; curren
             {reviewer || admin ? link('/shipments', 'Published shipments') : null}
             {reviewer || admin ? link('/fleet', 'Fleet') : null}
             {reviewer || admin ? link('/bookings', 'Bookings') : null}
+            {operations ? link('/operations', 'Operations') : null}
             {admin ? link('/verification/withdraw', 'Withdraw a verification') : null}
             {admin ? link('/staff', 'Staff accounts') : null}
             {admin ? link('/finance', 'Financial settings') : null}

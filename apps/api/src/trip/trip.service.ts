@@ -43,12 +43,17 @@ const ERRORS: Record<string, [number, string, string]> = {
     'The truck has arrived at delivery: an estimated arrival is no longer taken.',
   ],
   invalid: [422, 'validation_failed', 'Some fields are missing or not valid.'],
+  on_hold: [
+    409,
+    'trip_on_hold',
+    'Trucker operations has put this trip on hold. No milestone is recorded until it is resumed.',
+  ],
 };
 
-function refuse(status: string, detail: Detail | null): never {
+function refuse(status: string, detail: Detail | Detail[] | null): never {
   if (status === 'refused') {
     // The first precondition that failed, by name; an eligibility reason comes as its cause.
-    const { code, reason, ...rest } = detail ?? {};
+    const { code, reason, ...rest } = (detail ?? {}) as Detail;
     throw new ApiError(
       409,
       'dispatch_refused',
@@ -60,9 +65,17 @@ function refuse(status: string, detail: Detail | null): never {
       },
     );
   }
+  if (status === 'invalid' && Array.isArray(detail)) {
+    const problems = detail as { field: string; code: string }[];
+    throw new ApiError(422, 'validation_failed', 'Some fields are missing or not valid.', {
+      fields: problems.map((problem) => problem.field),
+      problems,
+    });
+  }
   if (status === 'invalid') {
-    const field = typeof detail?.field === 'string' ? detail.field : 'body';
-    const code = typeof detail?.code === 'string' ? detail.code : 'invalid';
+    const single = (detail ?? {}) as Detail;
+    const field = typeof single.field === 'string' ? single.field : 'body';
+    const code = typeof single.code === 'string' ? single.code : 'invalid';
     throw new ApiError(422, 'validation_failed', 'Some fields are missing or not valid.', {
       fields: [field],
       problems: [{ field, code }],
@@ -177,5 +190,30 @@ export class TripService {
       row.status,
       row.status === 'invalid' ? { field: 'arrivalAt', code: 'invalid' } : row.detail,
     );
+  }
+
+  /**
+   * The driver (organisation ''), or an administrator of the carrier or of the shipper, reports
+   * an exception on a trip (slice 17b, EXC-1). It is a case in the operations queue at once.
+   */
+  async reportException(
+    caller: Caller,
+    organisationId: string,
+    bookingId: string,
+    key: string,
+    content: Detail,
+  ) {
+    const row = await this.run(
+      caller,
+      organisationId,
+      'SELECT status, detail FROM trucker.trip_exception_report($1, $2, $3)',
+      () => [bookingId, key, JSON.stringify(content)],
+    );
+    if (row.status === 'reported' || row.status === 'repeated')
+      return {
+        outcome: row.status === 'reported' ? 'reported' : 'already_reported',
+        case: row.detail,
+      };
+    return refuse(row.status, row.detail);
   }
 }

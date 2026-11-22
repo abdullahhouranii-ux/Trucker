@@ -39,6 +39,7 @@ const STATUS: Record<StaffAccount['status'], string> = {
 const PRIVILEGES: [Privilege, string][] = [
   ['staff_admin', 'Staff administrator'],
   ['reviewer', 'Reviewer'],
+  ['operations', 'Operations'],
 ];
 const LINK: Record<StaffAccount['participantLink'], string> = {
   not_declared: 'Not declared. This is not the same as having none.',

@@ -41,6 +41,7 @@ const schema = z.object({
    * off. Unset: every minute, except under test, where the tests run it themselves.
    */
   FEE_LAPSE_INTERVAL_MS: z.coerce.number().int().min(0).max(3_600_000).optional(),
+  TRIP_WATCH_INTERVAL_MS: z.coerce.number().int().min(0).max(3_600_000).optional(),
 
   /**
    * Key for the keyed hashes of one-time codes and for deriving session tokens. Development and

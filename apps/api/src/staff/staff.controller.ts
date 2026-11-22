@@ -14,6 +14,7 @@ import { z } from 'zod';
 import { ApiError } from '../http/api-error.js';
 import { FeeService } from './fee.service.js';
 import { RefundService } from './refund.service.js';
+import { OperationsService } from './operations.service.js';
 import { FinanceService } from './finance.service.js';
 import { ReviewService, type QueueEntry } from './review.service.js';
 import {
@@ -94,7 +95,7 @@ const revokeBody = z.object({
   noConflict: z.boolean(),
 });
 const privilegeBody = z.object({
-  privilege: z.enum(['staff_admin', 'reviewer']),
+  privilege: z.enum(['staff_admin', 'reviewer', 'operations']),
   granted: z.boolean(),
 });
 
@@ -155,6 +156,36 @@ const reconcileBody = z.object({
   note: z.union([z.string().max(2000), z.null()]).optional(),
   supersedes: z.union([z.string().max(40), z.null()]).optional(),
 });
+// Operations on trips (slice 17b). The database judges every value.
+const OPERATIONS_REASONS = [
+  'safety_review',
+  'document_concern',
+  'suspected_fraud',
+  'other',
+] as const;
+const caseActionBody = z.object({
+  version: z.number().int().min(1),
+  action: z.enum(['acknowledge', 'action', 'resolve']),
+  note: z.union([z.string().max(4000), z.null()]).optional(),
+});
+const blockBody = z.object({
+  block: z.boolean(),
+  reason: z.union([z.enum(OPERATIONS_REASONS), z.null()]).optional(),
+  note: z.string().max(2000),
+});
+const holdBody = z.object({
+  hold: z.boolean(),
+  reason: z.union([z.enum(OPERATIONS_REASONS), z.null()]).optional(),
+  note: z.string().max(2000),
+});
+const operationsMilestoneBody = z.object({
+  version: z.number().int().min(1),
+  milestone: z.string().max(40),
+  statedAt: z.string().max(40),
+  reason: z.enum(['no_phone', 'no_signal', 'driver_unable', 'correction', 'other']),
+  note: z.union([z.string().max(2000), z.null()]).optional(),
+});
+const withdrawBody = z.object({ version: z.number().int().min(1), note: z.string().max(2000) });
 const financialMoveBody = z.object({
   version: z.number().int().min(1),
   move: z.enum(['approve', 'discard', 'withdraw']),
@@ -194,6 +225,7 @@ export class StaffController {
     @Inject(FinanceService) private readonly finance: FinanceService,
     @Inject(FeeService) private readonly fees: FeeService,
     @Inject(RefundService) private readonly refunds: RefundService,
+    @Inject(OperationsService) private readonly operations: OperationsService,
   ) {}
 
   private caller(request: IncomingRequest): Promise<StaffCaller> {
@@ -458,6 +490,80 @@ export class StaffController {
     const caller = await this.caller(request);
     const { version, decision, note } = parse(feeDecisionBody, body);
     return this.fees.decide(caller, identifier(id), version, decision, note ?? null);
+  }
+
+  // Operations on trips (slice 17b): the queue of cases, a booking's trip, blocks and holds,
+  // milestones on the driver's behalf and withdrawn ones.
+  @Get('operations')
+  async operationsQueue(@Req() request: IncomingRequest) {
+    const caller = await this.caller(request);
+    return { operations: await this.operations.queue(caller) };
+  }
+
+  @Get('operations/bookings/:id')
+  async operationsBooking(@Param('id') id: string, @Req() request: IncomingRequest) {
+    const caller = await this.caller(request);
+    return { booking: await this.operations.booking(caller, identifier(id)) };
+  }
+
+  @Post('operations/cases/:id/action')
+  @HttpCode(200)
+  async operationsCase(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Req() request: IncomingRequest,
+  ) {
+    const caller = await this.caller(request);
+    const { version, action, note } = parse(caseActionBody, body);
+    return this.operations.caseAct(caller, identifier(id), version, action, note ?? null);
+  }
+
+  @Post('operations/bookings/:id/block')
+  @HttpCode(200)
+  async operationsBlock(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Req() request: IncomingRequest,
+  ) {
+    const caller = await this.caller(request);
+    const { block, reason, note } = parse(blockBody, body);
+    return this.operations.block(caller, identifier(id), block, reason ?? null, note);
+  }
+
+  @Post('operations/bookings/:id/hold')
+  @HttpCode(200)
+  async operationsHold(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Req() request: IncomingRequest,
+  ) {
+    const caller = await this.caller(request);
+    const { hold, reason, note } = parse(holdBody, body);
+    return this.operations.hold(caller, identifier(id), hold, reason ?? null, note);
+  }
+
+  @Post('operations/bookings/:id/milestones')
+  @HttpCode(200)
+  async operationsMilestone(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Req() request: IncomingRequest,
+  ) {
+    const caller = await this.caller(request);
+    const { version, ...content } = parse(operationsMilestoneBody, body);
+    return this.operations.milestoneOnBehalf(caller, identifier(id), version, content);
+  }
+
+  @Post('operations/bookings/:id/milestones/withdraw')
+  @HttpCode(200)
+  async operationsWithdraw(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Req() request: IncomingRequest,
+  ) {
+    const caller = await this.caller(request);
+    const { version, note } = parse(withdrawBody, body);
+    return this.operations.withdraw(caller, identifier(id), version, note);
   }
 
   // Refunds: requested by one administrator, approved by another, submitted, then completed or
