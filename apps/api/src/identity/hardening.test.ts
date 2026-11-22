@@ -277,6 +277,8 @@ const CALLABLE = [
   'quotation_context(p_shipment uuid, p_allow_fixtures boolean)',
   'reconfirm_quotation(p_quotation uuid, p_expected_version integer, p_key text, p_allow_fixtures boolean)',
   'record_booking_wait(p_booking uuid)',
+  'record_photo_retention_sweep()',
+  'record_photos(p_kind text, p_record uuid, p_photo uuid, p_upload jsonb)',
   'refresh_shipments(p_shipment uuid)',
   'refund_provider_report(p_request uuid, p_content jsonb)',
   'refunds_to_check()',

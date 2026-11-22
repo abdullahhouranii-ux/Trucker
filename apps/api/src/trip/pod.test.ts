@@ -2653,3 +2653,244 @@ test('19/20: refused cargo still on the vehicle blocks operational closure', asy
   assert.ok(blockers.includes('cargo_in_custody'), blockers.join(', '));
   assert.equal(await count('booking_closure', 'booking_id = $1', [id]), 0);
 });
+
+test('record photos are private, scoped to the owning company and safe to retry', async () => {
+  const company = await verifiedShipper();
+  const outsider = await verifiedShipper();
+  const shipment = await draft(company.person, company.org);
+  const root = '/organisations/' + company.org + '/shipments/' + shipment.id + '/photos';
+  const id = randomUUID();
+  const bytes = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+cIioAAAAASUVORK5CYII=',
+    'base64',
+  );
+  const send = (token: string) =>
+    fetch(base + root + '/' + id, {
+      method: 'PUT',
+      body: new Uint8Array(bytes),
+      headers: { authorization: 'Bearer ' + token, 'content-type': 'image/png' },
+    });
+  assert.equal((await send(outsider.person.token)).status, 404);
+  const first = await send(company.person.token);
+  assert.equal(first.status, 200, await first.clone().text());
+  assert.deepEqual(await first.json(), { id, outcome: 'stored' });
+  assert.deepEqual(await (await send(company.person.token)).json(), {
+    id,
+    outcome: 'already_stored',
+  });
+  const list = await call('GET', root, { token: company.person.token });
+  assert.equal(list.status, 200, list.text);
+  const photos = list.body.photos as Record<string, unknown>[];
+  assert.equal(photos.length, 1);
+  assert.equal(photos[0]?.id, id);
+  assert.equal('storageKey' in photos[0]!, false);
+  assert.equal((await call('GET', root, { token: outsider.person.token })).status, 404);
+  const image = await fetch(base + root + '/' + id, {
+    headers: { authorization: 'Bearer ' + company.person.token },
+  });
+  assert.equal(image.headers.get('cache-control'), 'private, no-store');
+  assert.deepEqual(Buffer.from(await image.arrayBuffer()), bytes);
+  // The sweep of unrecorded files keeps record photos: their keys are recorded.
+  assert.equal(
+    (await nest.get(PodService).sweepUnrecorded(new Date(Date.now() + 60_000))).removed,
+    0,
+  );
+  const kept = await fetch(base + root + '/' + id, {
+    headers: { authorization: `Bearer ${company.person.token}` },
+  });
+  assert.deepEqual(Buffer.from(await kept.arrayBuffer()), bytes);
+  assert.equal(
+    (
+      await fetch(base + root + '/' + id, {
+        headers: { authorization: 'Bearer ' + outsider.person.token },
+      })
+    ).status,
+    404,
+  );
+  assert.equal((await fetch(base + '/public/shipments')).status, 200);
+});
+
+test('vehicle photos are isolated from other companies and cannot be faked by a media header', async () => {
+  const carrier = await verifiedCarrier();
+  const outsider = await verifiedCarrier();
+  const vehicle = await rigid(carrier);
+  const root = '/organisations/' + carrier.org + '/vehicles/' + vehicle.id + '/photos';
+  const id = randomUUID();
+  const image = new Uint8Array([255, 216, 255, 224, 0, 255, 217]);
+  const upload = (bytes: Uint8Array<ArrayBuffer>, token: string) =>
+    fetch(base + root + '/' + id, {
+      method: 'PUT',
+      body: bytes,
+      headers: { authorization: 'Bearer ' + token, 'content-type': 'image/jpeg' },
+    });
+  assert.equal((await upload(new Uint8Array([0, 1, 2, 3]), carrier.person.token)).status, 415);
+  assert.equal((await upload(image, outsider.person.token)).status, 404);
+  assert.equal((await upload(image, carrier.person.token)).status, 200);
+  const list = await call('GET', root, { token: carrier.person.token });
+  assert.equal(list.status, 200);
+  assert.equal((list.body.photos as { id: string }[])[0]?.id, id);
+});
+
+test('record photos: another company cannot reach a record through its own account; different bytes under one id, a thirteenth photo and a retired vehicle are refused', async () => {
+  const carrier = await verifiedCarrier();
+  const outsider = await verifiedCarrier();
+  const vehicle = await rigid(carrier);
+  const root = (org: string) => '/organisations/' + org + '/vehicles/' + vehicle.id + '/photos';
+  const jpeg = (marker: number) => new Uint8Array([255, 216, 255, 224, marker, 255, 217]);
+  const put = (org: string, token: string, id: string, bytes: Uint8Array<ArrayBuffer>) =>
+    fetch(base + root(org) + '/' + id, {
+      method: 'PUT',
+      body: bytes,
+      headers: { authorization: 'Bearer ' + token, 'content-type': 'image/jpeg' },
+    });
+  // Through its own organisation, another company neither stores on nor lists the vehicle.
+  assert.equal((await put(outsider.org, outsider.person.token, randomUUID(), jpeg(1))).status, 404);
+  assert.equal(
+    (await call('GET', root(outsider.org), { token: outsider.person.token })).status,
+    404,
+  );
+  const outsiderShipper = await verifiedShipper();
+  const company = await verifiedShipper();
+  const shipment = await draft(company.person, company.org);
+  const foreign = await fetch(
+    base +
+      '/organisations/' +
+      outsiderShipper.org +
+      '/shipments/' +
+      shipment.id +
+      '/photos/' +
+      randomUUID(),
+    {
+      method: 'PUT',
+      body: jpeg(2),
+      headers: {
+        authorization: 'Bearer ' + outsiderShipper.person.token,
+        'content-type': 'image/jpeg',
+      },
+    },
+  );
+  assert.equal(foreign.status, 404);
+
+  // One id holds one picture: other bytes under it are refused.
+  const id = randomUUID();
+  assert.equal((await put(carrier.org, carrier.person.token, id, jpeg(3))).status, 200);
+  const other = await put(carrier.org, carrier.person.token, id, jpeg(4));
+  assert.equal(other.status, 409);
+
+  // Twelve photos per record; the thirteenth is refused.
+  for (let n = 0; n < 11; n += 1)
+    assert.equal(
+      (await put(carrier.org, carrier.person.token, randomUUID(), jpeg(10 + n))).status,
+      200,
+    );
+  const thirteenth = await put(carrier.org, carrier.person.token, randomUUID(), jpeg(40));
+  assert.deepEqual(
+    [thirteenth.status, ((await thirteenth.json()) as { code: string }).code],
+    [409, 'photo_limit'],
+  );
+
+  // A retired vehicle takes no new photo; its existing ones stay readable.
+  const retiring = await rigid(carrier);
+  const version = (
+    await owner.query<{ version: number }>(
+      'SELECT row_version AS version FROM trucker.vehicle WHERE id = $1',
+      [retiring.id],
+    )
+  ).rows[0]!.version;
+  const retired = await call(
+    'POST',
+    '/organisations/' + carrier.org + '/fleet/vehicles/' + retiring.id + '/retire',
+    { token: carrier.person.token, body: { version }, key: key() },
+  );
+  assert.equal(retired.status, 200, retired.text);
+  const late = await fetch(
+    base + '/organisations/' + carrier.org + '/vehicles/' + retiring.id + '/photos/' + randomUUID(),
+    {
+      method: 'PUT',
+      body: jpeg(50),
+      headers: { authorization: 'Bearer ' + carrier.person.token, 'content-type': 'image/jpeg' },
+    },
+  );
+  assert.equal(late.status, 409);
+});
+
+test('record photos: more than 5 MB is refused before anything is stored; the keeping time is a setting, 0 keeps everything, and only ended records lose their photos', async () => {
+  const carrier = await verifiedCarrier();
+  const jpeg = (marker: number, size = 7) => {
+    const bytes = new Uint8Array(size);
+    bytes.set([255, 216, 255, 224, marker]);
+    bytes[size - 2] = 255;
+    bytes[size - 1] = 217;
+    return bytes;
+  };
+  const photos = (vehicleId: string) =>
+    '/organisations/' + carrier.org + '/vehicles/' + vehicleId + '/photos';
+  const put = (vehicleId: string, bytes: Uint8Array<ArrayBuffer>) =>
+    fetch(base + photos(vehicleId) + '/' + randomUUID(), {
+      method: 'PUT',
+      body: bytes,
+      headers: { authorization: 'Bearer ' + carrier.person.token, 'content-type': 'image/jpeg' },
+    });
+  const kept = await rigid(carrier);
+  const leaving = await rigid(carrier);
+
+  // 5 MB is accepted; one byte more is refused and nothing is stored.
+  const before = storedFiles();
+  const tooLarge = await put(kept.id, jpeg(1, 5 * 1024 * 1024 + 1));
+  assert.equal(tooLarge.status, 413);
+  assert.equal(storedFiles(), before);
+  assert.equal((await put(kept.id, jpeg(2, 5 * 1024 * 1024))).status, 200);
+  assert.equal((await put(leaving.id, jpeg(3))).status, 200);
+
+  const version = (
+    await owner.query<{ version: number }>(
+      'SELECT row_version AS version FROM trucker.vehicle WHERE id = $1',
+      [leaving.id],
+    )
+  ).rows[0]!.version;
+  const retired = await call(
+    'POST',
+    '/organisations/' + carrier.org + '/fleet/vehicles/' + leaving.id + '/retire',
+    { token: carrier.person.token, body: { version }, key: key() },
+  );
+  assert.equal(retired.status, 200, retired.text);
+  const service = nest.get(PodService);
+  // Moving the clock ends sessions: each look signs in again.
+  const listed = async (vehicleId: string) => {
+    const token = (await again(carrier.person)).token;
+    const reply = await call('GET', photos(vehicleId), { token });
+    assert.equal(reply.status, 200, reply.text);
+    return (reply.body.photos as unknown[]).length;
+  };
+
+  // 0, the default, keeps every photo, however long ago the record ended.
+  await advance(10 * 24 * 60 * 60);
+  assert.equal(await service.removeExpiredPhotos(), 0);
+  assert.equal(await listed(leaving.id), 1);
+
+  // A keeping time of 30 days: not yet; then the retired vehicle's photo goes, the active one's
+  // stays, and the removal is audited without an actor.
+  await owner.query('UPDATE trucker.security_setting SET record_photo_retention_days = 30');
+  try {
+    assert.equal(await service.removeExpiredPhotos(), 0);
+    await advance(21 * 24 * 60 * 60);
+    assert.equal(await service.removeExpiredPhotos(), 1);
+    assert.equal(await listed(leaving.id), 0);
+    assert.equal(await listed(kept.id), 1);
+    assert.equal(
+      await count(
+        'audit_entry',
+        "action = 'record_photo.removed_by_retention' AND actor_person_id IS NULL",
+        [],
+      ),
+      1,
+    );
+    // Its file is then unrecorded, and the sweep removes it.
+    const files = storedFiles();
+    const swept = await service.sweepUnrecorded(new Date(Date.now() + 60_000));
+    assert.equal(swept.removed, 1);
+    assert.equal(storedFiles(), files - 1);
+  } finally {
+    await owner.query('UPDATE trucker.security_setting SET record_photo_retention_days = 0');
+  }
+});

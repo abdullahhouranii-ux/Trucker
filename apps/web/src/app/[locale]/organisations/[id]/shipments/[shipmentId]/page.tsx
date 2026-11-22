@@ -41,6 +41,7 @@ import {
   withdrawShipmentAction,
 } from '../../../../../../server/shipment-actions.ts';
 import { requirePerson } from '../../../../../../server/session.ts';
+import { RecordPhotos } from '../../../../../../components/record-photos.tsx';
 
 type Props = {
   params: Promise<{ locale: string; id: string; shipmentId: string }>;
@@ -517,6 +518,11 @@ export default async function ShipmentPage({ params, searchParams }: Props) {
           catalogues={catalogues}
         />
       ) : null}
+      <RecordPhotos
+        endpoint={'/' + locale + '/files/record-photos/' + id + '/shipments/' + shipmentId}
+        copy={m.recordPhotos}
+        editable={open || live}
+      />
       {live ? (
         <section className="section" aria-labelledby="change-title">
           <h2 id="change-title">{m.pub.changeTitle}</h2>
