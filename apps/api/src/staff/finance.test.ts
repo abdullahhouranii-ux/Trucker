@@ -1144,9 +1144,18 @@ test('FS-3: commission options and limits come from the version in force; a comm
 test('FS-4: an approval and a booking never interleave: each waits for the other', async () => {
   const first = await newStaff(['staff_admin']);
   const second = await newStaff(['staff_admin']);
-  const waiting = async (): Promise<boolean> => {
-    for (let attempt = 0; attempt < 100; attempt++) {
+  // Polls until the request is reported as waiting, or until it has finished without waiting
+  // (a failure). The upper limit is generous because a slow runner can take several seconds to
+  // reach the lock; a request that waits is seen as soon as it does.
+  const waiting = async (pending: Promise<unknown>): Promise<boolean> => {
+    let settled = false;
+    void pending.then(
+      () => (settled = true),
+      () => (settled = true),
+    );
+    for (let attempt = 0; attempt < 600; attempt++) {
       await new Promise((resolve) => setTimeout(resolve, 50));
+      if (settled) return false;
       const found = await owner.query(
         "SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND NOT granted",
       );
@@ -1161,7 +1170,7 @@ test('FS-4: an approval and a booking never interleave: each waits for the other
     await holder.query('BEGIN');
     await holder.query("SELECT pg_advisory_xact_lock(hashtextextended('financial.settings', 0))");
     const pending = accept(made.shipper.person, made.shipper.org, made.quotation.id, 1);
-    assert.ok(await waiting(), 'the booking waits for the settings');
+    assert.ok(await waiting(pending), 'the booking waits for the settings');
     await holder.query('COMMIT');
     assert.equal((await pending).status, 200);
   } finally {
@@ -1177,7 +1186,7 @@ test('FS-4: an approval and a booking never interleave: each waits for the other
       "SELECT pg_advisory_xact_lock_shared(hashtextextended('financial.settings', 0))",
     );
     const pending = moveSetting(second, drafted, 'approve');
-    assert.ok(await waiting(), 'the approval waits for the booking');
+    assert.ok(await waiting(pending), 'the approval waits for the booking');
     await reader.query('COMMIT');
     assert.equal((await pending).status, 200);
   } finally {
