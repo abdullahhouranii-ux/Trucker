@@ -1,4 +1,5 @@
 import { notFound, redirect } from 'next/navigation';
+import { DraftKeeper } from '../../../../../../components/draft-keeper.tsx';
 import { BookingCard, InstantText } from '../../../../../../components/booking-view.tsx';
 import { ErrorSummary, Field } from '../../../../../../components/form.tsx';
 import { direction, isLocale, type Locale } from '../../../../../../i18n/config.ts';
@@ -12,6 +13,7 @@ import {
 } from '../../../../../../server/api.ts';
 import {
   assignResourcesAction,
+  cancelBookingAction,
   decideSubstitutionAction,
   waitForCarrierAction,
 } from '../../../../../../server/assignment-actions.ts';
@@ -98,6 +100,8 @@ export default async function BookingPage({ params, searchParams }: Props) {
   const { booking, candidates } = reply.data;
   const role = booking.role === 'carrier' ? 'carrier' : 'shipper';
   const confirmed = booking.status === 'confirmed';
+  const cancelled = booking.status === 'cancelled';
+  const ct = m.cancel;
 
   // A refusal names, where it can, which resource and why, in words this page already has.
   const reasonText = (reason: string): string | undefined =>
@@ -134,6 +138,73 @@ export default async function BookingPage({ params, searchParams }: Props) {
         </p>
       ) : null}
       <BookingCard t={m.book} a={a} locale={locale} booking={booking} />
+      {booking.cancellation ? (
+        <section className="section" id="cancellation-record" aria-labelledby="cancellation-title">
+          <h2 id="cancellation-title">{ct.status}</h2>
+          <p>
+            {ct.party}: {m.book.asRole[booking.cancellation.party]}
+          </p>
+          <p>
+            {ct.at}: <InstantText at={booking.cancellation.at} />
+          </p>
+          <p>
+            {ct.reason}: {(ct.reasons as Record<string, string>)[booking.cancellation.reason]}
+          </p>
+          {booking.cancellation.note ? (
+            <p>
+              <bdi>{booking.cancellation.note}</bdi>
+            </p>
+          ) : null}
+          {role === 'shipper' ? (
+            <a
+              className="button"
+              href={`/${locale}/organisations/${id}/shipments/${booking.shipmentId}`}
+            >
+              {ct.again}
+            </a>
+          ) : null}
+        </section>
+      ) : null}
+      {reply.data.open && (!cancelled || error === 'cancel_unconfirmed') ? (
+        <section className="section" id="cancel-booking" aria-labelledby="cancel-title">
+          <h2 id="cancel-title">{ct.title}</h2>
+          <p>{ct.warning}</p>
+          <form action={cancelBookingAction} id="cancel-booking-form" className="form card">
+            {hidden}
+            <input type="hidden" name="version" value={booking.assignmentVersion} />
+            <Field id="cancel-reason" label={ct.reason}>
+              <select id="cancel-reason" name="reason" data-draft required>
+                {(role === 'shipper'
+                  ? [
+                      'shipment_no_longer_needed',
+                      'dates_changed',
+                      'carrier_did_not_assign',
+                      'other',
+                    ]
+                  : ['resource_unavailable', 'cannot_meet_window', 'other']
+                ).map((code) => (
+                  <option key={code} value={code}>
+                    {(ct.reasons as Record<string, string>)[code]}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field id="cancel-note" label={ct.note}>
+              <textarea id="cancel-note" name="note" data-draft maxLength={2000} />
+            </Field>
+            <button type="submit" className="button button-danger" id="cancel-booking-submit">
+              {cancelled ? ct.confirm : ct.submit}
+            </button>
+          </form>
+        </section>
+      ) : null}
+
+      <DraftKeeper
+        formId="cancel-booking-form"
+        scope={`${id}:${bookingId}`}
+        clear={cancelled}
+        overwrite
+      />
 
       <section className="section" aria-labelledby="state-title" id="state">
         <h2 id="state-title">{a.stateTitle}</h2>
@@ -197,6 +268,24 @@ export default async function BookingPage({ params, searchParams }: Props) {
         ) : (
           <p id="resources-hidden">{a.resourcesHidden}</p>
         )}
+        {booking.vehicleChanges && booking.vehicleChanges.length > 0 ? (
+          <>
+            <h3 id="vehicle-changes-title">{a.changesTitle}</h3>
+            <p className="field-hint">{a.changesNote}</p>
+            <ol className="evidence" id="vehicle-changes" aria-labelledby="vehicle-changes-title">
+              {booking.vehicleChanges.flatMap((entry, index) =>
+                entry.changes.map((change) => (
+                  <li key={`${index}-${change.role}`} data-change={change.role}>
+                    <InstantText at={entry.at} />: {a.roles[change.role]}{' '}
+                    {change.from ? plate(change.from) : a.none}
+                    {arrow(locale as Locale)}
+                    {change.to ? plate(change.to) : a.none}
+                  </li>
+                )),
+              )}
+            </ol>
+          </>
+        ) : null}
       </section>
 
       {booking.substitution ? (
@@ -288,7 +377,7 @@ export default async function BookingPage({ params, searchParams }: Props) {
         </section>
       ) : null}
 
-      {role === 'carrier' ? (
+      {role === 'carrier' && !cancelled ? (
         <section className="section" aria-labelledby="assign-title" id="assign">
           <h2 id="assign-title">{a.assignTitle}</h2>
           {candidates && !booking.substitution ? (

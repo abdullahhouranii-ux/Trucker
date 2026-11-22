@@ -1673,7 +1673,12 @@ test('there is no route to quote, book or pay, and no such word in the shipment 
       .replace(/\/\*[\s\S]*?\*\//g, '')
       .replace(/^\s*(\/\/|--).*$/gm, '')
       .replace(/COMMENT ON [^;]*;/g, '')
-      .replace(/quotation_?deadline/gi, '');
+      .replace(/quotation_?deadline/gi, '')
+      // Since slice 16 a shipment can be in the state "booking cancelled", and the list and the
+      // republish check name it. That state name is the one mention allowed; the routes above
+      // still exclude any booking command.
+      .replace(/booking_?cancelled/gi, '')
+      .replace(/filterBookingCancelled/g, '');
     for (const word of [
       'price',
       'amount',

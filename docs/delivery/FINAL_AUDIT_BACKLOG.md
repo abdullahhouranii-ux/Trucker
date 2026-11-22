@@ -103,3 +103,10 @@ All Arabic and Urdu text in the repository is a draft written without a native r
 - Each slice adds what it finds, with the slice and commit.
 - The slice record in `docs/delivery/` keeps the evidence; this list keeps the open work.
 - When the final audit is scheduled, sections 2 to 4 become its checklist.
+
+## Slice 16 additions
+
+- Native-reader review of cancellation messages (`cancel`, booking-cancelled status and assignment errors) in Arabic and Urdu; reason meanings, private-note visibility and no-charge wording must remain exact.
+- Screen-reader and physical-phone review of the cancellation form, preserved input after an unconfirmed answer, and the historical booking view. Existing automated checks do not establish conformance.
+- Review staff historical-booking terminology during the final wording pass. No wording-only work is required before the next functional slice.
+- At 390 px a registration can wrap between its country and its number (seen in the Arabic list of vehicles replaced after confirmation, `vehicle-changes-ar-390`). Proposed: keep a registration on one line. Layout only; the arrow direction in that list and in substitution differences was a meaning defect and is fixed (`e350bcb` and PR #22).

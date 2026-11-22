@@ -245,6 +245,9 @@ test('the API role is bound by row security; the migration role is not, and is d
 });
 
 test('the API role cannot switch off, alter or add to row security, or become another role', async () => {
+  const ownerRole = (await owner.query<{ current_user: string }>('SELECT current_user')).rows[0]!
+    .current_user;
+  const quotedOwnerRole = '"' + ownerRole.replaceAll('"', '""') + '"';
   for (const statement of [
     'ALTER TABLE trucker.organisation DISABLE ROW LEVEL SECURITY',
     'ALTER TABLE trucker.organisation NO FORCE ROW LEVEL SECURITY',
@@ -257,8 +260,8 @@ test('the API role cannot switch off, alter or add to row security, or become an
     'DROP TRIGGER organisation_audit ON trucker.organisation',
     'ALTER TABLE trucker.organisation DISABLE TRIGGER organisation_audit',
     'CREATE TABLE trucker.side_door (id int)',
-    'SET ROLE trucker',
-    'SET SESSION AUTHORIZATION trucker',
+    `SET ROLE ${quotedOwnerRole}`,
+    `SET SESSION AUTHORIZATION ${quotedOwnerRole}`,
     'SET row_security = off; SELECT * FROM trucker.organisation',
   ]) {
     await refused(
@@ -318,6 +321,8 @@ test('every table has row security: a policy, or no right at all for the API', a
   // barrier. A new table is on neither list, so it must carry row security and a policy, or
   // this test fails.
   const closed = [
+    'booking_cancellation',
+    'booking_publication_cycle',
     'assignment_acknowledgement',
     'booking',
     'booking_assignment',

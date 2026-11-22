@@ -53,7 +53,26 @@ No legal or tax rule is stated here. Every value that is not approved is a prote
 | Acknowledgement | Required before dispatch |
 | Before merging PR #20 | An immutable, versioned, demonstration-only terms reference on the booking, and refusals recorded without leaking another organisation's data. Both added to PR #20 |
 | Missed assignment deadline | The shipper's explicit decision to wait is recorded. Cancellation without charge is slice 16. Nothing automatic |
-| Choices made inside this scope | N-1 to N-6 in ASSIGNMENT_SLICE_15.md, for confirmation |
+| Choices made inside this scope | N-1 to N-6 in ASSIGNMENT_SLICE_15.md: see 1C and 1D |
+
+## 1C. Instructions of 15 November 2026 (22:16)
+
+| Subject | Status |
+|---|---|
+| Late initial assignment (migration 0016) | **Approved.** After the assignment deadline the carrier cannot make or change the initial assignment until the shipper records a decision to wait. A booking already confirmed is not affected by the deadline. This replaces N-4 |
+| Slice 16 and CB-1 to CB-5 | **Approved as recommended.** Built on `feat/cancellation` (PR #22) |
+
+## 1D. Instructions of 15 November 2026 (22:24)
+
+| Subject | Status |
+|---|---|
+| N-1 | **Approved, with an addition:** after confirmation a vehicle replaced by one of the same category takes effect at once, and is now also recorded in the shipper's history and listed on the booking page, with the registrations only. Built on PR #22. The participant terms must allow like-for-like replacement with notice (X-3) |
+| N-2 | **Approved:** any change of truck, trailer or driver ends the driver's acknowledgement |
+| N-3 | **Approved:** a substitution proposal has no deadline; dispatch is refused while one is open (slice 17) |
+| N-5 | **Approved:** before dispatch the driver sees areas, windows, cargo and vehicles; addresses from dispatch (slice 17); never the price |
+| N-6 | **Approved:** overruns stay on their own records; in slice 17 each one opens an operations case |
+| Slice 17 | Scope written for approval: DISPATCH_SLICE_17_SCOPE.md, decisions DD-1 to DD-10 |
+| Broker role | New idea raised by Abdullah. Proposal for decision: BROKER_ROLE_PROPOSAL.md, decisions BR-1 to BR-8. Outside Release 1 until approved |
 
 ## 2. Exceptions to the proposed structures
 

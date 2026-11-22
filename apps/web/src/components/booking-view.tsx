@@ -127,7 +127,11 @@ export function BookingCard({
     <div className="card" data-booking={booking.id} data-status={booking.status}>
       <p className="chip">{t.status[booking.status]}</p>
       <p className="notice" role="note">
-        {confirmed ? a.confirmedNote : t.statusNote}
+        {booking.status === 'cancelled'
+          ? t.cancelledNote
+          : confirmed
+            ? a.confirmedNote
+            : t.statusNote}
       </p>
       <BookingFlags a={a} booking={booking} />
       {booking.role ? <p className="field-hint">{t.asRole[booking.role]}</p> : null}
@@ -160,7 +164,9 @@ export function BookingCard({
           </li>
         ))}
       </ul>
-      <p>{t.payment.replace('{n}', String(booking.paymentDueDays))}</p>
+      {booking.status !== 'cancelled' ? (
+        <p>{t.payment.replace('{n}', String(booking.paymentDueDays))}</p>
+      ) : null}
       <TermsLine t={t} terms={booking.terms} />
       <dl className="facts">
         <div>

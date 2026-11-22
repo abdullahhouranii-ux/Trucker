@@ -1,6 +1,6 @@
 # Trucker: cancellation before dispatch slice 16, scope and acceptance criteria
 
-Version 0.1, 15 November 2026. Status: **for approval. Nothing here is built.** Sources: `docs/specs/STAGE_2_PART_2_PUBLICATION_QUOTATION_BOOKING.md` section 8 (AT-241 to AT-244); decision DB-8, a proposed implementation structure (RELEASE_1_DECISIONS.md); the instruction of 15 November that cancellation without charge after a missed assignment deadline belongs here.
+Version 1.0, 15 November 2026. Status: **approved by Abdullah on 15 November 2026 (22:16), with CB-1 to CB-5 as recommended; built on `feat/cancellation` (PR #22).** Sources: `docs/specs/STAGE_2_PART_2_PUBLICATION_QUOTATION_BOOKING.md` section 8 (AT-241 to AT-244); decision DB-8, a proposed implementation structure (RELEASE_1_DECISIONS.md); the instruction of 15 November that cancellation without charge after a missed assignment deadline belongs here.
 
 No fee, compensation or legal consequence is stated in this scope. The cancellation record stores the facts a later, approved policy would need; it applies no policy.
 
@@ -8,13 +8,13 @@ No fee, compensation or legal consequence is stated in this scope. The cancellat
 
 Before dispatch, the shipper or the carrier cancels a booking with a reason from a fixed list. In one transaction the booking is recorded as cancelled, every active reservation and any open substitution proposal is released, and the facts of the cancellation are stored. The shipper may then publish the shipment again as a new publication. Nothing is charged, and nothing is cancelled automatically.
 
-## 2. Rules (proposed structure, restated)
+## 2. Approved rules
 
 | Rule | Definition |
 |---|---|
 | Who | An administrator of the shipper or of the carrier. Operations cancel only inside a recorded case, which is slice 17's exceptions work and is not built here |
-| When | Any time before dispatch. Dispatch does not exist yet, so every booking qualifies until slice 17 adds the boundary |
-| Reason | One code from a fixed list, with an optional note. The list is a register, fictional in development |
+| When | Any time before dispatch. Any recorded occupancy episode, open or closed, refuses cancellation. Slice 17 must take the same assignment-state lock before dispatch and record the dispatch boundary atomically |
+| Reason | One code from a fixed list, with an optional note. The approved fixed vocabulary is enforced in the function and table constraints; it remains development-only |
 | Effect | One transaction: a cancellation record; every active reservation released; an open substitution proposal ended; the driver's assignment no longer shown. The booking snapshot is not changed: cancelled is a state that follows from the record, like confirmed |
 | Record | Who cancelled and for which party, when, how long before the pick-up window opens, the reason, whether the booking was confirmed, whether the assignment deadline had passed and whether the shipper had decided to wait, and the booking's terms reference |
 | Charge | None is calculated, shown or implied. The record carries the field `charge_basis` with the single value `none_recorded` |
@@ -41,7 +41,7 @@ Any fee, refund or compensation; cancellation after dispatch; cancellation by op
 | CAN-9 | The consistency check reports an active reservation on a cancelled booking |
 | CAN-10 | Screens pass the existing browser checks in EN, AR and UR at phone widths; a lost cancellation answer leaves one cancellation and is never reported as done unless confirmed |
 
-## 5. Decisions needed (with recommendations)
+## 5. Approved decisions
 
 | ID | Decision | Recommendation |
 |---|---|---|
@@ -50,3 +50,7 @@ Any fee, refund or compensation; cancellation after dispatch; cancellation by op
 | CB-3 | What each party is shown of the other's cancellation | The party that cancelled, the reason code and the time. The note only to the cancelling party and staff |
 | CB-4 | Wording shown before cancelling | "Cancelling ends this booking and releases the carrier's resources. No charge is calculated here. What either party owes the other, if anything, is not decided by Trucker." Final wording needs the lawyer (X-3) |
 | CB-5 | May a party cancel while a substitution proposal is open? | Yes. The proposal ends as part of the cancellation |
+
+## 6. Implementation clarifications
+
+Cancellation includes the displayed assignment version. A changed assignment returns a conflict and requires an explicit retry against the latest version. Once a booking is cancelled, authenticated party retries return that first cancellation without rewriting its reason. Cancellation notes are private to the cancelling organisation and authorised staff. See `CANCELLATION_SLICE_16.md` for evidence and remaining launch gates.

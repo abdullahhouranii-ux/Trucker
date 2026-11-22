@@ -135,7 +135,14 @@ export interface RouteCheck {
   }[];
 }
 export type ShipmentState =
-  'draft' | 'discarded' | 'published' | 'suspended' | 'withdrawn' | 'expired' | 'awarded';
+  | 'draft'
+  | 'discarded'
+  | 'published'
+  | 'suspended'
+  | 'withdrawn'
+  | 'expired'
+  | 'awarded'
+  | 'booking_cancelled';
 export interface ShipmentPublication {
   cargoCategory: string | null;
   equipmentType: string | null;
@@ -522,6 +529,7 @@ export interface AssignedSet {
   driver: { name: string; affiliationId?: string } | null;
 }
 export type DispatchBlockerCode =
+  | 'booking_cancelled'
   | 'not_confirmed'
   | 'needs_reassignment'
   | 'resource_occupied'
@@ -553,8 +561,24 @@ export interface BookingSite {
 export interface Booking {
   id: string;
   /** Confirmed is a fact about the past. Whether dispatch is possible now is `dispatch`. */
-  status: 'awaiting_resources' | 'confirmed';
+  status: 'awaiting_resources' | 'confirmed' | 'cancelled';
+  cancellation?: {
+    party: 'shipper' | 'carrier';
+    at: string;
+    reason: string;
+    note: string | null;
+    chargeBasis: 'none_recorded';
+  } | null;
   confirmedAt: string | null;
+  /** Vehicles the carrier replaced after confirmation with ones of the same category. */
+  vehicleChanges?: {
+    at: string;
+    changes: {
+      role: 'truck' | 'trailer';
+      from: AssignedVehicle | null;
+      to: AssignedVehicle | null;
+    }[];
+  }[];
   overdue: boolean;
   waitDecision: { decidedAt: string } | null;
   assignmentVersion: number;

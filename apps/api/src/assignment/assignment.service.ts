@@ -10,8 +10,9 @@ import { DB_POOL } from '../tokens.js';
  * sets the assigned set of a booking; each member holds a planned reservation; the booking is
  * confirmed when the set is complete, eligible and reserved. After confirmation a materially
  * different substitute needs the shipper's acceptance. The driver acknowledges their own
- * assignment. Nothing here dispatches, opens occupancy, cancels or releases. Every rule is the
- * database's; this service maps its answers to HTTP.
+ * assignment. Pre-dispatch cancellation releases reservations through migration 0017. Nothing
+ * here dispatches or opens occupancy. The database owns each rule; this service maps its answers
+ * to HTTP.
  */
 
 export interface Caller {
@@ -22,6 +23,12 @@ export interface Caller {
 type Detail = Record<string, unknown>;
 
 const ERRORS: Record<string, [number, string, string]> = {
+  cancelled: [409, 'booking_cancelled', 'This booking has been cancelled.'],
+  already_dispatched: [
+    409,
+    'booking_dispatched',
+    'This booking has been dispatched. Open an operations case instead.',
+  ],
   unauthorized: [401, 'unauthorized', 'Authentication is required.'],
   forbidden: [
     403,
@@ -54,6 +61,11 @@ const ERRORS: Record<string, [number, string, string]> = {
     409,
     'substitution_checks_failed',
     'The proposed substitute no longer meets the requirements. The proposal has ended and nothing was changed.',
+  ],
+  wait_required: [
+    409,
+    'assignment_wait_required',
+    'The assignment deadline has passed. The shipper must choose to wait before resources can be assigned.',
   ],
   not_due: [409, 'assignment_not_overdue', 'The assignment deadline has not passed.'],
   confirmed: [409, 'booking_confirmed', 'This booking is already confirmed.'],
@@ -137,6 +149,24 @@ export class AssignmentService {
     });
   }
 
+  cancel(
+    caller: Caller,
+    organisationId: string,
+    bookingId: string,
+    input: { version: number; reason: string; note?: string | null },
+  ) {
+    return this.asCaller(caller, organisationId, async (client, allowFixtures) => {
+      const result = await client.query<{ status: string; detail: Detail | null }>(
+        'SELECT status, detail FROM trucker.cancel_booking($1, $2, $3, $4, $5)',
+        [bookingId, input.version, input.reason, input.note ?? null, allowFixtures],
+      );
+      const row = result.rows[0]!;
+      if (row.status === 'cancelled' || row.status === 'already_cancelled')
+        return { outcome: row.status, booking: row.detail };
+      return refuse(row.status);
+    });
+  }
+
   assign(caller: Caller, organisationId: string, bookingId: string, input: AssignmentInput) {
     return this.asCaller(caller, organisationId, async (client, allowFixtures) => {
       const result = await client.query<{ status: string; detail: Detail | null }>(
@@ -207,6 +237,16 @@ export class AssignmentService {
         return { outcome: row.status };
       return refuse(row.status);
     });
+  }
+
+  async staffDetail(caller: StaffCaller, bookingId: string): Promise<Detail> {
+    const result = await this.pool.query<{ status: string; detail: Detail }>(
+      'SELECT status, detail FROM trucker.staff_booking_detail($1,$2,$3)',
+      [caller.tokenHash, bookingId, caller.requestId ?? null],
+    );
+    const row = result.rows[0]!;
+    if (row.status !== 'ok') refuse(row.status);
+    return row.detail;
   }
 
   async staffAttention(caller: StaffCaller): Promise<Detail> {

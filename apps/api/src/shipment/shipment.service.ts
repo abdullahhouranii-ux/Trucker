@@ -86,7 +86,14 @@ export interface RouteView {
   }[];
 }
 export type ShipmentState =
-  'draft' | 'discarded' | 'published' | 'suspended' | 'withdrawn' | 'expired';
+  | 'draft'
+  | 'discarded'
+  | 'published'
+  | 'suspended'
+  | 'withdrawn'
+  | 'expired'
+  | 'awarded'
+  | 'booking_cancelled';
 export interface PublicationView {
   readonly cargoCategory: string | null;
   readonly equipmentType: string | null;
@@ -171,7 +178,8 @@ export interface HistoryEntry {
 
 interface DraftRow {
   id: string;
-  status: 'draft' | 'discarded' | 'published' | 'withdrawn' | 'expired';
+  status:
+    'draft' | 'discarded' | 'published' | 'withdrawn' | 'expired' | 'awarded' | 'booking_cancelled';
   version: number;
   shipper_reference: string | null;
   cargo_description: string | null;
@@ -498,7 +506,8 @@ export class ShipmentService {
   async list(
     caller: Caller,
     organisationId: string,
-    status: 'draft' | 'discarded' | 'published' | 'withdrawn' | 'expired' | 'all',
+    status:
+      'draft' | 'discarded' | 'published' | 'withdrawn' | 'expired' | 'booking_cancelled' | 'all',
     after: string | null,
   ): Promise<{ shipments: ShipmentSummary[]; nextAfter: string | null }> {
     return this.asCaller(caller, organisationId, async (client) => {

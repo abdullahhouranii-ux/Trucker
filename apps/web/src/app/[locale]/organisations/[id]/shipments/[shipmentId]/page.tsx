@@ -514,7 +514,7 @@ export default async function ShipmentPage({ params, searchParams }: Props) {
           </form>
         </section>
       ) : null}
-      {state === 'expired' ? (
+      {state === 'expired' || state === 'booking_cancelled' ? (
         <section className="section" aria-labelledby="republish-title">
           <h2 id="republish-title">{m.pub.republishTitle}</h2>
           <p>{m.pub.republishLead}</p>

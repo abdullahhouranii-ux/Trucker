@@ -57,6 +57,7 @@ const REVOCATIONS = [
   ['POST', /^\/organisations\/[^/]+\/fleet\/drivers$/],
   // Accepting a quotation.
   ['POST', /^\/organisations\/[^/]+\/quotations\/[^/]+\/accept$/],
+  ['POST', /^\/organisations\/[^/]+\/bookings\/[^/]+\/cancel$/],
   // Assigning resources to a booking.
   ['POST', /^\/organisations\/[^/]+\/bookings\/[^/]+\/assignment$/],
 ];
@@ -655,11 +656,11 @@ async function main() {
     mkdirSync(outDir, { recursive: true });
     // At most five pictures, for design review only.
     const shots = {
-      'en:assign': 'assign-en-390',
-      'ar:assigned': 'assigned-ar-390',
-      'ur:booking for shipper': 'booking-shipper-ur-390',
-      'en:substitution': 'substitution-en-390',
-      'en:driver assignment': 'driver-assignment-en-390',
+      'en:overdue for carrier': 'cancel-form-en-390',
+      'en:cancelled booking': 'cancelled-en-390',
+      'ar:cancelled booking': 'cancelled-ar-390',
+      'ur:cancelled booking': 'cancelled-ur-390',
+      'ar:vehicle changes': 'vehicle-changes-ar-390',
     };
     // Fictional numbers: country code 999 is not assigned. Unique per run.
     const stamp = String(Date.now()).slice(-7);
@@ -3565,6 +3566,46 @@ async function main() {
         (await ready()) === 'yes',
       `declining the substitution led to ${page.url()}`,
     );
+    // A truck of the same category replaces the current one at once (N-1). The shipper's page
+    // then lists the change, with the registrations only.
+    const sameCategory = await addVehicle('cs2', {
+      kind: 'truck',
+      category: 'fictional_rigid_truck',
+      equipmentType: 'curtain_side',
+    });
+    await acceptWaitingDocuments();
+    await open(bookingPath('en', carrierOrg), 390);
+    await page.select('#truckId', sameCategory.id);
+    await submit('#save-assignment');
+    const swapRows = await owner.query(
+      `SELECT organisation_id FROM trucker.audit_entry
+       WHERE record_id = $1 AND action = 'booking.vehicles_changed'`,
+      [bookingId],
+    );
+    await open(bookingPath('en', verifyOrg), 390);
+    const changesShown = (await text('#vehicle-changes')) ?? '';
+    check(
+      'assignment',
+      sameCategory.status === 200 &&
+        swapRows.rows.map((row) => row.organisation_id).join() === verifyOrg &&
+        ((await members()).truck ?? '').includes(sameCategory.plate) &&
+        changesShown.includes(curtain.plate) &&
+        changesShown.includes(sameCategory.plate) &&
+        !changesShown.includes(sameCategory.id),
+      `after a same-category swap the shipper's page lists: ${changesShown}`,
+    );
+    for (const locale of locales) {
+      await open(bookingPath(locale, verifyOrg), 390);
+      await inspect(locale, 'vehicle changes');
+      // The arrow points from the replaced vehicle to its replacement in the reading direction.
+      const swap = (await text('#vehicle-changes [data-change="truck"]')) ?? '';
+      const [forward, backward] = locale === 'en' ? ['→', '←'] : ['←', '→'];
+      check(
+        'assignment',
+        swap.includes(forward) && !swap.includes(backward),
+        `${locale}: the vehicle change reads ${swap}`,
+      );
+    }
 
     // A second booking, left unassigned. The real clock cannot be moved here, so the migration
     // role moves this booking's own acceptance and deadline back 13 hours, consistently, with
@@ -3650,6 +3691,58 @@ async function main() {
       'the carrier is not shown the overdue booking with the wait decision',
     );
     await inspect('en', 'overdue for carrier');
+
+    // Cancellation: the API commits but its response is lost. The retry reconciles the
+    // terminal result without another cancellation or audit event.
+    await open(bookingPath('en', carrierOrg, waitBooking), 390);
+    await page.select('#cancel-reason', 'other');
+    await page.type('#cancel-note', 'Private cancellation note 7821');
+    relay.mode = 'lose';
+    await submit('#cancel-booking-submit');
+    relay.mode = 'pass';
+    check(
+      'cancellation',
+      relay.lost.at(-1)?.includes(`/bookings/${waitBooking}/cancel -> 200`),
+      'the relay did not lose a committed cancellation response',
+    );
+    await open(`${bookingPath('en', carrierOrg, waitBooking)}?aError=cancel_unconfirmed`, 390);
+    check(
+      'cancellation',
+      (await page.$('#cancellation-record')) !== null &&
+        (await page.$('#assign-form')) === null &&
+        (await ready()) === 'no',
+      'a cancelled booking still offers assignment or dispatch',
+    );
+    await submit('#cancel-booking-submit');
+    const cancelledRows = await owner.query(
+      'SELECT * FROM trucker.booking_cancellation WHERE booking_id=$1',
+      [waitBooking],
+    );
+    const cancellationEvents = await owner.query(
+      "SELECT organisation_id FROM trucker.audit_entry WHERE record_id=$1 AND action='booking.cancelled'",
+      [waitBooking],
+    );
+    check(
+      'cancellation',
+      cancelledRows.rowCount === 1 && cancellationEvents.rowCount === 2,
+      'a cancellation retry duplicated its record or either party history entry',
+    );
+    check(
+      'cancellation',
+      (await text('#cancellation-record')).includes('Private cancellation note 7821'),
+      'the cancelling party cannot read its private note',
+    );
+    for (const locale of locales) {
+      await open(bookingPath(locale, carrierOrg, waitBooking), 390);
+      await inspect(locale, 'cancelled booking');
+    }
+    await open(bookingPath('ur', verifyOrg, waitBooking), 390);
+    check(
+      'cancellation',
+      !(await text('body')).includes('Private cancellation note 7821'),
+      'the private cancellation note leaked to the other party',
+    );
+    relay.lost.length = 0;
 
     // Suspended when the verification is withdrawn by staff (test accounts, migration role).
     const adminToken = `${randomBytes(16).toString('hex')}.${randomBytes(16).toString('hex')}`;
