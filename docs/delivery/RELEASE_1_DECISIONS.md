@@ -120,6 +120,17 @@ No legal or tax rule is stated here. Every value that is not approved is a prote
 | Node.js 24 | **Decided by Abdullah on 18 November 2026 (13:53)**: the project moves from Node 22 to Node 24 (24.11 or later) and npm 11 (11.6 or later), replacing the decision of 13 November 2026 recorded in `FOUNDATION_SLICE_1.md`. `.nvmrc`, `engines`, the doctor check and the Windows setup guide follow. Verified locally on Node 24.21.0 and npm 11.19.0 (the versions on his PC); earlier slice records keep the versions they were tested with |
 | Slice 18b | Built under "now" (18 November 2026, 22:08) on PD-1 to PD-7 as development defaults: `POD_SLICE_18B.md`, for approval. E-1 stays: only the shipper's administrators accept a POD. R-401, R-402, R-305 and D-011 stay open |
 
+## 1I. Instructions of 22 November 2026 (06:43)
+
+| Subject | Status |
+|---|---|
+| Public board (PR #42) | **Approved by Abdullah**: visitors who are not signed in see the route countries, equipment and quote deadline of every open shipment |
+| Fleet gate (PR #42) | **Approved by Abdullah**: quoting requires a matching verified fleet; a tractor needs a matching trailer |
+| Record photos (PR #43) | **Decided by Abdullah**: at most 5 MB a photo (instead of 10 MB). How long photos are kept is a setting (`record_photo_retention_days`), not a fixed rule. Twelve photos per record and JPEG/PNG remain development defaults |
+| Redesign (PR #44) | **Approved by Abdullah**: the visual direction and the generated home page image |
+| Dispute model (PR #40) | **Deferred by Abdullah** to the last step of the project. The mediation model stays as built until then |
+| Mobile app (PR #45), approvals of 19 and 20 November, invoice policy and VAT | Abdullah asked for recommendations; no decision yet |
+
 ## 2. Exceptions to the proposed structures
 
 | ID | Exception | Effect on the build |

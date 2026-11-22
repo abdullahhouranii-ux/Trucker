@@ -503,11 +503,29 @@ const carrierBody = (service: Service = SERVICE, extra: Record<string, unknown> 
 let carrierReviewer: Staff | undefined;
 const reviewer = async (): Promise<Staff> =>
   fresh(carrierReviewer ?? (carrierReviewer = await newStaff(['reviewer'])));
-async function verifiedCarrier(service: Service = SERVICE) {
+async function addQuotationTruck(person: Person, organisation: string, equipment: string) {
+  await owner.query(
+    `INSERT INTO trucker.vehicle
+       (organisation_id, kind, category_code, equipment_type, registration_country,
+        registration_number, ownership, ownership_decided_at, created_by, created_at, updated_at)
+     VALUES ($1, 'truck', 'fictional_rigid_truck', $2, 'XA', $3, 'verified', now(), $4, now(), now())`,
+    [
+      organisation,
+      equipment,
+      randomUUID().replaceAll('-', '').slice(0, 18).toUpperCase(),
+      person.personId,
+    ],
+  );
+}
+
+async function verifiedCarrier(service: Service = SERVICE, withFleet = true) {
   const { person, org } = await newShipper({ legalName: 'Fixture Carrier (fictional)' });
   const application = await submitted(person, org, carrierBody(service));
   const reply = await decide(await reviewer(), application.id, 'verified');
   assert.equal(reply.status, 200, reply.text);
+  if (withFleet) {
+    for (const equipment of service.equipmentTypes) await addQuotationTruck(person, org, equipment);
+  }
   return { person, org };
 }
 let adminCounter: Staff | undefined;
@@ -616,12 +634,12 @@ async function mine(person: Person, org: string): Promise<Quotation[]> {
 const mineOne = async (person: Person, org: string, id: string): Promise<Quotation> =>
   (await mine(person, org)).find((item) => item.id === id)!;
 /** A published shipment with its quotation terms set, and a carrier that can see it. */
-async function market() {
+async function market(withFleet = true) {
   const shipper = await verifiedShipper();
   const shipment = await published(shipper.person, shipper.org);
   const terms = await setTerms(shipper.person, shipper.org, shipment.id);
   assert.equal(terms.status, 200, terms.text);
-  const carrier = await verifiedCarrier();
+  const carrier = await verifiedCarrier(SERVICE, withFleet);
   return { shipper, shipment, carrier };
 }
 async function quoted(person: Person, org: string, shipment: string, body = quoteBody()) {
@@ -1256,4 +1274,251 @@ test('staff read the quotations of a published shipment read-only, and each look
       .status,
     403,
   );
+});
+
+test('the public board shows open shipments without fleet matching, while quote submission requires it', async () => {
+  const { shipper, shipment, carrier } = await market(false);
+  const unpublished = await draft(shipper.person, shipper.org);
+  const board = await call('GET', '/public/shipments');
+  assert.equal(board.status, 200, board.text);
+  const items = board.body.items as { id: string }[];
+  assert.deepEqual(Object.keys(items.find((item) => item.id === shipment.id) ?? {}).sort(), [
+    'deadline',
+    'destination',
+    'equipment',
+    'id',
+    'origin',
+  ]);
+  assert.equal(
+    items.some((item) => item.id === unpublished.id),
+    false,
+  );
+
+  const noFleet = await quote(carrier.person, carrier.org, shipment.id);
+  assert.deepEqual([noFleet.status, noFleet.body.code], [409, 'fleet_mismatch']);
+
+  await addQuotationTruck(carrier.person, carrier.org, 'flatbed');
+  const wrongFleet = await quote(carrier.person, carrier.org, shipment.id);
+  assert.deepEqual([wrongFleet.status, wrongFleet.body.code], [409, 'fleet_mismatch']);
+
+  await addQuotationTruck(carrier.person, carrier.org, 'curtain_side');
+  const matchedFleet = await quote(carrier.person, carrier.org, shipment.id);
+  assert.equal(matchedFleet.status, 201, matchedFleet.text);
+});
+
+test(
+  'web: the public shipment card lets a matching carrier quote and the shipper book',
+  { skip: process.env.TRUCKER_QUOTATION_BROWSER !== '1' },
+  async () => {
+    const { spawn } = await import('node:child_process');
+    const { createRequire } = await import('node:module');
+    const path = await import('node:path');
+    const puppeteer = (await import('puppeteer-core')).default;
+    const { shipper, shipment, carrier } = await market(false);
+    const next = createRequire(import.meta.url).resolve('next/dist/bin/next');
+    const web = 'http://localhost:4913';
+    const server = spawn(
+      process.execPath,
+      [next, 'start', '-p', '4913', '--hostname', '127.0.0.1'],
+      {
+        cwd: path.resolve(import.meta.dirname, '../../../../apps/web'),
+        stdio: 'ignore',
+        env: {
+          ...process.env,
+          TRUCKER_API_URL: base,
+          TRUCKER_NEXT_BUILD_DIR: '.next-review/quotation',
+        },
+      },
+    );
+
+    try {
+      for (let attempt = 0; ; attempt += 1) {
+        if (
+          await fetch(web + '/ar')
+            .then((response) => response.ok)
+            .catch(() => false)
+        )
+          break;
+        if (server.exitCode !== null || attempt === 80)
+          throw new Error('Quotation review web unavailable');
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+
+      const browser = await puppeteer.launch({
+        executablePath:
+          process.env.CHROME_PATH ?? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+        headless: true,
+        args: ['--no-sandbox'],
+      });
+      try {
+        const context = await browser.createBrowserContext();
+        await context.setCookie({
+          name: 'trucker_session',
+          value: carrier.person.token,
+          domain: 'localhost',
+          path: '/',
+          httpOnly: true,
+        });
+        const page = await context.newPage();
+        const chooser = `a[href="/ar/shipments/${shipment.id}/quote"]`;
+        const form = `a[href="/ar/organisations/${carrier.org}/discover/${shipment.id}#quotation"]`;
+        await page.goto(web + '/ar', { waitUntil: 'networkidle0' });
+        await Promise.all([page.waitForNavigation(), page.click(chooser)]);
+        assert.equal(await page.$(form), null);
+        assert.match(
+          await page.$eval('main', (element) => element.textContent ?? ''),
+          /لا يتوفر في أسطولك/,
+        );
+
+        await addQuotationTruck(carrier.person, carrier.org, 'curtain_side');
+        await page.reload({ waitUntil: 'networkidle0' });
+        await Promise.all([page.waitForNavigation(), page.click(form)]);
+        await page.waitForSelector('#quotation-form');
+        const [validDate, validTime] = local(12).split('T');
+        const [pickupDate, pickupTime] = local(48.5).split('T');
+        await page.type('#amount', '1250.50');
+        await page.type('#validUntilDate', validDate!);
+        await page.type('#validUntilTime', validTime!);
+        await page.type('#earliestPickupDate', pickupDate!);
+        await page.type('#earliestPickupTime', pickupTime!);
+        for (const inclusion of INCLUSIONS) await page.click('#inc-' + inclusion + '-yes');
+        await page.click('#submit-quotation');
+        await page.waitForSelector('#quotation-confirmation');
+        const records = await mine(carrier.person, carrier.org);
+        assert.equal(records.length, 1);
+        assert.equal(records[0]?.status, 'submitted');
+        const quotation = records[0]!;
+        const shipperContext = await browser.createBrowserContext();
+        await shipperContext.setCookie({
+          name: 'trucker_session',
+          value: shipper.person.token,
+          domain: 'localhost',
+          path: '/',
+          httpOnly: true,
+        });
+        const shipperPage = await shipperContext.newPage();
+        await shipperPage.goto(
+          web + '/ar/organisations/' + shipper.org + '/shipments/' + shipment.id + '/quotations',
+          { waitUntil: 'networkidle0' },
+        );
+        await shipperPage.click(`[data-accept="${quotation.id}"]`);
+        const bookingCard = await shipperPage.waitForSelector('#booking [data-booking]');
+        assert.ok(bookingCard);
+        const bookingId = await bookingCard.evaluate((element) =>
+          element.getAttribute('data-booking'),
+        );
+        assert.ok(bookingId);
+
+        const overview = await call(
+          'GET',
+          `/organisations/${shipper.org}/shipments/${shipment.id}/booking`,
+          {
+            token: shipper.person.token,
+          },
+        );
+        assert.equal(overview.status, 200, overview.text);
+        const booking = overview.body.booking as Record<string, unknown>;
+        assert.deepEqual(
+          [booking.id, booking.quotationId, booking.transportAmount, booking.status],
+          [bookingId, quotation.id, '1250.50', 'awaiting_resources'],
+        );
+        assert.equal((await mine(carrier.person, carrier.org))[0]?.status, 'accepted');
+      } finally {
+        await browser.close();
+      }
+    } finally {
+      server.kill();
+    }
+  },
+);
+
+/** A vehicle placed directly, for the fleet gate's edges. */
+async function addVehicle(
+  person: Person,
+  organisation: string,
+  vehicle: { kind: 'truck' | 'trailer'; category: string; equipment: string; ownership?: string },
+) {
+  const ownership = vehicle.ownership ?? 'verified';
+  await owner.query(
+    `INSERT INTO trucker.vehicle
+       (organisation_id, kind, category_code, equipment_type, registration_country,
+        registration_number, ownership, ownership_decided_at, created_by, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, 'XA', $5, $6, CASE WHEN $6 = 'claimed' THEN NULL ELSE now() END,
+             $7, now(), now())`,
+    [
+      organisation,
+      vehicle.kind,
+      vehicle.category,
+      vehicle.equipment,
+      randomUUID().replaceAll('-', '').slice(0, 18).toUpperCase(),
+      ownership,
+      person.personId,
+    ],
+  );
+}
+
+test('the public board lists only open published shipments; the fleet gate needs a verified truck, and a tractor needs a matching trailer', async () => {
+  const listed = async () =>
+    ((await call('GET', '/public/shipments')).body.items as { id: string }[]).map(
+      (item) => item.id,
+    );
+  // A withdrawn shipment leaves the board.
+  const { shipper, shipment, carrier } = await market(false);
+  assert.ok((await listed()).includes(shipment.id));
+  const current = await get(shipper.person, shipper.org, shipment.id);
+  const withdrawn = await act(shipper.person, shipper.org, shipment.id, 'withdraw', {
+    version: current.version,
+  });
+  assert.equal(withdrawn.status, 200, withdrawn.text);
+  assert.equal((await listed()).includes(shipment.id), false);
+
+  // A shipper whose verification is withdrawn has nothing on the board.
+  const other = await market(false);
+  assert.ok((await listed()).includes(other.shipment.id));
+  assert.equal((await revokeCapability(other.shipper.org, 'ship')).status, 200);
+  assert.equal((await listed()).includes(other.shipment.id), false);
+
+  // A suspension on its own (here a route suspension recorded directly) also hides it, though
+  // the shipper stays publishable.
+  const suspended = await market(false);
+  assert.ok((await listed()).includes(suspended.shipment.id));
+  await owner.query(
+    `INSERT INTO trucker.shipment_suspension (shipment_id, organisation_id, cause, started_at)
+     VALUES ($1, $2, 'route', trucker.clock_now())`,
+    [suspended.shipment.id, suspended.shipper.org],
+  );
+  assert.equal((await listed()).includes(suspended.shipment.id), false);
+
+  // The fleet gate: an unverified truck does not count; a tractor alone does not count; a
+  // tractor with a verified trailer carrying the equipment does.
+  const open = await market(false);
+  const equipment = 'curtain_side';
+  await addVehicle(open.carrier.person, open.carrier.org, {
+    kind: 'truck',
+    category: 'fictional_rigid_truck',
+    equipment,
+    ownership: 'claimed',
+  });
+  const claimed = await quote(open.carrier.person, open.carrier.org, open.shipment.id);
+  assert.deepEqual([claimed.status, claimed.body.code], [409, 'fleet_mismatch']);
+  await addVehicle(open.carrier.person, open.carrier.org, {
+    kind: 'truck',
+    category: 'fictional_tractor_unit',
+    equipment,
+  });
+  const tractorOnly = await quote(open.carrier.person, open.carrier.org, open.shipment.id);
+  assert.deepEqual([tractorOnly.status, tractorOnly.body.code], [409, 'fleet_mismatch']);
+  await addVehicle(open.carrier.person, open.carrier.org, {
+    kind: 'trailer',
+    category: 'fictional_semi_trailer',
+    equipment,
+  });
+  const withTrailer = await quote(open.carrier.person, open.carrier.org, open.shipment.id);
+  assert.equal(withTrailer.status, 201, withTrailer.text);
+
+  // Past its deadline, a shipment leaves the board.
+  assert.ok((await listed()).includes(open.shipment.id));
+  await advance(30 * 24 * 60 * 60);
+  assert.equal((await listed()).includes(open.shipment.id), false);
+  void carrier;
 });

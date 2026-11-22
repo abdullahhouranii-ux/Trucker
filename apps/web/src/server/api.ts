@@ -468,7 +468,19 @@ export interface Quotation {
   };
   lane?: { origin: string; destination: string };
 }
+export interface PublicShipmentPage {
+  items: {
+    id: string;
+    origin: string;
+    destination: string;
+    equipment: Record<'en' | 'ar' | 'ur', string>;
+    deadline: string;
+  }[];
+  next: string | null;
+}
+
 export interface QuotationContext {
+  fleetMatches: boolean;
   terms: QuotationTerms | null;
   pickupWindow: { timeZone: string; from: string; until: string };
   quotationDeadline: { at: string; local: string; timeZone: string };

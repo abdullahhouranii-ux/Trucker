@@ -9,7 +9,10 @@ import type pg from 'pg';
 import type { AppConfig } from './config/config.js';
 import { AccessGuard } from './database/access.js';
 import { createPool } from './database/pool.js';
-import { DiscoveryController } from './discovery/discovery.controller.js';
+import {
+  DiscoveryController,
+  PublicShipmentsController,
+} from './discovery/discovery.controller.js';
 import { BookingCompletionController } from './trip/booking-completion.controller.js';
 import { DisputesController } from './trip/disputes.controller.js';
 import { DiscoveryService } from './discovery/discovery.service.js';
@@ -87,6 +90,7 @@ export class AppModule {
       module: AppModule,
       controllers: [
         DiscoveryController,
+        PublicShipmentsController,
         DisputesController,
         BookingCompletionController,
         HealthController,

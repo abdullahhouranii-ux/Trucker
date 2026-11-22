@@ -2667,6 +2667,32 @@ async function main() {
     // ------------------------------------------------------------------------------------
     // Quotations: terms, problems by field, lost answers, comparison, rejection
     // ------------------------------------------------------------------------------------
+    // The fleet gate (0039): the carrier needs a matching truck to quote; it is removed again
+    // before the fleet steps, which count the carrier's vehicles.
+    const addQuotationTruck = async (shipmentId) => {
+      const { rows } = await owner.query(
+        `INSERT INTO trucker.vehicle (
+           organisation_id, kind, category_code, equipment_type, registration_country,
+           registration_number, ownership, ownership_decided_at, created_by, created_at, updated_at
+         )
+         SELECT $2, 'truck', 'fictional_rigid_truck', s.equipment_type, s.pickup_country,
+                $3, 'verified', now(), m.person_id, now(), now()
+         FROM trucker.shipment_draft s
+         CROSS JOIN LATERAL (
+           SELECT person_id FROM trucker.membership WHERE organisation_id = $2 AND ended_at IS NULL
+           ORDER BY id LIMIT 1
+         ) m
+         WHERE s.id = $1 AND NOT trucker.quotation_fleet_matches(s, $2)
+         RETURNING id`,
+        [shipmentId, carrierOrg, randomBytes(8).toString('hex').toUpperCase()],
+      );
+      return rows[0]?.id;
+    };
+    const removeQuotationTruck = async (id) => {
+      if (id) await owner.query('DELETE FROM trucker.vehicle WHERE id = $1', [id]);
+    };
+    const firstQuoteTruck = await addQuotationTruck(pubShipment);
+
     const quotesPath = (locale) =>
       `/${locale}/organisations/${verifyOrg}/shipments/${pubShipment}/quotations`;
     const quotePath = (locale) => `${discoverPath(locale)}/${pubShipment}`;
@@ -2885,6 +2911,7 @@ async function main() {
     // ------------------------------------------------------------------------------------
     // Fleet and drivers: register, lose an answer, documents, staff decisions, a driver joins
     // ------------------------------------------------------------------------------------
+    await removeQuotationTruck(firstQuoteTruck);
     const fleetPath = (locale) => `/${locale}/organisations/${carrierOrg}/fleet`;
     const enFleet = messagesFor('en').fleet;
     const urFleet = messagesFor('ur').fleet;
@@ -3174,6 +3201,7 @@ async function main() {
       { version: 0, currency: 'XTS' },
       'terms',
     );
+    const bookingQuoteTruck = await addQuotationTruck(bookShipment);
     const bookQuote = await post(
       `/organisations/${carrierOrg}/discovery/shipments/${bookShipment}/quotations`,
       {
@@ -3184,6 +3212,7 @@ async function main() {
       },
       'quote',
     );
+    await removeQuotationTruck(bookingQuoteTruck);
     const bookQuotation = bookQuote.body.quotation?.id;
     const bookQuotes = (locale) =>
       `/${locale}/organisations/${verifyOrg}/shipments/${bookShipment}/quotations`;

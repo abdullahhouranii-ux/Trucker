@@ -20,6 +20,7 @@ import { configureApp } from '../http/configure-app.js';
 import { hashToken } from '../identity/secrets.js';
 import { DEMONSTRATION_TERMS_VERSION } from '../identity/terms.js';
 import { createTestClock } from '../testing/test-clock.js';
+import { ensureQuotationFleet } from '../testing/quotation-fleet.js';
 import { createTestDatabase, type TestDatabase } from '../testing/test-database.js';
 
 // Assignment, reservation and confirmation (slice 15). Real PostgreSQL, the API connected as
@@ -505,12 +506,20 @@ async function setTerms(
     body: { version, currency },
   });
 }
-const quote = (person: Person, org: string, shipment: string, body = quoteBody(), retry = key()) =>
-  call('POST', `/organisations/${org}/discovery/shipments/${shipment}/quotations`, {
+const quote = async (
+  person: Person,
+  org: string,
+  shipment: string,
+  body = quoteBody(),
+  retry = key(),
+) => {
+  await ensureQuotationFleet(owner, person.personId, org, shipment);
+  return call('POST', `/organisations/${org}/discovery/shipments/${shipment}/quotations`, {
     token: person.token,
     key: retry,
     body,
   });
+};
 async function quoted(person: Person, org: string, shipment: string, body = quoteBody()) {
   const reply = await quote(person, org, shipment, body);
   assert.equal(reply.status, 201, reply.text);
