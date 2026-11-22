@@ -8,7 +8,15 @@ Security defects are normally fixed in the slice where they are found. This list
 
 ### SEC-01: nothing enforces that an administrator remains when administrators act on each other at the same moment
 
-**Status:** open. **Must be resolved before production and before any real staff use** (Abdullah, 14 November 2026). Development continues with test accounts only. The administrator-independence rule (nobody acts on their own account) is not to be weakened to fix it.
+**Status:** fixed on branch `feat/sec-01` (migration `0011_staff_administrator_remains.sql`), **not merged**. It stays a production blocker until that change is reviewed and merged by explicit authorisation. The administrator-independence rule is unchanged.
+
+**Fix as built (15 November 2026).** Both functions take one transaction-scoped advisory lock before reading anything, so administration changes run one at a time and cannot deadlock with each other; the caller is checked after the lock; after the change, an active, enrolled `staff_admin` must remain, otherwise the change is undone, the refusal audited and the API answers 409 `last_administrator`.
+
+**One correction to the acceptance tests below.** SEC-01-a asked for the losing request to be refused with 409. Under requirement 3 the loser has lost `staff_admin` while waiting, so it is refused as not holding it: 403, audited as `privilege_not_held`. In SEC-01-b the loser's sessions were ended by the other's change, so it is refused 401. The tests require exactly one change, every other request refused with a 4xx and never a 5xx, and an administrator left. The `last_administrator` check cannot be reached through the API (a caller with a live session is always an active, enrolled administrator and cannot act on itself); it is a backstop, tested directly and by checking that both functions call it.
+
+**Evidence.** The five SEC-01 tests pass, five runs in a row. With the lock removed, all four concurrency tests fail with `500 internal_error`, the original fault; with the check removed, the backstop test fails.
+
+**Original record (14 November 2026) follows.**
 
 **Where:** `db/migrations/0006_staff_identity.sql`, functions `staff_set_privilege` and `staff_set_status` (slice 8, merged as `074e068`).
 

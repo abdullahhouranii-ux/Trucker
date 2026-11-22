@@ -8,6 +8,7 @@ import { NestFactory } from '@nestjs/core';
 import { generateSync } from 'otplib';
 import pg from 'pg';
 import { AppModule } from '../app.module.js';
+import { StaffService } from './staff.service.js';
 import { loadConfig } from '../config/config.js';
 import { appDatabaseUrl, ensureLocalAppLogin, markEnvironment } from '../database/local.js';
 import { defaultMigrationsDir, migrateUp } from '../database/migrations.js';
@@ -1232,69 +1233,205 @@ test('the audit list is read by administrators only, in pages, and cannot be cha
 });
 
 // ---------------------------------------------------------------------------------------------
-// SEC-01 (docs/delivery/SECURITY_BACKLOG.md): an open defect. This is its acceptance test.
-// It is marked "todo" so that it runs and is reported without failing the suite; the fix
-// removes the mark. Today an administrator is left only by accident: PostgreSQL's deadlock
-// detector aborts one of the two requests, which answers 500. Nothing in the design enforces
-// it. The test asks for what the design must guarantee: one removal succeeds, the other is
-// refused cleanly, and an administrator remains.
-// It is the last test in this file because it changes who the administrators are.
+// SEC-01 (docs/delivery/SECURITY_BACKLOG.md): administrators acting on each other at the same
+// moment. Every change of status or privilege now runs alone (an advisory lock taken before
+// anything is read), the caller is checked after that lock, and the change is undone if no
+// active, enrolled administrator would remain. Which request goes first is not fixed; the tests
+// accept either order and require: no 500, every refusal clean, an administrator left.
+// These are the last tests in this file because they change who the administrators are.
 // ---------------------------------------------------------------------------------------------
-test(
-  'SEC-01: two administrators removing each other at the same moment leave an administrator',
-  { todo: 'open security defect SEC-01: the invariant holds only through a deadlock abort (500)' },
-  async () => {
-    const first = await newStaff(['staff_admin']);
-    const second = await newStaff(['staff_admin']);
-    first.token = await signIn(first);
-    second.token = await signIn(second);
-    // Everyone else stops being an administrator first, so that these two are the only ones.
-    await owner.query(
-      `DELETE FROM trucker.staff_privilege WHERE privilege = 'staff_admin' AND staff_id NOT IN ($1, $2)`,
-      [first.id, second.id],
+/** The test administrator holds staff_admin again (earlier SEC-01 tests take it away). */
+async function restoreTestAdministrator(): Promise<void> {
+  const who = await theAdmin();
+  await owner.query(
+    `INSERT INTO trucker.staff_privilege (staff_id, privilege, granted_by, granted_at)
+     VALUES ($1, 'staff_admin', NULL, now()) ON CONFLICT DO NOTHING`,
+    [who.id],
+  );
+}
+/** Makes the given accounts the only administrators. */
+async function onlyAdministrators(...accounts: Staff[]): Promise<void> {
+  await owner.query(
+    `DELETE FROM trucker.staff_privilege WHERE privilege = 'staff_admin' AND NOT (staff_id = ANY ($1::uuid[]))`,
+    [accounts.map((account) => account.id)],
+  );
+}
+async function administratorsLeft(): Promise<number> {
+  return count(
+    'staff_privilege p JOIN trucker.staff_account a ON a.id = p.staff_id',
+    `p.privilege = 'staff_admin' AND a.status = 'active' AND a.enrolled_at IS NOT NULL`,
+  );
+}
+type Act = (as: Staff, target: Staff) => Promise<Reply>;
+const removeAdmin: Act = (as, target) =>
+  call('POST', `/staff/accounts/${target.id}/privileges`, {
+    token: as.token,
+    body: { privilege: 'staff_admin', granted: false },
+  });
+const disable: Act = (as, target) =>
+  call('POST', `/staff/accounts/${target.id}/status`, {
+    token: as.token,
+    body: { status: 'disabled' },
+  });
+/**
+ * Starts every request while a second connection holds the privilege and account tables, so
+ * that all of them are in flight together, then lets them go.
+ */
+async function together(requests: (() => Promise<Reply>)[]): Promise<Reply[]> {
+  const holder = await owner.connect();
+  try {
+    await holder.query('BEGIN');
+    await holder.query(
+      'LOCK TABLE trucker.staff_privilege, trucker.staff_account IN SHARE ROW EXCLUSIVE MODE',
     );
-    const remove = (as: Staff, target: Staff): Promise<Reply> =>
-      call('POST', `/staff/accounts/${target.id}/privileges`, {
-        token: as.token,
-        body: { privilege: 'staff_admin', granted: false },
-      });
-    // Both requests pass their checks, then both wait here, at the point of removing.
-    const holder = await owner.connect();
-    let replies: Reply[];
-    try {
-      await holder.query('BEGIN');
-      await holder.query('LOCK TABLE trucker.staff_privilege IN SHARE MODE');
-      const both = Promise.all([remove(first, second), remove(second, first)]);
-      for (let attempt = 0; ; attempt += 1) {
-        const waiting = await owner.query<{ n: number }>(
-          `SELECT count(*)::int AS n FROM pg_locks l JOIN pg_stat_activity a ON a.pid = l.pid
-           WHERE NOT l.granted AND a.datname = current_database()`,
-        );
-        if (waiting.rows[0]!.n >= 2) break;
-        if (attempt > 400) throw new Error('the two removals did not both start waiting');
-        await new Promise((resolve) => setTimeout(resolve, 25));
-      }
-      await holder.query('COMMIT');
-      replies = await both;
-    } finally {
-      await holder.query('ROLLBACK').catch(() => undefined);
-      holder.release();
+    const all = Promise.all(requests.map((request) => request()));
+    for (let attempt = 0; ; attempt += 1) {
+      const waiting = await owner.query<{ n: number }>(
+        `SELECT count(DISTINCT l.pid)::int AS n FROM pg_locks l JOIN pg_stat_activity a ON a.pid = l.pid
+         WHERE NOT l.granted AND a.datname = current_database()`,
+      );
+      if (waiting.rows[0]!.n >= requests.length) break;
+      if (attempt > 400) throw new Error('the requests did not all start waiting');
+      await new Promise((resolve) => setTimeout(resolve, 25));
     }
-    const left = await count(
-      'staff_privilege p JOIN trucker.staff_account a ON a.id = p.staff_id',
-      `p.privilege = 'staff_admin' AND a.status = 'active'`,
-    );
-    const answers = replies.map((r) => `${r.status} ${String(r.body.outcome ?? r.body.code)}`);
-    assert.ok(left >= 1, `no administrator is left (${answers.join(' and ')})`);
-    // One removal succeeds. The other is refused on purpose, not aborted by the database.
-    assert.equal(replies.filter((reply) => reply.body.outcome === 'changed').length, 1);
+    await holder.query('COMMIT');
+    return await all;
+  } finally {
+    await holder.query('ROLLBACK').catch(() => undefined);
+    holder.release();
+  }
+}
+const answersOf = (replies: Reply[]): string =>
+  replies.map((r) => `${r.status} ${String(r.body.outcome ?? r.body.code)}`).join(' and ');
+/** Exactly one change; every other request refused with a 4xx, none with a server error. */
+function oneChangedOthersRefused(replies: Reply[]): void {
+  const answers = answersOf(replies);
+  assert.equal(replies.filter((r) => r.body.outcome === 'changed').length, 1, answers);
+  assert.ok(
+    replies.every((r) => r.body.outcome === 'changed' || (r.status >= 400 && r.status < 500)),
+    `a request failed instead of being refused (${answers})`,
+  );
+}
+
+test('SEC-01-a and e: two administrators remove each other at the same moment; one remains, the other is refused cleanly and audited', async () => {
+  await restoreTestAdministrator();
+  const first = await newStaff(['staff_admin']);
+  const second = await newStaff(['staff_admin']);
+  await onlyAdministrators(first, second);
+  const replies = await together([
+    () => removeAdmin(first, second),
+    () => removeAdmin(second, first),
+  ]);
+  oneChangedOthersRefused(replies);
+  assert.equal(await administratorsLeft(), 1);
+  // The loser lost staff_admin while waiting, so it is refused as no longer holding it (403),
+  // never by a deadlock abort.
+  const loserIndex = replies.findIndex((r) => r.body.outcome !== 'changed');
+  const loser = loserIndex === 0 ? first : second;
+  assert.equal(replies[loserIndex]!.status, 403, answersOf(replies));
+  const refusals = await owner.query<{ n: number }>(
+    `SELECT count(*)::int AS n FROM trucker.staff_audit_entry
+     WHERE actor_staff_id = $1 AND action = 'staff.privilege.remove' AND outcome = 'refused'
+       AND detail ->> 'reason' = 'privilege_not_held'`,
+    [loser.id],
+  );
+  assert.equal(refusals.rows[0]!.n, 1, 'the refusal is audited once');
+  // The refused caller keeps its session: it can still read its own account.
+  const me = await call('GET', '/staff/me', { token: loser.token });
+  assert.equal(me.status, 200, JSON.stringify(me.body));
+});
+
+test('SEC-01-b: two administrators disable each other at the same moment; one remains, no 500', async () => {
+  await restoreTestAdministrator();
+  const first = await newStaff(['staff_admin']);
+  const second = await newStaff(['staff_admin']);
+  await onlyAdministrators(first, second);
+  const replies = await together([() => disable(first, second), () => disable(second, first)]);
+  oneChangedOthersRefused(replies);
+  assert.equal(await administratorsLeft(), 1);
+  // The loser's sessions were ended by the other's change, so it is refused as signed out.
+  assert.equal(replies.find((r) => r.body.outcome !== 'changed')!.status, 401, answersOf(replies));
+});
+
+test('SEC-01-c: one disables while the other removes the privilege; one remains, no 500', async () => {
+  await restoreTestAdministrator();
+  const first = await newStaff(['staff_admin']);
+  const second = await newStaff(['staff_admin']);
+  await onlyAdministrators(first, second);
+  const replies = await together([() => disable(first, second), () => removeAdmin(second, first)]);
+  oneChangedOthersRefused(replies);
+  assert.equal(await administratorsLeft(), 1);
+});
+
+test('SEC-01-d: three administrators acting in a ring leave at least one, with no 500', async () => {
+  await restoreTestAdministrator();
+  const a = await newStaff(['staff_admin']);
+  const b = await newStaff(['staff_admin']);
+  const c = await newStaff(['staff_admin']);
+  await onlyAdministrators(a, b, c);
+  const replies = await together([
+    () => removeAdmin(a, b),
+    () => removeAdmin(b, c),
+    () => removeAdmin(c, a),
+  ]);
+  const answers = answersOf(replies);
+  assert.ok(
+    replies.every((r) => r.status < 500),
+    answers,
+  );
+  assert.ok((await administratorsLeft()) >= 1, answers);
+});
+
+test('SEC-01: both administration functions take the lock first and check that an administrator remains; the check refuses when none would', async () => {
+  // Through the API the check cannot be reached: a caller with a live session is an active,
+  // enrolled account holding staff_admin, and nobody can act on themselves, so the caller always
+  // remains. The check is a backstop against later changes. It is tested directly, and both
+  // functions are required to call the lock before anything else and the check after the change.
+  const source = await owner.query<{ name: string; src: string }>(
+    `SELECT p.proname AS name, p.prosrc AS src FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+     WHERE n.nspname = 'trucker' AND p.proname IN ('staff_set_status', 'staff_set_privilege')`,
+  );
+  assert.equal(source.rows.length, 2);
+  for (const { name, src } of source.rows) {
+    const lock = src.indexOf('pg_advisory_xact_lock(trucker.staff_administration_lock())');
+    assert.ok(lock >= 0, `${name} takes the administration lock`);
     assert.ok(
-      replies.every((reply) => reply.status < 500),
-      `a request failed instead of being refused (${answers.join(' and ')})`,
+      lock < src.indexOf('staff_enter('),
+      `${name} takes the lock before reading the caller`,
     );
     assert.ok(
-      replies.some((reply) => reply.status === 409),
-      answers.join(' and '),
+      src.includes('staff_administrator_remains()'),
+      `${name} checks that an administrator remains`,
     );
-  },
-);
+    assert.ok(
+      src.includes("RETURN 'last_administrator'"),
+      `${name} refuses with last_administrator`,
+    );
+  }
+  const client = await owner.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(`DELETE FROM trucker.staff_privilege WHERE privilege = 'staff_admin'`);
+    await assert.rejects(
+      client.query('SELECT trucker.staff_administrator_remains()'),
+      (error: { code?: string }) => error.code === 'TA001',
+    );
+  } finally {
+    await client.query('ROLLBACK');
+    client.release();
+  }
+  assert.ok((await administratorsLeft()) >= 1);
+  // The API answers the refusal as a conflict with its own code.
+  const thrown = (() => {
+    try {
+      (nest.get(StaffService) as unknown as { refuse(status: string): void }).refuse(
+        'last_administrator',
+      );
+    } catch (error) {
+      return error as { status?: number; code?: string };
+    }
+    return null;
+  })();
+  assert.equal(thrown?.status, 409);
+  assert.equal(thrown?.code, 'last_administrator');
+});
