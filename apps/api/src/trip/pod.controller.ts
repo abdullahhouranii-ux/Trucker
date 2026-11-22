@@ -96,14 +96,22 @@ function fileOf(request: IncomingRequest, contentType: string | undefined) {
     throw new ApiError(415, 'unsupported_media_type', 'Send a JPEG, PNG or PDF file.');
   return { mediaType, bytes: request.rawBody ?? Buffer.alloc(0) };
 }
-/** Files are sent privately, never cached, and never interpreted as another type. */
+/**
+ * Files are sent privately, never cached, and never interpreted as another type. A PDF is
+ * always downloaded, never shown in the page; a picture is shown.
+ */
 function send(response: ServerResponse, file: PodFile): void {
   response.statusCode = 200;
   response.setHeader('content-type', file.mediaType);
   response.setHeader('content-length', String(file.bytes.length));
   response.setHeader('cache-control', 'private, no-store');
   response.setHeader('x-content-type-options', 'nosniff');
-  response.setHeader('content-disposition', 'inline');
+  response.setHeader(
+    'content-disposition',
+    file.mediaType === 'application/pdf'
+      ? 'attachment; filename="proof-of-delivery.pdf"'
+      : 'inline',
+  );
   response.setHeader('x-pod-fingerprint', file.fingerprint);
   response.end(file.bytes);
 }

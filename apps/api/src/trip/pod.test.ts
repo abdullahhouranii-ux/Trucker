@@ -26,6 +26,7 @@ import { DEMONSTRATION_TERMS_VERSION } from '../identity/terms.js';
 import { settleFee } from '../testing/fee.js';
 import { createTestClock } from '../testing/test-clock.js';
 import { createTestDatabase, type TestDatabase } from '../testing/test-database.js';
+import { POD_SWEEP_GRACE_MS, PodService } from './pod.service.js';
 
 // Assignment, reservation and confirmation (slice 15). Real PostgreSQL, the API connected as
 // its restricted role. Shippers, carriers, vehicles, drivers and bookings are made through the
@@ -1089,6 +1090,7 @@ async function getFile(route: string, token: string | undefined) {
     status: response.status,
     type: response.headers.get('content-type'),
     cache: response.headers.get('cache-control'),
+    disposition: response.headers.get('content-disposition'),
     bytes: Buffer.from(await response.arrayBuffer()),
   };
 }
@@ -1552,6 +1554,20 @@ test("POD-5: operations uploads a paper POD on the driver's behalf; with file st
   assert.equal(sent.status, 200, sent.text);
   const pod = await podOf(shipper, id);
   assert.deepEqual([pod.state, pod.versions[0]!.enteredAs], ['ready_for_review', 'operations']);
+  // A PDF is downloaded, never shown in the page, on every route that reads it.
+  for (const [route, token] of [
+    [podRoute(shipper.org, id, `/items/${item.id}/file`), shipper.person.token],
+    [driverPodRoute(id, `/items/${item.id}/file`), (await again(trip.driver)).token],
+    [`/staff/operations/bookings/${id}/pod/items/${item.id}/file`, operations.token],
+  ] as const) {
+    const read = await getFile(route, token);
+    assert.equal(read.status, 200, route);
+    assert.deepEqual(
+      [read.type, read.disposition, read.bytes.equals(paper.bytes)],
+      ['application/pdf', 'attachment; filename="proof-of-delivery.pdf"', true],
+      route,
+    );
+  }
   // A newer version declared before any decision replaces it: the replaced one cannot be decided.
   const newer = await call('POST', driverPodRoute(id), {
     token: (await again(trip.driver)).token,
@@ -1589,5 +1605,158 @@ test("POD-5: operations uploads a paper POD on the driver's behalf; with file st
   assert.throws(
     () => loadConfig({ NODE_ENV: 'test', DATABASE_URL: database.url, FILE_STORAGE: 'local' }),
     /FILE_STORAGE_DIR must be set/,
+  );
+});
+
+/**
+ * The API's pool, with the database's answer lost: after the commit (the record is kept but the
+ * API never hears so) or before it (nothing is kept). Both end in the same error.
+ */
+function losingAnswers(real: pg.Pool, loss: 'after_commit' | 'before_commit'): pg.Pool {
+  const lost = () => new Error('Connection terminated unexpectedly (test)');
+  return {
+    connect: async () => {
+      const client = await real.connect();
+      return {
+        query: async (text: string, values?: unknown[]) => {
+          if (text === 'COMMIT') {
+            await client.query(loss === 'after_commit' ? 'COMMIT' : 'ROLLBACK');
+            throw lost();
+          }
+          return client.query(text, values);
+        },
+        release: () => client.release(),
+      };
+    },
+    query: async (text: string, values?: unknown[]) => {
+      if (loss === 'after_commit') await real.query(text, values);
+      throw lost();
+    },
+  } as unknown as pg.Pool;
+}
+
+test("POD-6: when the database's answer is lost the stored file is kept; sending it again completes; the sweep removes only copies proven unrecorded", async () => {
+  const trip = await delivered();
+  const { id, shipper } = trip;
+  const service = nest.get(PodService);
+  const held = service as unknown as { pool: pg.Pool };
+  const real = held.pool;
+  const losing = async <T>(loss: 'after_commit' | 'before_commit', work: () => Promise<T>) => {
+    held.pool = losingAnswers(real, loss);
+    try {
+      return await work();
+    } finally {
+      held.pool = real;
+    }
+  };
+  const recorded = (item: string) =>
+    count('pod_item', 'id = $1 AND storage_key IS NOT NULL', [item]);
+  const signature = fictionalFile('signature', 'image/png');
+  const declared = await call('POST', driverPodRoute(id), {
+    token: trip.driver.token,
+    body: { version: 1, items: [signature.declared] },
+  });
+  assert.equal(declared.status, 200, declared.text);
+  const item = (declared.body.pod as Pod).versions[0]!.items[0]!;
+  const send = () =>
+    putFile(
+      driverPodRoute(id, `/items/${item.id}`),
+      trip.driver.token,
+      signature.bytes,
+      'image/png',
+    );
+  const start = storedFiles();
+
+  // 1. Recorded, then the answer is lost: the request fails, but the copy is kept.
+  const lostAfter = await losing('after_commit', send);
+  assert.equal(lostAfter.status, 500, lostAfter.text);
+  assert.equal(await recorded(item.id), 1);
+  assert.equal(storedFiles(), start + 1);
+  // Sent again: already received; the second copy is removed; the first is the one read.
+  const retried = await send();
+  assert.deepEqual([retried.status, retried.body.outcome], [200, 'already_received']);
+  assert.equal(storedFiles(), start + 1);
+  const read = await getFile(
+    podRoute(shipper.org, id, `/items/${item.id}/file`),
+    shipper.person.token,
+  );
+  assert.deepEqual(
+    [read.status, read.type, read.disposition, read.bytes.equals(signature.bytes)],
+    [200, 'image/png', 'inline', true],
+  );
+  assert.equal((await podOf(shipper, id)).state, 'ready_for_review');
+  // No cut-off removes a recorded copy: every copy left by the earlier tests is recorded too.
+  const everything = await service.sweepUnrecorded(new Date(Date.now() + 60_000));
+  assert.deepEqual(everything, { checked: storedFiles(), removed: 0 });
+
+  // 2. The answer is lost and nothing was recorded: the copy is kept until the sweep judges it.
+  const operations = await operator();
+  const paper = fictionalFile('signed_document', 'application/pdf');
+  const newer = await call('POST', `/staff/operations/bookings/${id}/pod`, {
+    token: operations.token,
+    body: {
+      version: 2,
+      reason: 'paper_copy',
+      replacesReason: 'The receiver signed a paper copy',
+      capturedAt: iso(new Date(clock().getTime() - 60_000)),
+      items: [paper.declared],
+    },
+  });
+  assert.equal(newer.status, 200, newer.text);
+  const paperItem = (newer.body.pod as Pod).versions.at(-1)!.items[0]!;
+  const sendPaper = () =>
+    putFile(
+      `/staff/operations/bookings/${id}/pod/items/${paperItem.id}`,
+      operations.token,
+      paper.bytes,
+      'application/pdf',
+    );
+  const lostBefore = await losing('before_commit', sendPaper);
+  assert.equal(lostBefore.status, 500, lostBefore.text);
+  assert.equal(await recorded(paperItem.id), 0);
+  assert.equal(storedFiles(), start + 2);
+  // Within the grace period the sweep does not judge it.
+  const young = await service.sweepUnrecorded(new Date(Date.now() - POD_SWEEP_GRACE_MS));
+  assert.deepEqual([young.removed, storedFiles()], [0, start + 2]);
+  // Past it, the unrecorded copy is removed and nothing else.
+  const swept = await service.sweepUnrecorded(new Date(Date.now() + 60_000));
+  assert.equal(swept.removed, 1);
+  assert.equal(storedFiles(), start + 1);
+  assert.equal(
+    (await getFile(podRoute(shipper.org, id, `/items/${item.id}/file`), shipper.person.token))
+      .status,
+    200,
+  );
+
+  // 3. On the staff route, recorded then the answer lost: kept, and sending again completes.
+  const staffLost = await losing('after_commit', sendPaper);
+  assert.equal(staffLost.status, 500, staffLost.text);
+  assert.equal(await recorded(paperItem.id), 1);
+  const staffRetried = await sendPaper();
+  assert.deepEqual([staffRetried.status, staffRetried.body.outcome], [200, 'already_received']);
+  assert.equal(storedFiles(), start + 2);
+  const staffRead = await getFile(
+    `/staff/operations/bookings/${id}/pod/items/${paperItem.id}/file`,
+    operations.token,
+  );
+  assert.deepEqual(
+    [staffRead.status, staffRead.disposition, staffRead.bytes.equals(paper.bytes)],
+    [200, 'attachment; filename="proof-of-delivery.pdf"', true],
+  );
+  assert.deepEqual(await service.sweepUnrecorded(new Date(Date.now() + 60_000)), {
+    checked: storedFiles(),
+    removed: 0,
+  });
+  // The database answers only for the keys it is given, and takes at most 500.
+  const asApp = await app.query<{ keys: string[] }>(
+    'SELECT trucker.pod_storage_keys_in_use($1) AS keys',
+    [JSON.stringify([randomUUID(), 'not-a-key'])],
+  );
+  assert.deepEqual(asApp.rows[0]!.keys, []);
+  await assert.rejects(
+    app.query('SELECT trucker.pod_storage_keys_in_use($1)', [
+      JSON.stringify(Array.from({ length: 501 }, () => randomUUID())),
+    ]),
+    /at most 500/,
   );
 });

@@ -1,5 +1,10 @@
 import { createHash } from 'node:crypto';
-import { Inject, Injectable } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  type OnApplicationBootstrap,
+  type OnApplicationShutdown,
+} from '@nestjs/common';
 import type pg from 'pg';
 import { AccessGuard } from '../database/access.js';
 import { ApiError } from '../http/api-error.js';
@@ -9,8 +14,20 @@ import { DB_POOL, FILE_STORE } from '../tokens.js';
 
 // Proof of delivery (slice 18b). The database decides who may do what and keeps each file's
 // declaration and fingerprint; the file store keeps the bytes. A file is stored first and
-// recorded second: if the database refuses it, the stored copy is removed, so no file is ever
-// recorded without its bytes.
+// recorded second, so no file is ever recorded without its bytes.
+//
+// A stored copy is removed straight away only when the database has answered that it is not
+// recorded. When the answer is lost (the connection fails, perhaps after the record was
+// committed), nothing is removed: the copy may be the recorded one. A sweep later asks the
+// database which stored copies are recorded and removes only those proven not to be, once they
+// are older than a grace period that no upload in progress can outlast.
+
+/** How long a stored copy is left before the sweep may judge it. Development default. */
+export const POD_SWEEP_GRACE_MS = 24 * 60 * 60 * 1000;
+/** How often the sweep runs while the API runs. Development default. */
+const POD_SWEEP_EVERY_MS = 60 * 60 * 1000;
+/** Keys asked about in one question: the database takes at most 500. */
+const SWEEP_BATCH = 500;
 
 type Detail = Record<string, unknown>;
 
@@ -94,12 +111,54 @@ export interface PodFile {
 }
 
 @Injectable()
-export class PodService {
+export class PodService implements OnApplicationBootstrap, OnApplicationShutdown {
+  private sweeping: NodeJS.Timeout | undefined;
+
   constructor(
     @Inject(DB_POOL) private readonly pool: pg.Pool,
     @Inject(AccessGuard) private readonly access: AccessGuard,
     @Inject(FILE_STORE) private readonly store: FileStore | null,
   ) {}
+
+  onApplicationBootstrap(): void {
+    if (!this.store) return;
+    this.sweeping = setInterval(() => {
+      // A failed sweep removes nothing; the next one tries again.
+      void this.sweepUnrecorded(new Date(Date.now() - POD_SWEEP_GRACE_MS)).catch(() => undefined);
+    }, POD_SWEEP_EVERY_MS);
+    this.sweeping.unref();
+  }
+
+  onApplicationShutdown(): void {
+    if (this.sweeping) clearInterval(this.sweeping);
+  }
+
+  /**
+   * Removes stored copies stored before `storedBefore` that the database says are not recorded.
+   * A copy is removed only on the database's answer: if it cannot be asked, nothing is removed.
+   * The cut-off is wall-clock time, because the store dates its copies by wall-clock time.
+   */
+  async sweepUnrecorded(storedBefore: Date): Promise<{ checked: number; removed: number }> {
+    const store = this.store;
+    if (!store) return { checked: 0, removed: 0 };
+    await this.access.requireBoundRole();
+    const old = (await store.list()).filter((kept) => kept.storedAt < storedBefore);
+    let removed = 0;
+    for (let start = 0; start < old.length; start += SWEEP_BATCH) {
+      const keys = old.slice(start, start + SWEEP_BATCH).map((kept) => kept.key);
+      const answer = await this.pool.query<{ keys: string[] }>(
+        'SELECT trucker.pod_storage_keys_in_use($1) AS keys',
+        [JSON.stringify(keys)],
+      );
+      const recorded = new Set(answer.rows[0]!.keys);
+      for (const key of keys) {
+        if (recorded.has(key)) continue;
+        await store.remove(key);
+        removed += 1;
+      }
+    }
+    return { checked: old.length, removed };
+  }
 
   /** One transaction as the caller; an organisation of '' acts as the person alone (the driver). */
   private async asCaller(
@@ -176,24 +235,22 @@ export class PodService {
     const key = await store.put(bytes);
     // What was found on the bytes stored: compared by the database with the declaration.
     const receipt = JSON.stringify({ fingerprint, bytes: bytes.length, mediaType, key });
-    let row: { status: string; detail: unknown };
-    try {
-      row =
-        organisationId === null
-          ? await this.asStaff(
-              'SELECT status, detail FROM trucker.staff_pod_receive($1, $2, $3, $4, $5)',
-              [caller.tokenHash, bookingId, itemId, receipt, caller.requestId ?? null],
-            )
-          : await this.asCaller(
-              caller,
-              organisationId,
-              'SELECT status, detail FROM trucker.pod_receive($1, $2, $3)',
-              [bookingId, itemId, receipt],
-            );
-    } catch (error) {
-      await store.remove(key).catch(() => undefined);
-      throw error;
-    }
+    // If this throws, the answer is unknown (the record may be committed): the copy is kept for
+    // the sweep to judge, never removed here.
+    const row: { status: string; detail: unknown } =
+      organisationId === null
+        ? await this.asStaff(
+            'SELECT status, detail FROM trucker.staff_pod_receive($1, $2, $3, $4, $5)',
+            [caller.tokenHash, bookingId, itemId, receipt, caller.requestId ?? null],
+          )
+        : await this.asCaller(
+            caller,
+            organisationId,
+            'SELECT status, detail FROM trucker.pod_receive($1, $2, $3)',
+            [bookingId, itemId, receipt],
+          );
+    // The database answered: anything but "received" means this copy is not recorded (an
+    // identical file sent again is recorded under the first copy's key).
     if (row.status !== 'received') await store.remove(key).catch(() => undefined);
     if (row.status === 'received' || row.status === 'already_received')
       return { outcome: row.status, fingerprint, pod: row.detail };
