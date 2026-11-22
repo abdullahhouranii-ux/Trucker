@@ -26,6 +26,21 @@ export async function createTestDatabase(): Promise<TestDatabase> {
   await client.connect();
   try {
     await client.query(`CREATE DATABASE ${name}`);
+    // The API's role belongs to the whole server, not to one database. Migration 0003 creates
+    // it when missing, inside its migration transaction. When test files migrate their
+    // databases at the same moment, one can find the role missing while another's
+    // uncommitted transaction is creating it, and then fail on its own grants (seen on
+    // PostgreSQL 17 on the Windows runner). Created here first, committed, before any file
+    // migrates, with exactly the attributes 0003 gives it.
+    await client.query(`DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'trucker_app') THEN
+          CREATE ROLE trucker_app NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
+        END IF;
+      EXCEPTION
+        WHEN duplicate_object OR unique_violation THEN NULL;
+      END
+      $$`);
   } finally {
     await client.end();
   }
