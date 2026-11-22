@@ -9,9 +9,9 @@ No legal or tax rule is stated here. Every value that is not approved is a prote
 | ID | Subject | Status after 15 November 2026 |
 |---|---|---|
 | DB-4 | Resource eligibility | **Approved for development.** Built in slice 13 with fictional registers. Real document and class lists remain open (X-5) |
-| DB-5 | Company carriers only; one active carrier affiliation per driver | **Approved for development.** Built in slice 13 |
+| DB-5 | Company carriers only; one active carrier affiliation per driver | **Approved for development.** Built in slice 13. **Company-only replaced by ADR-001 (17 November 2026):** independent truck owners are added; one active affiliation per driver stays |
 | FB-1 to FB-5 | Slice 13 decisions | **Approved for development**, with conditions FC-1 to FC-4 (FLEET_SLICE_13_SCOPE.md) |
-| DB-1 | Settlement responsibility: recorded bank transfers | **Proposed implementation structure.** The payment due period is in section 4 |
+| DB-1 | Settlement responsibility: recorded bank transfers | **Replaced by ADR-001 (17 November 2026):** Trucker's fee is paid online or by bank transfer and verified before confirmation; freight is settled separately and recorded; the organiser's commission is a recorded payable from carrier to organiser |
 | DB-8 | Cancellation | **Proposed implementation structure.** No automatic fee; wording still needs the lawyer |
 | DB-9 | Dispatch authority | **Proposed implementation structure** |
 | DB-10 | Milestones only; no live GPS | **Approved for Release 1.** Live GPS is deferred |
@@ -23,7 +23,7 @@ No legal or tax rule is stated here. Every value that is not approved is a prote
 | DB-16 | Operational closure | **Proposed implementation structure** |
 | DB-17 | Pilot invitation | **Proposed implementation structure** |
 | DB-6 | Acceptance and reservation integrity | **Needs the model in section 3 before implementation.** The deadline and buffer values are in section 4 |
-| DB-2 | Fee | **Open**: section 4 |
+| DB-2 | Fee | **Timing replaced by ADR-001:** paid before confirmation, not invoiced after delivery. Basis and payer: ADR-001 defaults D-4 and D-5 |
 | DB-3 | Currency and tax presentation | **Open** with the accountant (X-4). Not a value to recommend here |
 | DB-7 | Missed confirmation deadline | Follows DB-6 and the terms (X-3); the structure stands as proposed, with no automatic consequence |
 | DB-18 | Launch country and lanes | **Open**: section 4 |
@@ -73,6 +73,14 @@ No legal or tax rule is stated here. Every value that is not approved is a prote
 | N-6 | **Approved:** overruns stay on their own records; in slice 17 each one opens an operations case |
 | Slice 17 | Scope written for approval: DISPATCH_SLICE_17_SCOPE.md, decisions DD-1 to DD-10 |
 | Broker role | New idea raised by Abdullah. Proposal for decision: BROKER_ROLE_PROPOSAL.md, decisions BR-1 to BR-8. Outside Release 1 until approved |
+
+## 1E. Instructions of 17 November 2026
+
+| Subject | Status |
+|---|---|
+| Commercial model | Abdullah's "Trucker development plan for partners" is recorded in `docs/specs/ADR_001_COMMERCIAL_MODEL.md`. Its confirmed requirements R-1 to R-25 stand and are not reopened. Defaults D-1 to D-12 and open decisions O-1 to O-7 await decision; each open decision has a working default |
+| Replaced | DB-5 (company carriers only), DB-1 (recorded bank transfers only), DB-2's timing (fee after delivery), slice 15's confirmation without a payment check, D-001's "same transport price for both sides" for organiser bookings, and the broker proposal BR-1 to BR-8 |
+| Unchanged | D-001 (agent), the reservation model, staged release, cancellation before dispatch, E-1 to E-4 |
 
 ## 2. Exceptions to the proposed structures
 
