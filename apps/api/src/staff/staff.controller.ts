@@ -292,6 +292,14 @@ export class StaffController {
     return this.review.shipment(await this.caller(request), identifier(id));
   }
 
+  @Get('shipments/:id/quotations')
+  async shipmentQuotations(
+    @Param('id') id: string,
+    @Req() request: IncomingRequest,
+  ): Promise<Record<string, unknown>> {
+    return this.review.shipmentQuotations(await this.caller(request), identifier(id));
+  }
+
   @Get('shipments/:id/carrier-access')
   async carrierAccess(
     @Param('id') id: string,

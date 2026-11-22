@@ -224,5 +224,39 @@
         "ur": "بند باڈی (آزمائشی قسم)"
       }
     }
+  ],
+  "currencies": [
+    {
+      "code": "XTS",
+      "minorUnits": 2,
+      "name": "Test currency (ISO 4217 testing code, fictional precision)",
+      "countries": ["XA", "XB"]
+    }
+  ],
+  "quotationInclusions": [
+    {
+      "code": "fictional_item_1",
+      "name": {
+        "en": "Fictional inclusion 1 (demonstration)",
+        "ar": "بند وهمي 1 (تجريبي)",
+        "ur": "فرضی شامل چیز 1 (نمائشی)"
+      }
+    },
+    {
+      "code": "fictional_item_2",
+      "name": {
+        "en": "Fictional inclusion 2 (demonstration)",
+        "ar": "بند وهمي 2 (تجريبي)",
+        "ur": "فرضی شامل چیز 2 (نمائشی)"
+      }
+    },
+    {
+      "code": "fictional_item_3",
+      "name": {
+        "en": "Fictional inclusion 3 (demonstration)",
+        "ar": "بند وهمي 3 (تجريبي)",
+        "ur": "فرضی شامل چیز 3 (نمائشی)"
+      }
+    }
   ]
 }

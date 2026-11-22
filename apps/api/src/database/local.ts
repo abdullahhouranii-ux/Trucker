@@ -111,6 +111,10 @@ interface FixtureFile {
     name: { en: string; ar: string; ur: string };
   }[];
   equipmentTypes?: { code: string; name: { en: string; ar: string; ur: string } }[];
+  /** Fictional: the ISO 4217 test code only. Not a choice of any country's currency. */
+  currencies?: { code: string; minorUnits: number; name: string; countries: string[] }[];
+  /** Fictional until the real register is approved: not a statement of what a price includes. */
+  quotationInclusions?: { code: string; name: { en: string; ar: string; ur: string } }[];
 }
 
 /**
@@ -208,6 +212,29 @@ export async function loadCountryFixtures(
          SET name_en = EXCLUDED.name_en, name_ar = EXCLUDED.name_ar, name_ur = EXCLUDED.name_ur,
              position = EXCLUDED.position`,
       [type.code, type.name.en, type.name.ar, type.name.ur, index + 1],
+    );
+  }
+  for (const currency of data.currencies ?? []) {
+    await owner.query(
+      `INSERT INTO trucker.currency (code, minor_units, name_en) VALUES ($1, $2, $3)
+       ON CONFLICT (code) DO UPDATE SET minor_units = EXCLUDED.minor_units, name_en = EXCLUDED.name_en`,
+      [currency.code, currency.minorUnits, currency.name],
+    );
+    for (const country of currency.countries)
+      await owner.query(
+        `INSERT INTO trucker.country_currency (country_code, currency_code) VALUES ($1, $2)
+         ON CONFLICT DO NOTHING`,
+        [country, currency.code],
+      );
+  }
+  for (const [index, inclusion] of (data.quotationInclusions ?? []).entries()) {
+    await owner.query(
+      `INSERT INTO trucker.quotation_inclusion (code, name_en, name_ar, name_ur, position)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (code) DO UPDATE
+         SET name_en = EXCLUDED.name_en, name_ar = EXCLUDED.name_ar, name_ur = EXCLUDED.name_ur,
+             position = EXCLUDED.position`,
+      [inclusion.code, inclusion.name.en, inclusion.name.ar, inclusion.name.ur, index + 1],
     );
   }
   return data.countries.map((country) => country.code);

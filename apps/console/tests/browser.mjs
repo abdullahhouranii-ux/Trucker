@@ -1264,6 +1264,15 @@ async function main() {
         'suspended' && ((await one.text('#suspensions')) ?? '').includes('open'),
       'the shipment is not shown suspended after the verification was withdrawn',
     );
+    // Quotations are shown read-only: none was sent for this shipment.
+    check(
+      'shipments',
+      (await page.$('#quotations-title')) !== null &&
+        (await page.$('#no-quotations')) !== null &&
+        (await page.$('#quotations-unavailable')) === null &&
+        (await page.$$('#quotations-title ~ * form')).length === 0,
+      'the shipment page does not show its quotations read-only',
+    );
     await withdraw(one);
     check(
       'verification',

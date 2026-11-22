@@ -1599,8 +1599,10 @@ test('there is no route to quote, book or pay, and no such word in the shipment 
   const draft = await created(person, org);
   for (const [method, action] of [
     ['POST', 'publication'],
+    // The shipper reads its quotations at GET .../quotations since slice 12; quoting itself is
+    // the carrier's, under discovery, never a shipment route.
     ['POST', 'quotations'],
-    ['GET', 'quotations'],
+    ['GET', 'offers'],
     ['POST', 'offers'],
     ['POST', 'book'],
     ['POST', 'booking'],

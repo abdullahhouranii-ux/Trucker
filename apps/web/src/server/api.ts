@@ -334,3 +334,68 @@ export interface PublicationRecord {
   }[];
   carrierView: CarrierView | null;
 }
+
+/** The currency and inclusions every quotation on a shipment uses. Fictional registers only. */
+export interface QuotationTerms {
+  currency: string;
+  minorUnits: number;
+  version: number;
+  inclusions: { code: string; name: { en: string; ar: string; ur: string } }[];
+  locked: boolean;
+}
+export interface QuotationMoment {
+  local: string;
+  offsetMinutes: number;
+  at: string;
+  timeZone: string;
+}
+export interface QuotationVersion {
+  versionNo: number;
+  kind: 'submitted' | 'revised' | 'reconfirmed';
+  /** Exact, written with the currency's minor units. Never a binary number. */
+  amount: string;
+  currency: string;
+  minorUnits: number;
+  inclusions: Record<string, boolean>;
+  validUntil: QuotationMoment;
+  earliestPickup: QuotationMoment;
+  notes: string | null;
+  shipmentVersion: number;
+  createdAt: string;
+}
+export type QuotationStanding =
+  | 'current'
+  | 'needs_reconfirmation'
+  | 'carrier_not_eligible'
+  | 'shipment_suspended'
+  | 'expired'
+  | 'shipment_closed'
+  | 'withdrawn'
+  | 'rejected'
+  | 'closed';
+export interface Quotation {
+  id: string;
+  shipmentId: string;
+  status: 'submitted' | 'withdrawn' | 'rejected' | 'expired' | 'closed';
+  standing: QuotationStanding;
+  currentVersion: number;
+  reconfirmationNeeded: boolean;
+  shipmentVersion: number;
+  closedReason: string | null;
+  createdAt: string;
+  versions: QuotationVersion[];
+  carrier?: { id: string; legalName: string; tradingName: string | null; verified: boolean };
+  lane?: { origin: string; destination: string };
+}
+export interface QuotationContext {
+  terms: QuotationTerms | null;
+  pickupWindow: { timeZone: string; from: string; until: string };
+  quotationDeadline: { at: string; local: string; timeZone: string };
+  quotations: Quotation[];
+}
+export interface ShipmentQuotations {
+  terms: QuotationTerms | null;
+  currencyChoices: { code: string; minorUnits: number; name: string }[];
+  inclusionsAvailable: boolean;
+  quotations: Quotation[];
+}
