@@ -1062,7 +1062,13 @@
         "duplicate_payment": "سيُعاد: دُفع مرتين",
         "cancelled_after_payment": "سيُعاد كاملًا: أُلغي الحجز بعد الدفع"
       },
-      "refundPending": "لم يُعالج الاسترداد بعد",
+      "refundStatus": {
+        "pending": "لم يُعالج الاسترداد بعد",
+        "in_progress": "الاسترداد قيد التنفيذ",
+        "partly_refunded": "أُعيد جزء منه",
+        "refunded": "أُعيد"
+      },
+      "refundedSoFar": "المُعاد حتى الآن",
       "payOnline": "ادفع عبر الإنترنت",
       "continuePayment": "متابعة الدفع",
       "payOnlineNote": "ستنتقل إلى صفحة مزوّد الدفع. لا تُعد الرسوم مدفوعة إلا عندما يؤكد المزوّد ذلك لـ Trucker.",

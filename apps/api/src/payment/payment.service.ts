@@ -8,6 +8,7 @@ import {
   ProviderRefused,
   type PaymentProvider,
   type ProviderReport,
+  type RefundRequest,
 } from './provider.js';
 
 /**
@@ -237,5 +238,52 @@ export class PaymentService {
       if (row.status === 'recorded') recorded += 1;
     }
     return recorded;
+  }
+
+  /** Asks the provider for a refund and records its answer. Throws when the answer is lost. */
+  async refund(details: RefundRequest): Promise<{ status: string; detail: Detail | null }> {
+    if (!this.provider)
+      throw new ApiError(
+        503,
+        'online_payment_unavailable',
+        'Online payment is not available here.',
+      );
+    const answer = await this.provider.refund(details);
+    return this.recordRefund(details.refundId, answer);
+  }
+
+  private async recordRefund(refundId: string, answer: object) {
+    return (
+      await this.pool.query<{ status: string; detail: Detail | null }>(
+        'SELECT status, detail FROM trucker.refund_provider_report($1, $2)',
+        [refundId, JSON.stringify(answer)],
+      )
+    ).rows[0]!;
+  }
+
+  /**
+   * Provider refunds submitted with no final answer: asks the provider, and sends again (with the
+   * same identifier) any it never received. Run by the fee job. Returns how many it settled.
+   */
+  async checkSubmittedRefunds(): Promise<number> {
+    if (!this.provider) return 0;
+    const due = (
+      await this.pool.query<{ details: RefundRequest & { provider: string } }>(
+        'SELECT refunds_to_check AS details FROM trucker.refunds_to_check()',
+      )
+    ).rows;
+    let settled = 0;
+    for (const { details } of due) {
+      if (details.provider !== this.provider.name) continue;
+      try {
+        const known = await this.provider.refundStatus(details.refundId);
+        const answer = known.status === 'unknown' ? await this.provider.refund(details) : known;
+        const row = await this.recordRefund(details.refundId, answer);
+        if (row.status === 'completed' || row.status === 'failed') settled += 1;
+      } catch {
+        // Unreachable now: asked again on the next run.
+      }
+    }
+    return settled;
   }
 }

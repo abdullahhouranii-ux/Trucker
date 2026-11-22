@@ -164,3 +164,14 @@ All Arabic and Urdu text in the repository is a draft written without a native r
 - Console: a payment closed here and still waiting for the provider's answer is a line in "Online payments in progress"; a section of its own, with how long the booking is still held, would be clearer.
 - Web: while a booking waits for the provider's answer past the deadline, a new payment is refused as "deadline passed"; telling the payer the earlier payment is being checked would be clearer.
 - Wording of the new payment-page message in English, Arabic and Urdu.
+
+## Slice 28 (refunds and reconciliation)
+
+- Web: the refund line runs reason, amount and progress together in brackets; separate lines would read better, and "partly returned" could give the amount left too.
+- Web: the refund line has no time; the date it was returned is not shown to the payer.
+- Console: the Refunds page is long; each request carries every form its step allows. Filters or one page per request would scale better.
+- Console: the reconciliation form asks for the amount and currency by hand; offering the expected values to confirm would avoid typing mistakes, at the cost of making a blind check easier.
+- Console: history entries show the step and person but not the detail (for example the transfer reference) recorded with it.
+- Console: only discrepancies are offered for correction; a matched entry has no correction form.
+- Test coverage: the payer's refund line is checked in the browser on one booking with a fictional record of a double payment; the other states are checked in the API tests only.
+- Wording of the refund and reconciliation messages in English, Arabic and Urdu.

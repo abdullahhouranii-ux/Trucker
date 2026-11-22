@@ -52,6 +52,7 @@ export class FeeLapseJob implements OnModuleInit, OnModuleDestroy {
       // settles the fee rather than letting the booking lapse. A failure there never stops lapses.
       try {
         await this.payments.checkExpiredCheckouts();
+        await this.payments.checkSubmittedRefunds();
       } catch (error) {
         jsonLogger.error({
           event: 'payment_status_check_failed',

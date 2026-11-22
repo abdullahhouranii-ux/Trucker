@@ -37,6 +37,20 @@ export interface VerifiedNotification {
 }
 export type CheckoutStatus = ProviderReport | { readonly status: 'open' | 'unknown' };
 
+/** A refund of (part of) an online payment. The refund's identifier is the idempotency key. */
+export interface RefundRequest {
+  readonly refundId: string;
+  readonly providerReference: string;
+  readonly transactionId: string;
+  readonly amount: string;
+  readonly currency: string;
+}
+export interface RefundAnswer {
+  readonly status: 'pending' | 'succeeded' | 'failed';
+  readonly providerRefundReference: string;
+  readonly reason?: string;
+}
+
 export interface PaymentProvider {
   readonly name: 'test';
   openCheckout(request: CheckoutRequest): Promise<OpenedCheckout>;
@@ -47,6 +61,10 @@ export interface PaymentProvider {
   ): VerifiedNotification | null;
   /** Asked by the server, never by the payer. */
   status(providerReference: string): Promise<CheckoutStatus>;
+  /** Asking again with the same refund identifier must reach the same refund, never a second. */
+  refund(request: RefundRequest): Promise<RefundAnswer>;
+  /** What the provider knows of a refund, by Trucker's identifier; unknown if it never had it. */
+  refundStatus(refundId: string): Promise<RefundAnswer | { readonly status: 'unknown' }>;
 }
 
 export const PAYMENT_PROVIDER = Symbol('PAYMENT_PROVIDER');

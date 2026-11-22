@@ -1062,7 +1062,13 @@
         "duplicate_payment": "To be returned: paid twice",
         "cancelled_after_payment": "To be returned in full: the booking was cancelled after payment"
       },
-      "refundPending": "refund not yet processed",
+      "refundStatus": {
+        "pending": "refund not yet processed",
+        "in_progress": "refund in progress",
+        "partly_refunded": "partly returned",
+        "refunded": "returned"
+      },
+      "refundedSoFar": "returned so far",
       "payOnline": "Pay online",
       "continuePayment": "Continue the payment",
       "payOnlineNote": "You will go to the payment provider's page. The fee counts as paid only when the provider confirms it to Trucker.",

@@ -13,6 +13,7 @@ import {
 import { z } from 'zod';
 import { ApiError } from '../http/api-error.js';
 import { FeeService } from './fee.service.js';
+import { RefundService } from './refund.service.js';
 import { FinanceService } from './finance.service.js';
 import { ReviewService, type QueueEntry } from './review.service.js';
 import {
@@ -122,6 +123,38 @@ const feeDecisionBody = z.object({
   decision: z.enum(['approve', 'reject']),
   note: z.union([z.string().max(2000), z.null()]).optional(),
 });
+// Refunds and reconciliation (slice 28). The database judges every value.
+const refundRequestBody = z.object({
+  refundId: z.string().max(40),
+  amount: z.string().max(20),
+  method: z.enum(['provider', 'bank_transfer']),
+  note: z.string().max(2000),
+});
+const refundDecisionBody = z.object({
+  version: z.number().int().min(1),
+  decision: z.enum(['approve', 'withdraw']),
+  note: z.union([z.string().max(2000), z.null()]).optional(),
+});
+const refundSubmitBody = z.object({
+  version: z.number().int().min(1),
+  bankReference: z.union([z.string().max(200), z.null()]).optional(),
+});
+const refundOutcomeBody = z.object({
+  version: z.number().int().min(1),
+  outcome: z.enum(['completed', 'failed']),
+  statementReference: z.union([z.string().max(200), z.null()]).optional(),
+  note: z.union([z.string().max(2000), z.null()]).optional(),
+});
+const reconcileBody = z.object({
+  subjectType: z.enum(['payment', 'refund']),
+  subjectId: z.string().max(40),
+  source: z.enum(['bank_statement', 'provider_report']),
+  sourceReference: z.string().max(400),
+  amount: z.string().max(20),
+  currency: z.string().max(3),
+  note: z.union([z.string().max(2000), z.null()]).optional(),
+  supersedes: z.union([z.string().max(40), z.null()]).optional(),
+});
 const financialMoveBody = z.object({
   version: z.number().int().min(1),
   move: z.enum(['approve', 'discard', 'withdraw']),
@@ -160,6 +193,7 @@ export class StaffController {
     @Inject(ReviewService) private readonly review: ReviewService,
     @Inject(FinanceService) private readonly finance: FinanceService,
     @Inject(FeeService) private readonly fees: FeeService,
+    @Inject(RefundService) private readonly refunds: RefundService,
   ) {}
 
   private caller(request: IncomingRequest): Promise<StaffCaller> {
@@ -424,6 +458,81 @@ export class StaffController {
     const caller = await this.caller(request);
     const { version, decision, note } = parse(feeDecisionBody, body);
     return this.fees.decide(caller, identifier(id), version, decision, note ?? null);
+  }
+
+  // Refunds: requested by one administrator, approved by another, submitted, then completed or
+  // failed. Reconciliation by someone who had no hand in it.
+  @Get('refunds')
+  async refundsOverview(@Req() request: IncomingRequest) {
+    const caller = await this.caller(request);
+    return { refunds: await this.refunds.overview(caller) };
+  }
+
+  @Post('refunds')
+  async refundRequest(
+    @Body() body: unknown,
+    @Headers('idempotency-key') key: string | undefined,
+    @Req() request: IncomingRequest,
+  ) {
+    const caller = await this.caller(request);
+    if (typeof key !== 'string' || !RETRY_KEY.test(key))
+      throw new ApiError(400, 'retry_key_required', 'An Idempotency-Key header is required.');
+    return this.refunds.request(caller, key, parse(refundRequestBody, body));
+  }
+
+  @Post('refunds/:id/decision')
+  @HttpCode(200)
+  async refundDecide(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Req() request: IncomingRequest,
+  ) {
+    const caller = await this.caller(request);
+    const { version, decision, note } = parse(refundDecisionBody, body);
+    return this.refunds.decide(caller, identifier(id), version, decision, note ?? null);
+  }
+
+  @Post('refunds/:id/submit')
+  @HttpCode(200)
+  async refundSubmit(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Req() request: IncomingRequest,
+  ) {
+    const caller = await this.caller(request);
+    const { version, bankReference } = parse(refundSubmitBody, body);
+    return this.refunds.submit(caller, identifier(id), version, bankReference ?? null);
+  }
+
+  @Post('refunds/:id/outcome')
+  @HttpCode(200)
+  async refundOutcome(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Req() request: IncomingRequest,
+  ) {
+    const caller = await this.caller(request);
+    const { version, outcome, statementReference, note } = parse(refundOutcomeBody, body);
+    return this.refunds.outcome(
+      caller,
+      identifier(id),
+      version,
+      outcome,
+      statementReference ?? null,
+      note ?? null,
+    );
+  }
+
+  @Post('reconciliations')
+  async reconcile(
+    @Body() body: unknown,
+    @Headers('idempotency-key') key: string | undefined,
+    @Req() request: IncomingRequest,
+  ) {
+    const caller = await this.caller(request);
+    if (typeof key !== 'string' || !RETRY_KEY.test(key))
+      throw new ApiError(400, 'retry_key_required', 'An Idempotency-Key header is required.');
+    return this.refunds.reconcile(caller, key, parse(reconcileBody, body));
   }
 
   @Post('verification/organisations/:organisationId/revoke')

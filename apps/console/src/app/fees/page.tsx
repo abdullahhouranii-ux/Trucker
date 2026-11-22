@@ -447,8 +447,8 @@ export default async function FeesPage({ searchParams }: Props) {
                 <h2 id="online-review-title">Online payments to look into</h2>
                 <p>
                   Signed notices that settled nothing: an amount or currency that differs from the
-                  checkout, or a checkout Trucker does not know. Reconciliation comes in a later
-                  release.
+                  checkout, or a checkout Trucker does not know. They are not part of reconciliation
+                  yet.
                 </p>
                 {reply.data.fees.onlineReview.length === 0 ? (
                   <p id="online-review-empty">Nothing to look into.</p>
@@ -525,7 +525,10 @@ export default async function FeesPage({ searchParams }: Props) {
 
               <section className="section" aria-labelledby="refunds-title">
                 <h2 id="refunds-title">Money to return</h2>
-                <p>Refunds are recorded here. Processing them comes in a later release.</p>
+                <p>
+                  Money owed back and not yet fully returned. It is returned and reconciled on the
+                  Refunds page.
+                </p>
                 {reply.data.fees.refunds.length === 0 ? (
                   <p id="refunds-empty">Nothing to return.</p>
                 ) : (

@@ -27,6 +27,7 @@ export function ConsoleHeader({ staff, current }: { staff?: StaffAccount; curren
             {admin ? link('/staff', 'Staff accounts') : null}
             {admin ? link('/finance', 'Financial settings') : null}
             {admin ? link('/fees', 'Fee payments') : null}
+            {admin ? link('/refunds', 'Refunds') : null}
             {admin ? link('/audit', 'Audit') : null}
           </ul>
         </nav>
