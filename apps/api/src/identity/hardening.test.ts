@@ -275,6 +275,7 @@ const CALLABLE = [
   'public_shipments(p_after uuid, p_allow_fixtures boolean)',
   'publish_shipment(p_shipment uuid, p_expected_version integer, p_key text, p_details jsonb, p_allow_fixtures boolean)',
   'quotation_context(p_shipment uuid, p_allow_fixtures boolean)',
+  'read_fee_invoice_draft(p_booking uuid, p_staff_token text, p_request_id text)',
   'reconfirm_quotation(p_quotation uuid, p_expected_version integer, p_key text, p_allow_fixtures boolean)',
   'record_booking_wait(p_booking uuid)',
   'record_photo_retention_sweep()',

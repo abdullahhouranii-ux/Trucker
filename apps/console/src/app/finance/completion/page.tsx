@@ -1,4 +1,8 @@
 import {
+  FeeInvoiceDraftPanel,
+  type FeeInvoiceDraftResponse,
+} from '../../../../../web/src/components/fee-invoice-draft.tsx';
+import {
   BookingCompletionPanel,
   type FinancialCompletion,
 } from '../../../../../web/src/components/booking-completion.tsx';
@@ -18,8 +22,17 @@ export default async function FinancialCompletionPage({
   const id = typeof booking === 'string' && /^[0-9a-f-]{36}$/i.test(booking) ? booking : '';
   const path = `/staff/operations/bookings/${id}/financial-completion`;
   const permitted = found.state === 'signed-in' && found.staff.privileges.includes('staff_admin');
-  const financial =
-    permitted && id ? await api<FinancialCompletion>('GET', path, { token: found.token }) : null;
+  const [financial, invoice] =
+    permitted && id
+      ? await Promise.all([
+          api<FinancialCompletion>('GET', path, { token: found.token }),
+          api<FeeInvoiceDraftResponse>(
+            'GET',
+            `/staff/operations/bookings/${id}/fee-invoice-draft`,
+            { token: found.token },
+          ),
+        ])
+      : [null, null];
   async function submit(key: string, body: Record<string, unknown>) {
     'use server';
     return sendCompletion(path, await staffToken(), key, body);
@@ -52,6 +65,7 @@ export default async function FinancialCompletionPage({
                 </a>
               </p>
             ) : null}
+            {invoice?.ok ? <FeeInvoiceDraftPanel draft={invoice.data.draft} locale="en" /> : null}
             {financial?.ok ? (
               <BookingCompletionPanel
                 financial={financial.data}

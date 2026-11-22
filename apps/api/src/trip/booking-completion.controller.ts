@@ -105,6 +105,27 @@ export class BookingCompletionController {
     @Inject(IdentityService) private readonly identity: IdentityService,
   ) {}
 
+  @Get('organisations/:org/bookings/:booking/fee-invoice-draft')
+  partyInvoiceDraft(
+    @Param('org') org: string,
+    @Param('booking') booking: string,
+    @Req() req: Request,
+  ) {
+    return this.party(
+      req,
+      identifier(org),
+      'SELECT * FROM trucker.read_fee_invoice_draft($1,NULL,$2)',
+      [identifier(booking), req.requestId ?? null],
+    );
+  }
+
+  @Get('staff/operations/bookings/:booking/fee-invoice-draft')
+  staffInvoiceDraft(@Param('booking') booking: string, @Req() req: Request) {
+    return this.staff(req, 'SELECT * FROM trucker.read_fee_invoice_draft($3,$1,$2)', [
+      identifier(booking),
+    ]);
+  }
+
   @Get('organisations/:org/financial-completion')
   partyFinancialList(@Param('org') org: string, @Req() req: Request) {
     return this.party(req, identifier(org), 'SELECT * FROM trucker.booking_financial_list()', []);

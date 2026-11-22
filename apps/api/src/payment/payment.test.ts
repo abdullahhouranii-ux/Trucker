@@ -1200,6 +1200,13 @@ test('PAY-2, R-12, G-8, G-10: a return from the checkout is not proof; the signe
   assert.equal(await notificationsOf(), before);
   assert.equal((await feeRow(booking.id)).status, 'due');
 
+  // Before payment there is no invoice draft (slice 19 follow-up, 22 November 2026).
+  const invoicePath = (party: Party) =>
+    `/organisations/${party.org}/bookings/${booking.id}/fee-invoice-draft`;
+  const pendingDraft = await call('GET', invoicePath(shipper), { token: shipper.person.token });
+  assert.equal(pendingDraft.status, 200, pendingDraft.text);
+  assert.deepEqual(pendingDraft.body, { draft: null });
+
   // The signed notice: paid, confirmed and a receipt, in one transaction.
   const applied = await notify(body, notice.headers);
   assert.equal(applied.status, 200, applied.text);
@@ -1214,6 +1221,36 @@ test('PAY-2, R-12, G-8, G-10: a return from the checkout is not proof; the signe
   assert.equal(receipts.length, 1);
   assert.match(receipts[0]!.number, /^TR-[0-9]{8}$/);
   assert.deepEqual([receipts[0]!.method, receipts[0]!.amount], ['online', checkout.amount]);
+  // The internal invoice draft is prepared with the payment; it carries no tax and is only for
+  // the payer's administrators and staff administrators.
+  const prepared = await call('GET', invoicePath(shipper), { token: shipper.person.token });
+  assert.equal(prepared.status, 200, prepared.text);
+  const draft = prepared.body.draft as Record<string, unknown>;
+  assert.deepEqual(
+    [draft.status, draft.currency, draft.recordedFee],
+    ['pending_issuer_and_tax', checkout.currency, checkout.amount],
+  );
+  assert.deepEqual(Object.keys(draft).sort(), [
+    'bookingId',
+    'currency',
+    'id',
+    'paidAt',
+    'preparedAt',
+    'recordedFee',
+    'status',
+  ]);
+  assert.equal(
+    (await call('GET', invoicePath(carrier), { token: carrier.person.token })).status,
+    404,
+  );
+  const staffRead = await call(
+    'GET',
+    `/staff/operations/bookings/${booking.id}/fee-invoice-draft`,
+    { token: (await newStaff(['staff_admin'])).token },
+  );
+  assert.equal(staffRead.status, 200, staffRead.text);
+  assert.equal((staffRead.body.draft as { id: string }).id, draft.id);
+  assert.equal(await count('fee_invoice_draft', 'booking_id = $1', [booking.id]), 1);
   const forShipper = (await viewOf(shipper, booking.id)).feePayment;
   assert.deepEqual(
     [forShipper.status, forShipper.receipts!.map((item) => item.number), forShipper.checkout],
@@ -1382,6 +1419,11 @@ test('PAY-5: a transfer verified by two administrators gets a receipt too; numbe
     [1, 1, 'bank_transfer', 'bank_transfer'],
   );
   assert.notEqual(a[0]!.number, b[0]!.number);
+  // A fee verified by transfer gets its invoice draft too.
+  assert.equal(
+    await count('fee_invoice_draft', 'booking_id IN ($1,$2)', [one.booking.id, two.booking.id]),
+    2,
+  );
   assert.equal(
     (await viewOf(one.shipper, one.booking.id)).feePayment.receipts![0]!.number,
     a[0]!.number,
@@ -1522,6 +1564,8 @@ test('PAY-8: money a provider takes on a checkout Trucker had already replaced i
   );
   assert.equal(await count('fee_payment', 'booking_id = $1', [made.booking.id]), 2);
   assert.equal((await receiptsOf(made.booking.id)).length, 1);
+  // Two payments for one fee: one invoice draft.
+  assert.equal(await count('fee_invoice_draft', 'booking_id = $1', [made.booking.id]), 1);
 });
 
 test("PAY-9, R-15: with the provider unreachable, nothing settles on the payer's word; an unanswered payment holds the booking past the grace period for at most the longest wait, then it lapses, and other bookings still lapse; the notification that arrives later is returned; a captured notice replayed after the signature window is refused", async () => {
