@@ -57,6 +57,8 @@ const REVOCATIONS = [
   ['POST', /^\/organisations\/[^/]+\/fleet\/drivers$/],
   // Accepting a quotation.
   ['POST', /^\/organisations\/[^/]+\/quotations\/[^/]+\/accept$/],
+  // Assigning resources to a booking.
+  ['POST', /^\/organisations\/[^/]+\/bookings\/[^/]+\/assignment$/],
 ];
 function startRelay() {
   const server = http.createServer((request, response) => {
@@ -653,10 +655,11 @@ async function main() {
     mkdirSync(outDir, { recursive: true });
     // At most five pictures, for design review only.
     const shots = {
-      'en:acceptance': 'acceptance-en-390',
-      'ar:acceptance': 'acceptance-ar-390',
-      'ur:booking': 'booking-ur-390',
-      'en:bookings': 'bookings-en-390',
+      'en:assign': 'assign-en-390',
+      'ar:assigned': 'assigned-ar-390',
+      'ur:booking for shipper': 'booking-shipper-ur-390',
+      'en:substitution': 'substitution-en-390',
+      'en:driver assignment': 'driver-assignment-en-390',
     };
     // Fictional numbers: country code 999 is not assigned. Unique per run.
     const stamp = String(Date.now()).slice(-7);
@@ -3284,6 +3287,369 @@ async function main() {
       page.url() === `${origin}/en/organisations/${carrierOrg}/bookings`,
       `the accepted quotation's link led to ${page.url()}`,
     );
+
+    // ------------------------------------------------------------------------------------
+    // Assignment and confirmation, a lost answer, what each side is shown, the driver's
+    // acknowledgement, a proposed substitution, and the shipper's decision to wait
+    // ------------------------------------------------------------------------------------
+    const enAsg = messagesFor('en').asg;
+    const bookingId = (await bookings())[0].id;
+    const bookingPath = (locale, org, id = bookingId) =>
+      `/${locale}/organisations/${org}/bookings/${id}`;
+    const asgRows = async (table, where = 'booking_id = $1', id = bookingId) =>
+      (await owner.query(`SELECT * FROM trucker.${table} WHERE ${where}`, [id])).rows;
+    const activeReservations = async (id = bookingId) =>
+      asgRows('resource_reservation', `booking_id = $1 AND status = 'active'`, id);
+    // More of the fleet, through the API (its screens are checked above): a curtain-side truck,
+    // a tractor unit and a semi-trailer, each verified with accepted documents; and the driver
+    // back with the carrier, licensed for all of them.
+    const plateOf = (prefix) => `${prefix}${stamp}`.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const addVehicle = async (name, body) => {
+      const made = await post(
+        `/organisations/${carrierOrg}/fleet/vehicles`,
+        { registrationCountry: 'XA', registrationNumber: plateOf(name), ...body },
+        `vehicle-${name}`,
+      );
+      const vehicle = made.body.vehicle;
+      if (!vehicle) return { status: made.status };
+      const owned = await staffFleet(`/vehicles/${vehicle.id}/ownership`, {
+        version: vehicle.version,
+        decision: 'verified',
+        reason: 'ownership_evidence_accepted',
+        noConflict: true,
+      });
+      const types =
+        body.kind === 'trailer'
+          ? ['fictional_registration_card']
+          : ['fictional_registration_card', 'fictional_insurance_certificate'];
+      for (const type of types)
+        await post(
+          `/organisations/${carrierOrg}/fleet/vehicles/${vehicle.id}/documents`,
+          {
+            type,
+            documentNumber: `DOC-${name}-${type.slice(-4)}`,
+            issuingCountry: 'XA',
+            expiryDate: expiry,
+          },
+          `document-${name}-${type}`,
+        );
+      return { id: vehicle.id, plate: vehicle.registrationNumber, status: owned.status };
+    };
+    const curtain = await addVehicle('cs', {
+      kind: 'truck',
+      category: 'fictional_rigid_truck',
+      equipmentType: 'curtain_side',
+    });
+    const unit = await addVehicle('tu', {
+      kind: 'truck',
+      category: 'fictional_tractor_unit',
+      equipmentType: 'box',
+    });
+    const semi = await addVehicle('st', {
+      kind: 'trailer',
+      category: 'fictional_semi_trailer',
+      equipmentType: 'curtain_side',
+    });
+    const reinvited = await post(
+      `/organisations/${carrierOrg}/fleet/drivers`,
+      { phone: ownPhone },
+      'reinvite',
+    );
+    const driverSide = await (
+      await fetch(`${apiOrigin}/me/driver`, { headers: { authorization: `Bearer ${urToken}` } })
+    ).json();
+    const rejoin = driverSide.driver.invitations[0];
+    const rejoined = await post(
+      `/me/driver/invitations/${rejoin?.id}/respond`,
+      { version: rejoin?.version, decision: 'accept' },
+      'rejoin',
+    );
+    const relicensed = await post(
+      '/me/driver/documents',
+      {
+        type: 'fictional_driving_licence',
+        documentNumber: `DOC-lic2-${stamp}`,
+        issuingCountry: 'XA',
+        expiryDate: expiry,
+        licenceClasses: ['fictional_class_1', 'fictional_class_2'],
+      },
+      'licence2',
+    );
+    const acceptedForAssignment = await acceptWaitingDocuments();
+    const authorisedAgain = await post(
+      `/organisations/${carrierOrg}/fleet/drivers/${rejoin?.id}/authorisations`,
+      { vehicleId: null, granted: true },
+      'authorise2',
+    );
+    const members = () =>
+      page.evaluate(() =>
+        Object.fromEntries(
+          [...document.querySelectorAll('#resources [data-member]')].map((dd) => [
+            dd.dataset.member,
+            dd.dataset.assigned === 'yes' ? dd.textContent.trim() : null,
+          ]),
+        ),
+      );
+    const ready = () => page.$eval('#dispatch', (item) => item.dataset.ready);
+    const pickupAddress = 'Warehouse 9, Private Street';
+
+    // The carrier opens the booking from its list. Nothing is assigned, nothing is released,
+    // and a truck of the wrong equipment type is listed but cannot be chosen, with the reason.
+    await open(`/en/organisations/${carrierOrg}/bookings`, 390);
+    await submit(`[data-open-booking="${bookingId}"]`);
+    const boxOption = await page.$eval(
+      `#truckId option[value="${vehicles[0].id}"]`,
+      (option) => `${option.disabled}/${option.textContent}`,
+    );
+    check(
+      'assignment',
+      [curtain.status, unit.status, semi.status, reinvited.status, rejoined.status].join() ===
+        '200,200,200,201,200' &&
+        relicensed.status === 201 &&
+        authorisedAgain.status === 200 &&
+        acceptedForAssignment.every((status) => status === 200) &&
+        page.url() === `${origin}${bookingPath('en', carrierOrg)}` &&
+        (await page.$eval('[data-state="booking"]', (item) => item.dataset.role)) === 'carrier' &&
+        JSON.stringify(await members()) ===
+          JSON.stringify({ truck: null, trailer: null, driver: null }) &&
+        (await page.$('#site')) === null &&
+        boxOption.startsWith('true/') &&
+        boxOption.includes(enFleet.eligibility.equipment_mismatch) &&
+        (await ready()) === 'no' &&
+        (await page.$('#dispatch [data-blocker="not_confirmed"]')) !== null,
+      `the carrier's booking page: ${page.url()}, fleet ${[curtain.status, unit.status, semi.status, reinvited.status, rejoined.status, relicensed.status, authorisedAgain.status]}, documents ${acceptedForAssignment}, option ${boxOption}`,
+    );
+    for (const locale of locales) {
+      await open(bookingPath(locale, carrierOrg), 390);
+      await inspect(locale, 'assign');
+    }
+    // A truck and the driver are assigned; the server records it and the answer is lost. Not
+    // reported as done; the page then shows the booking confirmed, once, with the details that
+    // are released to the carrier only now.
+    await open(bookingPath('en', carrierOrg), 390);
+    await page.select('#truckId', curtain.id);
+    await page.select('#driverId', rejoin.id);
+    relay.mode = 'lose';
+    await submit('#save-assignment');
+    relay.mode = 'pass';
+    check(
+      'lost answer',
+      relay.lost[0] ===
+        `POST /organisations/${carrierOrg}/bookings/${bookingId}/assignment -> 200` &&
+        page.url().includes('aError=assign_unconfirmed'),
+      `a lost assignment answer led to ${page.url()}: ${relay.lost}`,
+    );
+    relay.lost.length = 0;
+    // The same address once the connection is back: uncertain in words, with what now stands.
+    await open(`${bookingPath('en', carrierOrg)}?aError=assign_unconfirmed`, 390);
+    check(
+      'lost answer',
+      ((await text('#error-summary')) ?? '').includes(enAsg.errors.assign_unconfirmed) &&
+        (await page.$('#assignment-confirmation')) === null &&
+        (await asgRows('booking_confirmation')).length === 1 &&
+        (await activeReservations()).length === 2 &&
+        (await page.$eval('[data-booking]', (card) => card.dataset.status)) === 'confirmed' &&
+        ((await text('[data-site="pickup"]')) ?? '').includes(pickupAddress) &&
+        ((await members()).truck ?? '').includes(curtain.plate) &&
+        (await ready()) === 'no' &&
+        (await page.$('#dispatch [data-blocker="acknowledgement_missing"]')) !== null,
+      `after a lost assignment there are ${(await activeReservations()).length} reservations and ${(await asgRows('booking_confirmation')).length} confirmations`,
+    );
+    // Saving the same set again changes nothing.
+    await submit('#save-assignment');
+    check(
+      'assignment',
+      page.url().includes('aDone=unchanged') &&
+        (await asgRows('resource_reservation')).length === 2 &&
+        (await asgRows('occupancy_episode')).length === 0,
+      `saving the same set again led to ${page.url()}`,
+    );
+    for (const locale of locales) {
+      await open(bookingPath(locale, carrierOrg), 390);
+      await inspect(locale, 'assigned');
+    }
+    // The shipper now sees the registration and the driver's name: no address of its own is
+    // repeated as released, no form, no phone and no document number.
+    await open(bookingPath('en', verifyOrg), 390);
+    const shipperSees = (await page.evaluate(() => document.body.textContent)) ?? '';
+    check(
+      'assignment',
+      (await page.$eval('[data-state="booking"]', (item) => item.dataset.role)) === 'shipper' &&
+        ((await members()).truck ?? '').includes(curtain.plate) &&
+        (await members()).driver !== null &&
+        (await page.$('#site')) === null &&
+        (await page.$('#assign')) === null &&
+        !shipperSees.includes(ownPhone) &&
+        !shipperSees.includes('DOC-'),
+      `the shipper's booking page shows ${JSON.stringify(await members())}`,
+    );
+    for (const locale of locales) {
+      await open(bookingPath(locale, verifyOrg), 390);
+      await inspect(locale, 'booking for shipper');
+    }
+    // The driver sees the assignment on their own page, with no price and no address, and
+    // acknowledges it. Dispatch is then not blocked.
+    await open('/en/driver', 390);
+    const driverSees = (await text(`[data-assignment="${bookingId}"]`)) ?? '';
+    check(
+      'assignment',
+      driverSees.includes('North industrial area') &&
+        driverSees.includes(curtain.plate) &&
+        !driverSees.includes('1250.50') &&
+        !driverSees.includes(pickupAddress) &&
+        (await page.$(`[data-acknowledge="${bookingId}"]`)) !== null,
+      `the driver's page shows: ${driverSees.slice(0, 200)}`,
+    );
+    for (const locale of locales) {
+      await open(`/${locale}/driver`, 390);
+      await inspect(locale, 'driver assignment');
+    }
+    await open('/en/driver', 390);
+    await submit(`[data-acknowledge="${bookingId}"]`);
+    const acknowledgedOnPage = await page.$(`[data-assignment="${bookingId}"] [data-acknowledged]`);
+    await open(bookingPath('en', carrierOrg), 390);
+    check(
+      'assignment',
+      acknowledgedOnPage !== null &&
+        (await asgRows('assignment_acknowledgement')).length === 1 &&
+        (await ready()) === 'yes' &&
+        (await page.$eval('#acknowledgement', (item) => item.dataset.given)) === 'yes',
+      `after the acknowledgement dispatch readiness is ${await ready()}`,
+    );
+    // A tractor unit with a trailer in place of the rigid truck is materially different: it is
+    // proposed, the current truck stays, and the shipper decides.
+    await page.select('#truckId', unit.id);
+    await page.select('#trailerId', semi.id);
+    await submit('#save-assignment');
+    check(
+      'assignment',
+      page.url().includes('aDone=proposed') &&
+        (await page.$('#withdraw-substitution')) !== null &&
+        (await page.$('#assign-form')) === null &&
+        ((await members()).truck ?? '').includes(curtain.plate) &&
+        (await activeReservations()).filter((row) => row.purpose === 'proposed_substitute')
+          .length === 2 &&
+        (await ready()) === 'yes',
+      `proposing a different set led to ${page.url()}`,
+    );
+    await open(bookingPath('en', verifyOrg), 390);
+    check(
+      'assignment',
+      (await page.$('[data-difference="truck-category"]')) !== null &&
+        (await page.$('[data-difference="trailer-added"]')) !== null &&
+        ((await text('#substitution-proposed')) ?? '').includes(unit.plate) &&
+        (await page.$('#accept-substitution')) !== null &&
+        (await page.$('#withdraw-substitution')) === null,
+      'the shipper is not shown the proposed substitution with its differences',
+    );
+    for (const locale of locales) {
+      await open(bookingPath(locale, verifyOrg), 390);
+      await inspect(locale, 'substitution');
+      // The arrow points from the earlier value to the later one in the page's reading direction.
+      const categoryChange = (await text('[data-difference="truck-category"]')) ?? '';
+      const [forward, backward] = locale === 'en' ? ['→', '←'] : ['←', '→'];
+      check(
+        'assignment',
+        categoryChange.includes(forward) && !categoryChange.includes(backward),
+        `${locale}: the category change reads ${categoryChange}`,
+      );
+    }
+    await open(bookingPath('en', verifyOrg), 390);
+    await submit('#decline-substitution');
+    check(
+      'assignment',
+      page.url().includes('aDone=declined') &&
+        (await page.$('#substitution')) === null &&
+        (await activeReservations()).length === 2 &&
+        ((await members()).truck ?? '').includes(curtain.plate) &&
+        (await ready()) === 'yes',
+      `declining the substitution led to ${page.url()}`,
+    );
+
+    // A second booking, left unassigned. The real clock cannot be moved here, so the migration
+    // role moves this booking's own acceptance and deadline back 13 hours, consistently, with
+    // the snapshot guard set aside for that one statement. The deadline has then passed: both
+    // sides see it, the shipper records a decision to wait, and nothing else changes.
+    const waitShipment = await makeShipment('wait');
+    await post(
+      `/organisations/${verifyOrg}/shipments/${waitShipment}/publish`,
+      {
+        version: 1,
+        cargoCategory: 'general_dry',
+        equipmentType: 'curtain_side',
+        dangerousGoods: false,
+        pickupArea: 'North industrial area',
+        deliveryArea: 'Port district',
+        quotationDeadline: { local: zoned(24, 4) },
+      },
+      'wait-publish',
+    );
+    await post(
+      `/organisations/${verifyOrg}/shipments/${waitShipment}/quotation-terms`,
+      { version: 0, currency: 'XTS' },
+      'wait-terms',
+    );
+    const waitQuote = await post(
+      `/organisations/${carrierOrg}/discovery/shipments/${waitShipment}/quotations`,
+      {
+        amount: '900',
+        inclusions: { fictional_item_1: true, fictional_item_2: false, fictional_item_3: true },
+        validUntil: { local: zoned(6, 4) },
+        earliestPickup: { local: zoned(49, 4) },
+      },
+      'wait-quote',
+    );
+    const waitAccepted = await post(
+      `/organisations/${verifyOrg}/quotations/${waitQuote.body.quotation?.id}/accept`,
+      { version: 1 },
+      'wait-accept',
+    );
+    const waitBooking = waitAccepted.body.booking?.id;
+    await owner.query('BEGIN');
+    try {
+      await owner.query('ALTER TABLE trucker.booking DISABLE TRIGGER booking_guard');
+      await owner.query(
+        `UPDATE trucker.booking SET accepted_at = accepted_at - interval '13 hours',
+                assignment_due_at = assignment_due_at - interval '13 hours' WHERE id = $1`,
+        [waitBooking],
+      );
+      await owner.query('ALTER TABLE trucker.booking ENABLE TRIGGER booking_guard');
+      await owner.query('COMMIT');
+    } catch (error) {
+      await owner.query('ROLLBACK');
+      throw error;
+    }
+    await open(bookingPath('en', verifyOrg, waitBooking), 390);
+    check(
+      'assignment',
+      waitAccepted.status === 200 &&
+        (await page.$('[data-flag="overdue"]')) !== null &&
+        (await page.$('#wait-for-carrier')) !== null &&
+        (await page.$('#resources-hidden')) !== null,
+      `the overdue booking page (${waitAccepted.status}) does not offer the decision to wait`,
+    );
+    await inspect('en', 'overdue');
+    await submit('#wait-for-carrier');
+    check(
+      'assignment',
+      page.url().includes('aDone=recorded') &&
+        (await page.$('#wait-recorded')) !== null &&
+        (await page.$('#wait-for-carrier')) === null &&
+        (await asgRows('booking_wait_decision', 'booking_id = $1', waitBooking)).length === 1 &&
+        (await asgRows('resource_reservation', 'booking_id = $1', waitBooking)).length === 0 &&
+        (await asgRows('booking_confirmation', 'booking_id = $1', waitBooking)).length === 0,
+      `recording the wait led to ${page.url()}`,
+    );
+    await open(bookingPath('en', carrierOrg, waitBooking), 390);
+    check(
+      'assignment',
+      (await page.$('[data-flag="overdue"]')) !== null &&
+        (await page.$('#wait-recorded')) !== null &&
+        (await page.$('#wait-for-carrier')) === null &&
+        (await page.$('#assign-form')) !== null,
+      'the carrier is not shown the overdue booking with the wait decision',
+    );
+    await inspect('en', 'overdue for carrier');
 
     // Suspended when the verification is withdrawn by staff (test accounts, migration role).
     const adminToken = `${randomBytes(16).toString('hex')}.${randomBytes(16).toString('hex')}`;

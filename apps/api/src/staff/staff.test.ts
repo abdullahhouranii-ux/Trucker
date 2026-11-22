@@ -410,6 +410,77 @@ test('enrolment needs a real password and a working authenticator; wrong codes e
   assert.equal(late.status, 410);
 });
 
+test('a value that is not a code is refused as a wrong code and counted, also as the first thing a database session does', async () => {
+  // The first call of a session, and a call after its cached plans are reset, once failed with
+  // an unexpected error instead of a refusal (migration 0015).
+  const made = await call('POST', '/staff/accounts', {
+    token: await adminToken(),
+    key: key(),
+    body: { email: newEmail(), displayName: 'Malformed', participantLink: 'declared_none' },
+  });
+  const link = made.body.enrolmentToken as string;
+  const begun = await call('POST', '/staff/enrolment/begin', {
+    body: { token: link, password: PASSWORD },
+  });
+  assert.equal(begun.status, 200, JSON.stringify(begun.body));
+  const failures = async (): Promise<number> =>
+    (
+      await owner.query<{ n: number }>(
+        'SELECT failed_count AS n FROM trucker.staff_enrolment WHERE token_hash = $1',
+        [sha(link)],
+      )
+    ).rows[0]!.n;
+  const complete = 'SELECT status FROM trucker.staff_enrol_complete($1, $2, $3, NULL)';
+  // Four refusals in all, one short of the limit that ends the link.
+  for (const [round, value] of ['abcd-efgh-ijkl-mnop'].entries()) {
+    const session = new pg.Client({ connectionString: database.url });
+    await session.connect();
+    try {
+      const first = await session.query<{ status: string }>(complete, [
+        sha(link),
+        value,
+        '0'.repeat(64),
+      ]);
+      assert.equal(first.rows[0]!.status, 'wrong_code', value);
+      // The same session after its plans are thrown away.
+      await session.query('DISCARD PLANS');
+      const second = await session.query<{ status: string }>(complete, [
+        sha(link),
+        null,
+        '0'.repeat(64),
+      ]);
+      assert.equal(second.rows[0]!.status, 'wrong_code');
+    } finally {
+      await session.end();
+    }
+    assert.equal(await failures(), (round + 1) * 2);
+  }
+  {
+    const session = new pg.Client({ connectionString: database.url });
+    await session.connect();
+    try {
+      const empty = await session.query<{ status: string }>(complete, [
+        sha(link),
+        '',
+        '0'.repeat(64),
+      ]);
+      assert.equal(empty.rows[0]!.status, 'wrong_code');
+    } finally {
+      await session.end();
+    }
+  }
+  assert.equal(await failures(), 3);
+  // Through the API as well, and the right code still completes the enrolment afterwards.
+  const wrong = await call('POST', '/staff/enrolment/complete', {
+    body: { token: link, code: 'abcd-efgh-ijkl-mnop' },
+  });
+  assert.equal(wrong.body.code, 'staff_code_refused');
+  const done = await call('POST', '/staff/enrolment/complete', {
+    body: { token: link, code: codeFor(begun.body.secret as string) },
+  });
+  assert.equal(done.status, 200, JSON.stringify(done.body));
+});
+
 test('an enrolment link expires at the protected period, judged by the database clock', async () => {
   const token = await adminToken();
   const created = await call('POST', '/staff/accounts', {

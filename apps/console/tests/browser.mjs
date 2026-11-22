@@ -1233,6 +1233,19 @@ async function main() {
         (await two.text('#claims-empty')) !== null,
       `verifying the claim led to ${two.page.url()}`,
     );
+    // Bookings needing attention: read-only, and with no booking in this database the list is
+    // empty and the consistency check is clean. The page offers no form.
+    await two.open('/bookings');
+    check(
+      'bookings',
+      (await two.page.$('[data-state="bookings"]')) !== null &&
+        (await two.text('#no-attention')) !== null &&
+        (await two.text('#consistency-clean')) !== null &&
+        (await two.text('#attention-unavailable')) === null &&
+        (await two.page.$$('main form')).length === 0,
+      `the bookings page for a reviewer shows ${await two.text('main')}`,
+    );
+    await two.inspect('bookings');
     // An administrator sees the page and the suspension form.
     await one.open('/fleet');
     check(

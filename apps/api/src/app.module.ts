@@ -26,6 +26,12 @@ import {
 } from './fleet/fleet.controller.js';
 import { BookingController, BookingStaffController } from './booking/booking.controller.js';
 import { BookingService } from './booking/booking.service.js';
+import {
+  AssignmentController,
+  AssignmentStaffController,
+  DriverAssignmentController,
+} from './assignment/assignment.controller.js';
+import { AssignmentService } from './assignment/assignment.service.js';
 import { FleetService } from './fleet/fleet.service.js';
 import { QuotationController } from './quotation/quotation.controller.js';
 import { QuotationService } from './quotation/quotation.service.js';
@@ -61,6 +67,9 @@ export class AppModule {
         IdentityController,
         OrganisationController,
         QuotationController,
+        AssignmentController,
+        AssignmentStaffController,
+        DriverAssignmentController,
         BookingController,
         BookingStaffController,
         FleetController,
@@ -82,6 +91,7 @@ export class AppModule {
         ShipmentService,
         DiscoveryService,
         QuotationService,
+        AssignmentService,
         BookingService,
         FleetService,
         StaffService,

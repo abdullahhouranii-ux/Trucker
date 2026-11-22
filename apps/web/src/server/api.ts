@@ -507,9 +507,66 @@ export interface BookingTerms {
   demonstration: boolean;
   contentHash: string;
 }
+export type LocalisedName = { code: string; en: string; ar: string; ur: string };
+export interface AssignedVehicle {
+  registrationCountry: string;
+  registrationNumber: string;
+  /** Only for the carrier and staff. */
+  id?: string;
+  category?: LocalisedName;
+  equipmentType?: string;
+}
+export interface AssignedSet {
+  truck: AssignedVehicle | null;
+  trailer: AssignedVehicle | null;
+  driver: { name: string; affiliationId?: string } | null;
+}
+export type DispatchBlockerCode =
+  | 'not_confirmed'
+  | 'needs_reassignment'
+  | 'resource_occupied'
+  | 'resource_overrunning'
+  | 'acknowledgement_missing';
+export interface DispatchBlocker {
+  code: DispatchBlockerCode;
+  /** The shipper is not shown which resource, or why. */
+  role?: 'truck' | 'trailer' | 'driver';
+  reason?: string;
+}
+export interface BookingSubstitution {
+  id: string;
+  status: string;
+  version: number;
+  proposedAt: string;
+  differences: {
+    role: 'truck' | 'trailer';
+    change: 'category' | 'added' | 'removed';
+    from?: LocalisedName;
+    to?: LocalisedName;
+  }[];
+  proposed: AssignedSet;
+}
+export interface BookingSite {
+  pickup: { address: string | null; accessNotes: string | null };
+  delivery: { address: string | null; accessNotes: string | null };
+}
 export interface Booking {
   id: string;
-  status: 'awaiting_resources';
+  /** Confirmed is a fact about the past. Whether dispatch is possible now is `dispatch`. */
+  status: 'awaiting_resources' | 'confirmed';
+  confirmedAt: string | null;
+  overdue: boolean;
+  waitDecision: { decidedAt: string } | null;
+  assignmentVersion: number;
+  dispatch: { ready: boolean; blockers: DispatchBlocker[] };
+  needsReassignment: boolean;
+  atRisk: boolean;
+  acknowledgedAt: string | null;
+  /** The carrier always; the shipper once the booking is confirmed. */
+  resources: AssignedSet | null;
+  substitution: BookingSubstitution | null;
+  /** The carrier only, once the booking is confirmed. */
+  site: BookingSite | null;
   shipmentId: string;
   quotationId: string;
   quotationVersion: number;
@@ -554,4 +611,44 @@ export interface BookingOverview {
   open: boolean;
   booking: Booking | null;
   acceptance: AcceptancePreview[];
+}
+
+// Assignment, reservation and confirmation (slice 15) ------------------------------------------
+export interface AssignmentCandidates {
+  vehicles: {
+    id: string;
+    kind: 'truck' | 'trailer';
+    registrationCountry: string;
+    registrationNumber: string;
+    category: LocalisedName;
+    equipmentType: string;
+    requiresTrailer: boolean;
+    /** "eligible", or the first reason it cannot be assigned to this booking now. */
+    state: string;
+  }[];
+  drivers: { affiliationId: string; name: string; state: string }[];
+}
+export interface BookingDetail {
+  open: boolean;
+  booking: Booking;
+  /** The carrier's own resources, while it is a verified carrier. */
+  candidates: AssignmentCandidates | null;
+}
+interface AssignmentPlace {
+  countryCode: string;
+  area: string | null;
+  from: { at: string };
+  until: { at: string };
+}
+export interface DriverAssignment {
+  bookingId: string;
+  version: number;
+  carrier: { legalName: string; tradingName: string | null };
+  pickup: AssignmentPlace;
+  delivery: AssignmentPlace;
+  cargo: { description: string | null; grossWeightKg: string | null; pieces: number | null };
+  plannedReservation: { startAt: string; endAt: string };
+  truck: AssignedVehicle | null;
+  trailer: AssignedVehicle | null;
+  acknowledgedAt: string | null;
 }

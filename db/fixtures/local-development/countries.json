@@ -268,7 +268,8 @@
         "en": "Fictional rigid truck (demonstration)",
         "ar": "شاحنة صلبة وهمية (تجريبي)",
         "ur": "فرضی رِجڈ ٹرک (نمائشی)"
-      }
+      },
+      "requiresTrailer": false
     },
     {
       "code": "fictional_tractor_unit",
@@ -277,7 +278,8 @@
         "en": "Fictional tractor unit (demonstration)",
         "ar": "رأس قاطرة وهمي (تجريبي)",
         "ur": "فرضی ٹریکٹر یونٹ (نمائشی)"
-      }
+      },
+      "requiresTrailer": true
     },
     {
       "code": "fictional_semi_trailer",
@@ -286,7 +288,8 @@
         "en": "Fictional semi-trailer (demonstration)",
         "ar": "نصف مقطورة وهمية (تجريبي)",
         "ur": "فرضی سیمی ٹریلر (نمائشی)"
-      }
+      },
+      "requiresTrailer": false
     }
   ],
   "licenceClasses": [

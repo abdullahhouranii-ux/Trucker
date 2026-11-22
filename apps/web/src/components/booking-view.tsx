@@ -6,6 +6,7 @@ import type { AcceptancePreview, Booking, BookingTerms } from '../server/api.ts'
 // arrive as exact decimal text and are shown as they are; nothing here calculates money.
 
 type B = Messages['book'];
+type A = Messages['asg'];
 
 /** An instant, written in UTC. */
 export function InstantText({ at }: { at: string }) {
@@ -88,14 +89,47 @@ function TermsLine({ t, terms }: { t: B; terms: BookingTerms }) {
   );
 }
 
-export function BookingCard({ t, locale, booking }: { t: B; locale: Locale; booking: Booking }) {
+/** What needs someone's attention on a booking, said plainly. Nothing here is automatic. */
+export function BookingFlags({ a, booking }: { a: A; booking: Booking }) {
+  const flags: [string, string][] = [];
+  if (booking.overdue) flags.push(['overdue', a.overdue]);
+  if (booking.needsReassignment) flags.push(['needs-reassignment', a.blockers.needs_reassignment]);
+  if (booking.atRisk) flags.push(['at-risk', a.blockers.resource_overrunning]);
+  if (flags.length === 0) return null;
+  return (
+    <ul className="evidence" data-flags={flags.map(([name]) => name).join(' ')}>
+      {flags.map(([name, message]) => (
+        <li key={name} data-flag={name}>
+          {message}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+export function BookingCard({
+  t,
+  a,
+  locale,
+  booking,
+  href,
+}: {
+  t: B;
+  a: A;
+  locale: Locale;
+  booking: Booking;
+  /** Where the booking can be opened, when the card is in a list. */
+  href?: string;
+}) {
   const name = (party: Booking['shipper']): string => party.tradingName ?? party.legalName;
+  const confirmed = booking.status === 'confirmed';
   return (
     <div className="card" data-booking={booking.id} data-status={booking.status}>
       <p className="chip">{t.status[booking.status]}</p>
       <p className="notice" role="note">
-        {t.statusNote}
+        {confirmed ? a.confirmedNote : t.statusNote}
       </p>
+      <BookingFlags a={a} booking={booking} />
       {booking.role ? <p className="field-hint">{t.asRole[booking.role]}</p> : null}
       <dl className="facts">
         <div>
@@ -140,8 +174,12 @@ export function BookingCard({ t, locale, booking }: { t: B; locale: Locale; book
           <dd>
             <InstantText at={booking.plannedReservation.startAt} /> –{' '}
             <InstantText at={booking.plannedReservation.endAt} />
-            <br />
-            {t.plannedNote}
+            {confirmed || booking.assignmentVersion === 0 ? (
+              <>
+                <br />
+                {confirmed ? a.plannedReserved : t.plannedNote}
+              </>
+            ) : null}
           </dd>
         </div>
         <div>
@@ -153,6 +191,13 @@ export function BookingCard({ t, locale, booking }: { t: B; locale: Locale; book
         </div>
       </dl>
       <p className="field-hint">{t.provisional}</p>
+      {href ? (
+        <p>
+          <a className="button" href={href} data-open-booking={booking.id}>
+            {a.open}
+          </a>
+        </p>
+      ) : null}
     </div>
   );
 }

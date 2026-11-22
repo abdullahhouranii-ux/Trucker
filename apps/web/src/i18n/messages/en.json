@@ -947,7 +947,8 @@
     "back": "Back to the organisation",
     "bookingTitle": "Booking",
     "status": {
-      "awaiting_resources": "Awaiting the carrier's resources"
+      "awaiting_resources": "Awaiting the carrier's resources",
+      "confirmed": "Confirmed"
     },
     "statusNote": "Not confirmed. A booking is confirmed only when the carrier has assigned and reserved every resource it needs. Nothing is assigned yet.",
     "provisional": "The fee, payment period, assignment deadline and reservation times are development values. They are not approved for real use.",
@@ -988,5 +989,113 @@
       "assignment_deadline_passed": "The pick-up is too soon for the carrier to assign its resources in time, so this cannot be accepted."
     },
     "unavailable": "The booking could not be loaded. Try again."
+  },
+  "asg": {
+    "open": "Open this booking",
+    "backToBookings": "Back to bookings",
+    "title": "Booking",
+    "confirmedNote": "Confirmed: the carrier has assigned and reserved every resource this booking needs. Confirmed does not mean dispatched.",
+    "plannedReserved": "The carrier's resources are reserved for this time.",
+    "stateTitle": "Where this booking stands",
+    "overdue": "The carrier has not assigned its resources by the deadline. Nothing happens automatically.",
+    "waitRecorded": "The shipper decided to wait for the carrier.",
+    "wait": "Wait for the carrier",
+    "waitNote": "This records your decision to wait. It cancels nothing and charges nothing. Cancelling a booking is not available yet.",
+    "dispatchTitle": "Ready for dispatch?",
+    "dispatchReady": "Nothing blocks dispatch now. Dispatch itself is not available yet.",
+    "dispatchBlocked": "Dispatch is blocked now:",
+    "blockers": {
+      "not_confirmed": "The booking is not confirmed.",
+      "needs_reassignment": "A resource no longer meets a requirement. The carrier must reassign it. The booking is not cancelled.",
+      "resource_occupied": "A resource is still on another trip.",
+      "resource_overrunning": "A resource is still on another trip past its planned end. This booking is at risk.",
+      "acknowledgement_missing": "The driver has not acknowledged the assignment."
+    },
+    "roles": {
+      "truck": "Truck",
+      "trailer": "Trailer",
+      "driver": "Driver"
+    },
+    "resourcesTitle": "Resources",
+    "resourcesHidden": "The vehicles and the driver are shown once the booking is confirmed.",
+    "none": "Not assigned",
+    "acknowledged": "The driver acknowledged this assignment.",
+    "notAcknowledged": "The driver has not acknowledged this assignment.",
+    "assignTitle": "Assign your resources",
+    "assignLead": "Choose the whole set. Each resource is reserved for the planned time. The booking is confirmed when the set is complete.",
+    "assignLeadConfirmed": "This booking is confirmed. A resource can be replaced, not taken away. A vehicle of another category takes effect only when the shipper accepts it. The price does not change.",
+    "noneOption": "None",
+    "trailerHint": "Only for a truck that pulls a trailer.",
+    "save": "Save the assignment",
+    "cannotAssign": "The carrier cannot assign resources now.",
+    "reasons": {
+      "reserved": "reserved for another booking at this time",
+      "occupied": "still on another trip",
+      "required": "required",
+      "not_found": "not in this fleet",
+      "trailer_not_needed": "this truck does not pull a trailer",
+      "truck_needed_first": "choose the truck first"
+    },
+    "siteTitle": "Pick-up and delivery details",
+    "siteNote": "Shown to the carrier from confirmation. No site contact is held.",
+    "pickup": "Pick-up",
+    "delivery": "Delivery",
+    "accessNotes": "Access notes",
+    "noAccessNotes": "No access notes",
+    "substitutionTitle": "Proposed substitution",
+    "substitutionShipper": "The carrier proposes different vehicles. The price does not change. The current vehicles stay unless you accept.",
+    "substitutionCarrier": "Waiting for the shipper's decision. The current set stays until then.",
+    "changes": {
+      "category": "a different category",
+      "added": "added",
+      "removed": "removed"
+    },
+    "acceptSubstitution": "Accept the substitution",
+    "declineSubstitution": "Decline",
+    "withdrawSubstitution": "Withdraw the proposal",
+    "done": {
+      "assigned": "The assignment is saved.",
+      "confirmed": "The booking is confirmed.",
+      "unchanged": "Nothing changed.",
+      "proposed": "The substitution is proposed to the shipper.",
+      "accepted": "The substitution is accepted.",
+      "declined": "The substitution is declined.",
+      "withdrawn": "The proposal is withdrawn.",
+      "already_decided": "This proposal was already decided.",
+      "recorded": "Recorded.",
+      "already_recorded": "This was already recorded."
+    },
+    "errors": {
+      "unavailable": "This could not be loaded. Try again.",
+      "assign_unconfirmed": "It is not confirmed that the assignment was saved. Check what is shown below before trying again.",
+      "decide_unconfirmed": "It is not confirmed that the decision was recorded. Check what is shown below before trying again.",
+      "wait_unconfirmed": "It is not confirmed that the decision was recorded. Check what is shown below before trying again.",
+      "acknowledge_unconfirmed": "It is not confirmed that the acknowledgement was recorded. Check what is shown below before trying again.",
+      "assignment_changed": "The assignment changed since this page was opened. Nothing was changed.",
+      "assignment_incomplete": "This booking is confirmed: a resource can be replaced, not taken away.",
+      "substitution_open": "A proposed substitution is waiting for the shipper. Withdraw it before changing the assignment.",
+      "substitution_checks_failed": "The proposed substitute no longer meets the requirements. The proposal has ended and nothing was changed.",
+      "resource_not_eligible": "A resource does not meet a requirement of this booking. Nothing was changed.",
+      "resource_not_free": "A resource is not free for the planned time. Nothing was changed.",
+      "carrier_not_eligible": "This organisation is not a verified carrier now.",
+      "booking_closed": "This is not available here.",
+      "assignment_not_overdue": "The assignment deadline has not passed.",
+      "booking_confirmed": "This booking is already confirmed.",
+      "not_found": "This was not found.",
+      "invalid": "The request was not valid. Nothing was changed."
+    },
+    "driver": {
+      "title": "Your assignments",
+      "none": "No assignment.",
+      "carrier": "Carrier",
+      "from": "From",
+      "to": "To",
+      "pickupWindow": "Pick-up window",
+      "deliveryWindow": "Delivery window",
+      "cargo": "Cargo",
+      "acknowledge": "Acknowledge this assignment",
+      "acknowledged": "You acknowledged this assignment.",
+      "note": "Addresses are shown at dispatch, which is not available yet."
+    }
   }
 }

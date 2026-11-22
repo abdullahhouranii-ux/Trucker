@@ -126,7 +126,13 @@ export default async function ShipmentQuotationsPage({ params, searchParams }: P
       {booked.ok && booked.data.booking ? (
         <section className="section" aria-labelledby="booking-title" id="booking">
           <h2 id="booking-title">{m.book.bookingTitle}</h2>
-          <BookingCard t={m.book} locale={locale} booking={booked.data.booking} />
+          <BookingCard
+            t={m.book}
+            a={m.asg}
+            locale={locale}
+            booking={booked.data.booking}
+            href={`/${locale}/organisations/${id}/bookings/${booked.data.booking.id}`}
+          />
         </section>
       ) : !booked.ok ? (
         <p className="notice notice-error" role="alert" id="booking-unavailable">
