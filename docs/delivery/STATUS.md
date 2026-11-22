@@ -43,7 +43,8 @@ Each slice has a scope and a record with its evidence in this folder.
 | Public board | Public board of open shipments without sign-in (countries, equipment, deadline only) and the fleet gate at quotation (split from Codex's local work) | PR #42 |
 | Record photos | Private photos on shipments and vehicles for the owning company's administrators (split from Codex's local work) | PR #43 |
 | Redesign | Web and console redesign: design tokens 0.4.0, workspace navigation, operations workspace, responsive record lists, self-hosted fonts (split from Codex's local work) | PR #44 |
-| Mobile app | Native Expo app for participants and drivers, development only (split from Codex's local work) | PR #45 (planned number) |
+| Mobile app | Native Expo app for participants and drivers, development only (split from Codex's local work) | PR #45 |
+| Invoice draft | Internal draft of the platform fee invoice at settled payment; nothing issued or sent, no tax calculated | PR #46 (planned number) |
 
 Pull requests #15 onward are stacked and open; none is merged, and each needs a dependency review and Abdullah's explicit authorisation. CI passed on #15 to #32 when it ran. On later pull requests (at least #36 to #39) GitHub has not started the checks because of a billing block on the account, so they have no CI result: their only results are the local runs recorded in each slice record.
 

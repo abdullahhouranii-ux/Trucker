@@ -129,7 +129,8 @@ No legal or tax rule is stated here. Every value that is not approved is a prote
 | Record photos (PR #43) | **Decided by Abdullah**: at most 5 MB a photo (instead of 10 MB). How long photos are kept is a setting (`record_photo_retention_days`), not a fixed rule. Twelve photos per record and JPEG/PNG remain development defaults |
 | Redesign (PR #44) | **Approved by Abdullah**: the visual direction and the generated home page image |
 | Dispute model (PR #40) | **Deferred by Abdullah** to the last step of the project. The mediation model stays as built until then |
-| Mobile app (PR #45), approvals of 19 and 20 November, invoice policy and VAT | Abdullah asked for recommendations; no decision yet |
+| Invoice (PR #46) | **Decided by Abdullah** (08:22): build the internal invoice draft only. Nothing is issued or sent and no tax is calculated in Trucker; the tax invoice is to come from an accounting system once the accountant confirms the issuer, VAT registration and e-invoicing |
+| Mobile app (PR #45), approvals of 19 and 20 November | Recommendations given; no decision yet. The owner entity of Trucker is needed for the app's licence notice and identifier |
 
 ## 2. Exceptions to the proposed structures
 

@@ -1,3 +1,7 @@
+import {
+  FeeInvoiceDraftPanel,
+  type FeeInvoiceDraftResponse,
+} from '../../../../../../components/fee-invoice-draft.tsx';
 import { randomUUID } from 'node:crypto';
 import { notFound, redirect } from 'next/navigation';
 import {
@@ -141,9 +145,12 @@ export default async function BookingPage({ params, searchParams }: Props) {
   const disputeLocale: Locale = locale;
   const bookingPath = `/organisations/${id}/bookings/${bookingId}`;
   const financialPath = bookingPath + '/financial-completion';
-  const [financial, closure] = await Promise.all([
+  const [financial, closure, invoice] = await Promise.all([
     api<FinancialCompletion>('GET', financialPath, { token: person.token }),
     api<ClosureStatus>('GET', bookingPath + '/closure', { token: person.token }),
+    api<FeeInvoiceDraftResponse>('GET', bookingPath + '/fee-invoice-draft', {
+      token: person.token,
+    }),
   ]);
   async function submitFinancial(key: string, body: Record<string, unknown>) {
     'use server';
@@ -376,6 +383,7 @@ export default async function BookingPage({ params, searchParams }: Props) {
         )}
       </section>
 
+      {invoice.ok ? <FeeInvoiceDraftPanel draft={invoice.data.draft} locale={locale} /> : null}
       <BookingCompletionPanel
         financial={financial.ok ? financial.data : null}
         closure={closure.ok ? closure.data : null}
