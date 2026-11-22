@@ -9,7 +9,7 @@ import { APP_CONFIG, DB_POOL } from '../tokens.js';
  * past its planned end, and a trip with no arrival at pick-up by the end of the pick-up window,
  * each open one operations case, once. The same record is also made by every command that
  * touches bookings and by the operations queue, so this job only keeps the queue current when
- * nothing else happens. It decides nothing and has no other consequence.
+ * nothing else happens. The same timer checks eligible booking closures after case detection.
  *
  * TRIP_WATCH_INTERVAL_MS sets the period; 0 turns it off. Unset, it runs every minute, except
  * under test, where the tests run it themselves.
@@ -46,6 +46,12 @@ export class TripWatchJob implements OnModuleInit, OnModuleDestroy {
         await this.pool.query<{ opened: number }>('SELECT trucker.trip_watch() AS opened')
       ).rows[0]!.opened;
       if (opened > 0) jsonLogger.info({ event: 'trip_cases_opened', count: opened });
+      const closed = (
+        await this.pool.query<{ closed: number }>(
+          'SELECT trucker.booking_closure_watch() AS closed',
+        )
+      ).rows[0]!.closed;
+      if (closed > 0) jsonLogger.info({ event: 'bookings_closed', count: closed });
       return opened;
     } catch (error) {
       jsonLogger.error({

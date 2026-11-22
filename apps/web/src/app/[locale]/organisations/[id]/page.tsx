@@ -11,6 +11,7 @@ import { getMessages } from '../../../../i18n/messages.ts';
 import { api, type Country, type Organisation } from '../../../../server/api.ts';
 import { updateOrganisationAction } from '../../../../server/organisation-actions.ts';
 import { requirePerson } from '../../../../server/session.ts';
+import { financialNavigation } from '../../../../components/booking-completion-labels.ts';
 
 type Props = {
   params: Promise<{ locale: string; id: string }>;
@@ -150,6 +151,13 @@ export default async function OrganisationPage({ params, searchParams }: Props) 
           href={`/${locale}/organisations/${organisation.id}/contracts`}
         >
           {m.contracts.link}
+        </a>
+        <a
+          className="button"
+          id="open-financial-completion"
+          href={`/${locale}/organisations/${organisation.id}/financial-completion`}
+        >
+          {financialNavigation[locale].title}
         </a>
         <a
           className="button"

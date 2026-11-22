@@ -11,6 +11,8 @@ import {
   REASONS,
   type OperationsCase,
 } from '../../components/operations-view.tsx';
+import { closureBlockerLabels } from '../../../../web/src/components/booking-completion-labels.ts';
+import type { ClosureQueueItem } from '../../../../web/src/components/booking-completion.tsx';
 import { findBookingAction } from '../../server/operations-actions.ts';
 import { requireStaff } from '../../server/session.ts';
 
@@ -68,6 +70,9 @@ export default async function OperationsPage({ searchParams }: Props) {
           held: boolean;
         }[]
       >('GET', '/staff/operations/disputes', { token: found.token })
+    : null;
+  const closureQueue = reply.ok
+    ? await api<ClosureQueueItem[]>('GET', '/staff/operations/closure', { token: found.token })
     : null;
   const disputeState = one('disputeState');
   const disputeOwner = one('disputeOwner');
@@ -174,6 +179,32 @@ export default async function OperationsPage({ searchParams }: Props) {
                   </ul>
                 )}
               </section>
+              {closureQueue?.ok ? (
+                <section className="section" aria-labelledby="booking-closure-queue-title">
+                  <h2 id="booking-closure-queue-title">Operational closure queue</h2>
+                  {closureQueue.data.length ? (
+                    <ul className="evidence" id="closure-queue">
+                      {closureQueue.data.map((item) => (
+                        <li key={item.bookingId}>
+                          <a
+                            className="button"
+                            href={`/operations/bookings/${item.bookingId}#operational-closure`}
+                          >
+                            Review operational closure
+                          </a>{' '}
+                          <bdi>{item.bookingId}</bdi>: {item.ownerName ?? 'Unassigned'},{' '}
+                          {item.state === 'review_required' ? 'needs review' : 'open'}
+                          {item.blockers.length
+                            ? `; ${item.blockers.map((blocker) => closureBlockerLabels[blocker] ?? blocker).join('; ')}`
+                            : '; ready for the next closure check'}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p>There are no bookings awaiting operational closure.</p>
+                  )}
+                </section>
+              ) : null}
               {disputes?.ok ? (
                 <section className="section" aria-labelledby="dispute-queue-title">
                   <h2 id="dispute-queue-title">Booking disputes</h2>
