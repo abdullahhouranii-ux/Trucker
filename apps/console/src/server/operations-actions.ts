@@ -1,7 +1,8 @@
 'use server';
 
 import { redirect } from 'next/navigation';
-import { api, type ApiReply } from '../../../web/src/server/api.ts';
+import { createHash } from 'node:crypto';
+import { api, apiPutFile, type ApiReply } from '../../../web/src/server/api.ts';
 import { endStaffSession, staffToken } from './session.ts';
 
 // Trucker operations on trips (slice 17b). Every action ends in a redirect to the page it came
@@ -272,4 +273,75 @@ export async function operationsCargoAction(form: FormData): Promise<void> {
     retry,
     'cargo_',
   );
+}
+
+/**
+ * A paper proof of delivery uploaded on the driver's behalf (slice 18b): the manifest first,
+ * then each file. The fingerprint is computed on the bytes this server received.
+ */
+export async function operationsPodAction(form: FormData): Promise<void> {
+  const id = text(form, 'bookingId');
+  const here = `/operations/bookings/${id}`;
+  function go(query: string): never {
+    redirect(`${here}?${query}#pod`);
+  }
+  const token = await staffToken();
+  if (!token) redirect('/sign-in?error=session_ended');
+  const chosen = ['signature', 'signed_document', 'delivery_note', 'cargo_photo', 'other'].flatMap(
+    (kind) =>
+      form
+        .getAll(`file-${kind}`)
+        .filter((value): value is File => value instanceof File && value.size > 0)
+        .map((file) => ({ kind, file })),
+  );
+  const capturedAt = text(form, 'capturedAt');
+  if (!UUID.test(id) || chosen.length === 0 || chosen.length > 10 || !MINUTE.test(capturedAt))
+    go('error=validation_failed');
+  const items = await Promise.all(
+    chosen.map(async ({ kind, file }) => ({
+      kind,
+      mediaType: file.type,
+      sizeBytes: file.size,
+      fingerprint: createHash('sha256')
+        .update(Buffer.from(await file.arrayBuffer()))
+        .digest('hex'),
+    })),
+  );
+  const note = text(form, 'note').trim();
+  const replaces = text(form, 'replacesReason').trim();
+  const declared = await api<{ pod: { versions: { items: { id: string }[] }[] } }>(
+    'POST',
+    `/staff/operations/bookings/${id}/pod`,
+    {
+      token,
+      body: {
+        version: Number.parseInt(text(form, 'version'), 10) || 1,
+        reason: text(form, 'reason'),
+        note: note === '' ? null : note.slice(0, 1000),
+        capturedAt: `${capturedAt}:00Z`,
+        receiverName: text(form, 'receiverName').trim().slice(0, 200) || null,
+        replacesReason: replaces === '' ? null : replaces.slice(0, 1000),
+        items,
+      },
+    },
+  );
+  if (!declared.ok) {
+    if (declared.status === 401) {
+      await endStaffSession();
+      redirect('/sign-in?error=session_ended');
+    }
+    go(unknown(declared) ? 'error=unconfirmed' : `error=${encodeURIComponent(declared.code)}`);
+  }
+  const version = declared.data.pod.versions.at(-1)!;
+  for (const [index, item] of version.items.entries()) {
+    const file = chosen[index]!.file;
+    const sent = await apiPutFile(`/staff/operations/bookings/${id}/pod/items/${item.id}`, {
+      token: token!,
+      mediaType: file.type,
+      bytes: await file.arrayBuffer(),
+    });
+    if (!sent.ok)
+      go(unknown(sent) ? 'error=unconfirmed' : `error=${encodeURIComponent(sent.code)}`);
+  }
+  go('done=pod_captured');
 }

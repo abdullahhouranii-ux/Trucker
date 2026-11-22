@@ -111,7 +111,7 @@ A setting holds a value inside an approved rule; it does not replace the rule.
 
 | ID | Rule |
 |---|---|
-| R-401 | Who reviews a POD (depends on D-001) |
+| R-401 | Who reviews a POD (depends on D-001). Built in slice 18b with the shipper's administrators only (E-1, PD-3), for approval |
 | R-402 | Whether silence accepts a POD, and the legal effect of acceptance (legal review) |
 | R-403 | Time limits for raising each kind of dispute (legal and insurance review) |
 | R-404 | Who decides a dispute and whether the decision binds the parties (depends on D-001; legal review) |

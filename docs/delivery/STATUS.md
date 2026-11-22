@@ -34,14 +34,16 @@ Each slice has a scope and a record with its evidence in this folder.
 | 17a | Dispatch (one step, refused with the first failing precondition, idempotent) and the trip's milestones by the driver or on the driver's behalf, the arrival estimate, and what each party sees; exceptions (17b) not built | PR #33 |
 | 17b | Exceptions reported by the driver, carrier or shipper; the operations privilege, queue and cases; overrun and missing-arrival cases; dispatch blocks, trip holds, operations' milestones and withdrawing a mistaken one | PR #34 |
 | 18a | Delivery outcome (by the driver, or on behalf), operations case for anything but full delivery, cargo custody and handover, release of each resource on the release condition | PR #35 |
-| 18d | Undeliverable, refused and partly delivered cargo (R-406): authority to instruct, instructions and costs, approval within limits, escalation and the emergency plan, confirmed handovers, further legs of the trip, claims and holds by cause | PR #36 (planned number) |
+| 18d | Undeliverable, refused and partly delivered cargo (R-406): authority to instruct, instructions and costs, approval within limits, escalation and the emergency plan, confirmed handovers, further legs of the trip, claims and holds by cause | PR #36 |
+| — | Node.js 24 and npm 11 | PR #37 |
+| 18b | Proof of delivery: manifest, files checked by fingerprint behind a storage interface (development stand-in only), review by the shipper only, never by silence | PR #38 (planned number) |
 
 Pull requests #15 to #32 are stacked, open and green in CI; slice 17a's pull request is open. None is merged; each needs a dependency review and Abdullah's explicit authorisation.
 
 ## Next
 
 1. Phase five (dispatch, proof of delivery, settlement, closure), each as its own unmerged pull request, on development defaults, under the instruction of 17 November 2026 (11:46).
-2. Slice 18b (proof of delivery: manifest, files behind a storage interface with a development stand-in, review by the shipper) and 18c (disputes and holds). Slice 18a is built: `DELIVERY_SLICE_18A.md`; its scope `DELIVERY_SLICE_18_SCOPE.md` is for approval. R-406 is decided (18 November 2026, 11:23) and built as slice 18d: `UNDELIVERABLE_SLICE_18D.md`, with its values as development defaults.
+2. Slice 18c (disputes and holds). Slice 18b (proof of delivery) is built: `POD_SLICE_18B.md`, for approval. Slice 18a is built: `DELIVERY_SLICE_18A.md`; its scope `DELIVERY_SLICE_18_SCOPE.md` is for approval. R-406 is decided (18 November 2026, 11:23) and built as slice 18d: `UNDELIVERABLE_SLICE_18D.md`, with its values as development defaults.
 
 ## Open decisions
 

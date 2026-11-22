@@ -1,6 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { notFound, redirect } from 'next/navigation';
 import { CargoPanel } from '../../../../../../components/cargo-panel.tsx';
+import { PodPanel } from '../../../../../../components/pod-panel.tsx';
+import {
+  podCaptureAction,
+  podReviewAction,
+  podSendAction,
+} from '../../../../../../server/pod-actions.ts';
 import { DraftKeeper } from '../../../../../../components/draft-keeper.tsx';
 import {
   BookingCard,
@@ -142,6 +148,7 @@ export default async function BookingPage({ params, searchParams }: Props) {
     const message =
       (a.errors as Record<string, string>)[error] ??
       (m.cargo.errors as Record<string, string>)[error] ??
+      (m.pod.errors as Record<string, string>)[error] ??
       a.errors.invalid;
     const roleName = (a.roles as Record<string, string>)[one('aRole')];
     const reason = reasonText(one('aReason'));
@@ -165,6 +172,10 @@ export default async function BookingPage({ params, searchParams }: Props) {
             : null,
       ];
       problems.push({ message: parts.filter(Boolean).join(' ') });
+    } else if (error === 'evidence_missing') {
+      // Which evidence the outcome still needs (slice 18b).
+      const missing = (m.pod.missingEvidence as Record<string, string>)[one('aReason')];
+      problems.push({ message: missing ? `${message} ${missing}` : message });
     } else
       problems.push({
         message: roleName && reason ? `${message} ${roleName}: ${reason}` : message,
@@ -173,9 +184,11 @@ export default async function BookingPage({ params, searchParams }: Props) {
   const done = one('aDone');
   const confirmation = done.startsWith('cargo_')
     ? (m.cargo.done as Record<string, string>)[done.slice('cargo_'.length)]
-    : done
-      ? (a.done as Record<string, string>)[done]
-      : undefined;
+    : done.startsWith('pod_')
+      ? (m.pod.done as Record<string, string>)[done]
+      : done
+        ? (a.done as Record<string, string>)[done]
+        : undefined;
   // A cargo command whose answer never arrived is sent again with the same key (slice 18d).
   const cargoKey = (): string =>
     error === 'cargo_unconfirmed' && /^[A-Za-z0-9._-]{16,128}$/.test(one('aKey'))
@@ -342,6 +355,21 @@ export default async function BookingPage({ params, searchParams }: Props) {
               {role === 'carrier' ? <CarrierTripForms t={tt} trip={trip} hidden={hidden} /> : null}
               {trip.delivery ? (
                 <DeliveryFacts d={m.delivery} t={tt} delivery={trip.delivery} roles={a.roles} />
+              ) : null}
+              {trip.pod && trip.delivery?.outcome ? (
+                <PodPanel
+                  p={m.pod}
+                  pod={trip.pod}
+                  side={role}
+                  hidden={hidden}
+                  fileHref={(item) =>
+                    `/${locale}/files/pod/${booking.id}/${item}?org=${encodeURIComponent(id)}`
+                  }
+                  capture={podCaptureAction}
+                  send={podSendAction}
+                  review={podReviewAction}
+                  showCapture={!trip.hold}
+                />
               ) : null}
               {trip.cargo?.case ? (
                 <CargoPanel

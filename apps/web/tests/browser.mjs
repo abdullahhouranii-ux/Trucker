@@ -6,10 +6,11 @@
 import { Buffer } from 'node:buffer';
 import { spawn } from 'node:child_process';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
 import { createRequire } from 'node:module';
-import { networkInterfaces } from 'node:os';
+import { networkInterfaces, tmpdir } from 'node:os';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import puppeteer from 'puppeteer-core';
 
@@ -272,6 +273,9 @@ async function main() {
     REGISTRATION_TERMS: 'demonstration',
     // The development stand-in for a payment provider (slice 27): it moves no money.
     PAYMENT_PROVIDER: 'test',
+    // Proof-of-delivery files kept in a temporary folder (slice 18b's development stand-in).
+    FILE_STORAGE: 'local',
+    FILE_STORAGE_DIR: mkdtempSync(path.join(tmpdir(), 'trucker-browser-pod-')),
   };
   await run(apiMigrate, ['up'], apiEnv);
   // The resend wait is shortened so the checks do not take minutes. Limits are protected
@@ -3904,6 +3908,34 @@ async function main() {
       `SELECT c.amount::text AS amount, c.interim_payer, c.final_liability FROM trucker.exception_cost c
        JOIN trucker.cargo_case k ON k.id = c.case_id WHERE k.booking_id = $1`,
       [bookingId],
+    );
+    // Proof of delivery (slice 18b): the driver sends a signature and a photo of the cargo; the
+    // shipper sees it ready, opens a file and accepts it. Accepting releases nothing more.
+    const podDir = mkdtempSync(path.join(tmpdir(), 'trucker-pod-files-'));
+    const signatureFile = path.join(podDir, 'signature.png');
+    const photoFile = path.join(podDir, 'cargo.jpg');
+    writeFileSync(
+      signatureFile,
+      Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47]), randomBytes(512)]),
+    );
+    writeFileSync(photoFile, Buffer.concat([Buffer.from([0xff, 0xd8, 0xff]), randomBytes(512)]));
+    await open('/en/driver', 390);
+    await (await page.$('#pod-file-signature')).uploadFile(signatureFile);
+    await (await page.$('#pod-file-cargo_photo')).uploadFile(photoFile);
+    await submit('[data-pod-capture="true"]');
+    const podSent = page.url().includes('aDone=pod_captured');
+    await open(bookingPath('en', verifyOrg), 390);
+    const podReady = (await page.$('#pod[data-pod="ready_for_review"]')) !== null;
+    const fileHref = await page.$eval('#pod-versions a', (link) => link.getAttribute('href'));
+    const fileStatus = await page.evaluate(async (href) => (await fetch(href)).status, fileHref);
+    await submit('[data-pod-decision="accepted"]');
+    const podAccepted =
+      page.url().includes('aDone=pod_accepted') &&
+      (await page.$('#pod[data-pod="accepted"]')) !== null;
+    check(
+      'delivery',
+      podSent && podReady && fileStatus === 200 && podAccepted,
+      `proof of delivery: sent ${podSent}, ready ${podReady}, file ${fileStatus}, accepted ${podAccepted}`,
     );
     await open(bookingPath('en', verifyOrg), 390);
     const shipperDelivery = (await text('#delivery-facts')) ?? '';

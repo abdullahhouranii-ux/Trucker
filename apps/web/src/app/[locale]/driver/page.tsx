@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { notFound, redirect } from 'next/navigation';
 import { InstantText } from '../../../components/booking-view.tsx';
 import { CargoPanel } from '../../../components/cargo-panel.tsx';
+import { PodPanel } from '../../../components/pod-panel.tsx';
+import { podCaptureAction, podReviewAction, podSendAction } from '../../../server/pod-actions.ts';
 import { DraftKeeper } from '../../../components/draft-keeper.tsx';
 import {
   DocumentFields,
@@ -97,6 +99,7 @@ export default async function DriverPage({ params, searchParams }: Props) {
       message:
         (a.errors as Record<string, string>)[assignmentError] ??
         (m.cargo.errors as Record<string, string>)[assignmentError] ??
+        (m.pod.errors as Record<string, string>)[assignmentError] ??
         a.errors.invalid,
     });
   const done = one('fDone');
@@ -105,7 +108,9 @@ export default async function DriverPage({ params, searchParams }: Props) {
     ? (t.done as Record<string, string>)[done]
     : aDone.startsWith('cargo_')
       ? (m.cargo.done as Record<string, string>)[aDone.slice('cargo_'.length)]
-      : (a.done as Record<string, string>)[aDone];
+      : aDone.startsWith('pod_')
+        ? (m.pod.done as Record<string, string>)[aDone]
+        : (a.done as Record<string, string>)[aDone];
   // A cargo command whose answer never arrived is sent again with the same key (slice 18d).
   const cargoKey = (): string =>
     assignmentError === 'cargo_unconfirmed' && /^[A-Za-z0-9._-]{16,128}$/.test(one('aKey'))
@@ -267,6 +272,25 @@ export default async function DriverPage({ params, searchParams }: Props) {
                           </>
                         }
                         onBehalf={false}
+                      />
+                    ) : null}
+                    {item.trip.pod && item.trip.delivery?.outcome ? (
+                      <PodPanel
+                        p={m.pod}
+                        pod={item.trip.pod}
+                        side="driver"
+                        fileHref={(entry) => `/${locale}/files/pod/${item.bookingId}/${entry}`}
+                        capture={podCaptureAction}
+                        send={podSendAction}
+                        review={podReviewAction}
+                        showCapture={!item.trip.hold}
+                        hidden={
+                          <>
+                            <input type="hidden" name="locale" value={locale} />
+                            <input type="hidden" name="bookingId" value={item.bookingId} />
+                            <input type="hidden" name="driverView" value="true" />
+                          </>
+                        }
                       />
                     ) : null}
                     {item.trip.cargo?.case ? (

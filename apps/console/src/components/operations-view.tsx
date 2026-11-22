@@ -79,6 +79,7 @@ export const DONE: Record<string, string> = {
   handed_over: 'The handover is recorded. Custody moves once the receiving side confirms it.',
   released: 'The resource is released.',
   cargo_recorded: 'Recorded.',
+  pod_captured: 'The proof of delivery was uploaded. Only the shipper accepts it.',
   cargo_closed: 'The cargo case is closed. Holds stay until their own cause is decided.',
   cargo_decided: 'The claim decision is recorded with its source.',
   cargo_released: 'The hold is released.',
@@ -119,6 +120,9 @@ export const ERRORS: Record<string, string> = {
   not_open: 'This is not open for that step.',
   hold_owner_open: 'The cause of this hold is not decided yet: the hold stays.',
   retry_key_conflict: 'This form was already sent with other values. Reload the page.',
+  evidence_missing: 'The files do not include what this outcome needs.',
+  fingerprint_mismatch: 'A file changed on the way and was refused. Upload it again.',
+  file_storage_closed: 'File storage is not available here.',
 };
 
 export function caseTitle(item: { kind: string; type: string | null }): string {

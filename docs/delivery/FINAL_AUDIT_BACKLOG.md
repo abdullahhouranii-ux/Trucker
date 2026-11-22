@@ -200,3 +200,7 @@ All Arabic and Urdu text in the repository is a draft written without a native r
 - Web: the cargo case's facts (reason, quantities, place, condition) are a definition list with wide gaps between items at phone width; a compact two-column layout would read better.
 - Web: the costs table of an instruction is cramped at 390 px; a stacked layout per cost would read better on a phone.
 - Web: the "declare who may give instructions" form stays shown after an authority is declared (declaring again replaces it); it could be folded behind a button.
+- Web: the proof-of-delivery form shows one file field per kind; adding files one at a time with a preview would read better on a phone.
+- Web: a received image is opened in a new tab; a thumbnail beside each item would make review quicker.
+- Console: the proof-of-delivery list shows links only, no thumbnails; a gallery would help review.
+- Wording of the proof-of-delivery messages in English, Arabic and Urdu.
