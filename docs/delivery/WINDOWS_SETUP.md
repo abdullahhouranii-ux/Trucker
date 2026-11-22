@@ -11,7 +11,7 @@ on the first desktop run and correct this file.
 | Need | Notes |
 |---|---|
 | Git for Windows | Line endings are fixed by `.gitattributes`; no `core.autocrlf` setting is required |
-| Node.js 22.x (22.12 or later) | Installer from nodejs.org, or a version manager. `node -v` must print v22. npm 10.9 or later comes with it |
+| Node.js 24.x (24.11 or later) | Installer from nodejs.org, or a version manager. `node -v` must print v24. npm 11.6 or later comes with it (moved from Node 22 on 18 November 2026) |
 | PostgreSQL 16 | Either Docker Desktop (option A) or the PostgreSQL 16 installer (option B) |
 | PowerShell | Commands below are PowerShell. Do not run it elevated |
 

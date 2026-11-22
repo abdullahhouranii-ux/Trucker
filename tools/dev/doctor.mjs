@@ -8,14 +8,14 @@ const results = [];
 const record = (name, required, ok, detail) => results.push({ name, required, ok, detail });
 
 const nodeMajor = Number(process.versions.node.split('.')[0]);
-record('Node.js 22', true, nodeMajor === 22, `found ${process.version}`);
+record('Node.js 24', true, nodeMajor === 24, `found ${process.version}`);
 
 const npm = probe('npm', ['--version']);
 const [npmMajor, npmMinor] = npm.output.split('.').map(Number);
 record(
-  'npm 10.9 or later (below 11)',
+  'npm 11.6 or later (below 12)',
   true,
-  npm.ok && npmMajor === 10 && npmMinor >= 9,
+  npm.ok && npmMajor === 11 && npmMinor >= 6,
   npm.ok ? `found ${npm.output}` : 'npm not found',
 );
 
