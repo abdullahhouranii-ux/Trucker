@@ -8,6 +8,11 @@ export default tseslint.config(
       '**/node_modules/**',
       '**/.next/**',
       '**/.next-review/**',
+      '**/.expo/**',
+      '**/.gradle/**',
+      '**/dist-review/**',
+      'apps/mobile/android/**',
+      'apps/mobile/ios/**',
       '**/next-env.d.ts',
       'docs/**',
     ],
@@ -58,5 +63,9 @@ export default tseslint.config(
       '@typescript-eslint/consistent-type-imports': 'error',
       '@typescript-eslint/no-explicit-any': 'error',
     },
+  },
+  {
+    files: ['apps/mobile/**/*.ts', 'apps/mobile/**/*.tsx'],
+    languageOptions: { globals: { __DEV__: 'readonly', process: 'readonly' } },
   },
 );

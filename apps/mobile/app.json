@@ -1,0 +1,22 @@
+{
+  "expo": {
+    "name": "Trucker",
+    "slug": "trucker-mobile",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/trucker-icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.trucker.development"
+    },
+    "android": {
+      "predictiveBackGestureEnabled": true,
+      "package": "com.trucker.development"
+    },
+    "web": {
+      "favicon": "./assets/trucker-icon.png"
+    },
+    "plugins": ["expo-secure-store", "expo-document-picker"]
+  }
+}
