@@ -39,7 +39,13 @@ Run on Node 24 with isolated PostgreSQL, on this branch alone.
 
 ## Decisions for Abdullah
 
-1. **Invoice draft and VAT.** Confirm the invoice policy above, which Codex records as yours, before the invoice-draft branch goes forward: VAT at Oman's standard 5% on the platform fee where it applies, invoicing right after payment, delivery to the booker's phone or WhatsApp, and fees non-refundable by default. The issuing entity, its VAT registration, invoice numbering and Fawtara applicability need your accountant.
+1. **Invoice draft and VAT.** **Decided by Abdullah on 22 November 2026 (12:30)**, together with his decision of 08:22 the same day:
+   - Trucker prepares an internal draft of its platform fee invoice right after payment is confirmed. Nothing is issued or sent.
+   - Sending to the booker's phone or WhatsApp waits until a channel is set up and the recipient rules are agreed.
+   - Trucker calculates no tax. VAT, the issuing entity, its registration, numbering and e-invoicing (Fawtara) are for the accountant, and the tax invoice is to come from an accounting system.
+   - Platform fees are non-refundable by default. The rule for exceptions is still to be defined.
+   - The carrier (or independent carrier) issues the freight invoice.
+   - Who issues the organiser's commission document is still open.
 2. **Payment evidence.** Retention of original payment evidence and the authority for exceptional closure need approval before production.
 
 ## Codex's own verification (before the split)

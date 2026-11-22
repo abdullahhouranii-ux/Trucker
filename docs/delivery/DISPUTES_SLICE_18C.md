@@ -40,7 +40,7 @@ Changes made while splitting:
 ## Decisions for Abdullah
 
 1. **Model.** The approved spec (Stage 2 Part 4) says staff decide a dispute (upheld, partly upheld or rejected) with one appeal to a different staff member. This implementation is a mediation model instead: both contracting organisations must accept the same proposal, and staff do not decide. Codex rewrote the spec to match the code; that rewrite is not included here. Confirm the mediation model, or keep the spec and change the code.
-2. **Approvals recorded in this file.** The file states that Abdullah approved the manual release rule on 19 November 2026 and explicit counterclaim terms on 20 November 2026. Confirm both, or correct them.
+2. **Approvals recorded in this file.** **Confirmed by Abdullah on 22 November 2026 (12:30)**: the manual release rule (19 November) as an interim rule, and the explicit counterclaim terms (20 November). Before go-live a rule is still needed for releasing a hold after an external decision (a court or authority); until then such a hold stays in place.
 3. **Development defaults.** Dispute types, which party administrators act, staff privileges, and the 10 MiB evidence limit are development defaults.
 
 ## Codex's own verification (19-20 November, before the split)
