@@ -112,6 +112,7 @@ No legal or tax rule is stated here. Every value that is not approved is a prote
 | Slice 26 | Built with D-6, D-7, part of D-8 and FD-1 to FD-4 as development defaults: `FEE_PAYMENT_SLICE_26.md`. FD-1 (what counts as in time), FD-2 (transfers that do not match) and FD-4 (Trucker's bank details) are open for Abdullah |
 | Slice 27 | Built with OP-1 to OP-6 as development defaults and a development stand-in as the only payment provider: `ONLINE_PAYMENT_SLICE_27.md`. OP-3 (what makes an online payment in time), OP-5 (receipt rules) and O-5 (the provider) are open for Abdullah. After the independent review: OP-7 (how long a booking waits for an unanswered payment) added as a development default |
 | Slice 28 | Built under the instruction of 17 November 2026 (20:06) with D-8 (second-person approval) and RD-1 to RD-5 as development defaults, the development stand-in as the only provider, and no money moving: `REFUNDS_SLICE_28.md`. O-4 (partial refund cases), payer bank details, D-8's 5 business days and RD-1 to RD-5 are open for Abdullah; OP-3 stays proposed |
+| Slice 17a | Built under "Start with dispatch" (17 November 2026) with DD-1, DD-2, DD-5 to DD-8 and DS-1 to DS-3 as development defaults: `DISPATCH_SLICE_17A.md`. The scope document is still for approval; DD-3, DD-4, DD-9 and DD-10 wait for slice 17b |
 
 ## 2. Exceptions to the proposed structures
 

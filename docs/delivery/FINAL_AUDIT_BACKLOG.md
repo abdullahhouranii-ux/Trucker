@@ -175,3 +175,9 @@ All Arabic and Urdu text in the repository is a draft written without a native r
 - Console: only discrepancies are offered for correction; a matched entry has no correction form.
 - Test coverage: the payer's refund line is checked in the browser on one booking with a fictional record of a double payment; the other states are checked in the API tests only.
 - Wording of the refund and reconciliation messages in English, Arabic and Urdu.
+- Web: trip times are entered and shown in UTC; entering and showing them in each site's local time needs the site's time zone on the web pages.
+- Web: the driver's next-milestone button records the time of the press; there is no confirmation step, and a mistaken press cannot be undone in this slice (a correction route belongs with exceptions, slice 17b). This is a functional gap to decide, not only wording.
+- Web: the trip's milestones are listed with one line of detail each; a timeline with the pick-up and delivery windows beside them would read better.
+- Wording of the dispatch and trip messages in English, Arabic and Urdu.
+- Web: after dispatch the "Where this booking stands" section on the booking page is empty unless a wait was recorded; it could be folded into the trip.
+- Web: the on-behalf form proposes the current minute; when the previous milestone was recorded within that minute, the new one is earlier by seconds and is marked for review. Proposing the later of the two would avoid needless reviews.

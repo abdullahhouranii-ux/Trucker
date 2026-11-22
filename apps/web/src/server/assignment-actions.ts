@@ -42,6 +42,8 @@ async function command(
     here: string;
     anchor: string;
     body?: Record<string, unknown>;
+    /** Dispatch only: the same key is sent again when an answer never arrived. */
+    retryKey?: string;
   },
 ): Promise<never> {
   const locale = localeOf(form);
@@ -53,20 +55,23 @@ async function command(
   const reply = await api<{ outcome: string }>('POST', options.path!, {
     token,
     ...(options.body ? { body: options.body } : {}),
+    ...(options.retryKey ? { retryKey: options.retryKey } : {}),
   });
   if (reply.ok) redirect(withQuery(options.here, { aDone: reply.data.outcome }));
   if (reply.status === 401) {
     await endSession();
     redirect(`/${locale}/sign-in?error=session_ended`);
   }
-  if (unknown(reply)) back(`${options.operation}_unconfirmed`);
+  if (unknown(reply)) back(`${options.operation}_unconfirmed`, { aKey: options.retryKey });
   if (reply.code === 'validation_failed') back('invalid');
   // Which resource, and why: two short words from a fixed vocabulary.
   const role = reply.details.role;
   const reason = reply.details.reason;
+  const cause = reply.details.cause;
   return back(reply.code, {
     aRole: typeof role === 'string' && WORD.test(role) ? role : undefined,
     aReason: typeof reason === 'string' && WORD.test(reason) ? reason : undefined,
+    aCause: typeof cause === 'string' && WORD.test(cause) ? cause : undefined,
   });
 }
 
@@ -174,5 +179,110 @@ export async function cancelBookingAction(form: FormData): Promise<void> {
     here,
     anchor: 'cancel-booking',
     body: { version, reason, note },
+  });
+}
+
+// Slice 17a: dispatch, milestones and the estimate. Times entered on a page are UTC.
+const MINUTE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
+const instant = (form: FormData, name: string): string | null => {
+  const value = text(form, name);
+  return MINUTE.test(value) && !Number.isNaN(Date.parse(`${value}:00Z`)) ? `${value}:00Z` : null;
+};
+const MILESTONES = [
+  'departed_for_pickup',
+  'arrived_at_pickup',
+  'loading_started',
+  'loaded_departed',
+  'arrived_at_delivery',
+  'unloading_started',
+];
+const REASONS = ['no_phone', 'no_signal', 'driver_unable', 'correction', 'other'];
+
+/** The carrier dispatches. A retry key makes a repeated press, or a retry, one dispatch. */
+export async function dispatchBookingAction(form: FormData): Promise<void> {
+  const { here, organisationId, bookingId } = bookingPage(form);
+  const retryKey = text(form, 'retryKey');
+  await command(form, {
+    operation: 'dispatch',
+    path:
+      organisationId && UUID.test(retryKey)
+        ? `/organisations/${organisationId}/bookings/${bookingId}/dispatch`
+        : null,
+    here,
+    anchor: 'trip',
+    retryKey,
+  });
+}
+
+/** The carrier records a milestone the driver could not record. */
+export async function recordMilestoneOnBehalfAction(form: FormData): Promise<void> {
+  const { here, organisationId, bookingId } = bookingPage(form);
+  const version = Number(text(form, 'version'));
+  const milestone = text(form, 'milestone');
+  const reason = text(form, 'reason');
+  const note = text(form, 'note').trim();
+  const statedAt = instant(form, 'statedAt');
+  const valid =
+    organisationId !== null &&
+    Number.isInteger(version) &&
+    version >= 1 &&
+    MILESTONES.includes(milestone) &&
+    REASONS.includes(reason) &&
+    statedAt !== null &&
+    note.length <= 500;
+  await command(form, {
+    operation: 'milestone',
+    path: valid ? `/organisations/${organisationId}/bookings/${bookingId}/milestones` : null,
+    here,
+    anchor: 'trip',
+    body: { version, milestone, statedAt, reason, ...(note ? { note } : {}) },
+  });
+}
+
+/** The carrier states the estimated arrival. */
+export async function stateEstimateAction(form: FormData): Promise<void> {
+  const { here, organisationId, bookingId } = bookingPage(form);
+  const arrivalAt = instant(form, 'arrivalAt');
+  await command(form, {
+    operation: 'estimate',
+    path:
+      organisationId && arrivalAt
+        ? `/organisations/${organisationId}/bookings/${bookingId}/estimate`
+        : null,
+    here,
+    anchor: 'trip',
+    body: { arrivalAt },
+  });
+}
+
+/** The driver records the next milestone as it happens. */
+export async function driverMilestoneAction(form: FormData): Promise<void> {
+  const bookingId = text(form, 'bookingId');
+  const version = Number(text(form, 'version'));
+  const milestone = text(form, 'milestone');
+  const valid =
+    UUID.test(bookingId) &&
+    Number.isInteger(version) &&
+    version >= 1 &&
+    MILESTONES.includes(milestone);
+  await command(form, {
+    operation: 'milestone',
+    path: valid ? `/me/driver/assignments/${bookingId}/milestones` : null,
+    here: `/${localeOf(form)}/driver`,
+    anchor: 'assignments',
+    body: { version, milestone },
+  });
+}
+
+/** The driver states the estimated arrival. */
+export async function driverEstimateAction(form: FormData): Promise<void> {
+  const bookingId = text(form, 'bookingId');
+  const arrivalAt = instant(form, 'arrivalAt');
+  await command(form, {
+    operation: 'estimate',
+    path: UUID.test(bookingId) && arrivalAt ? `/me/driver/assignments/${bookingId}/estimate` : null,
+    here: `/${localeOf(form)}/driver`,
+    anchor: 'assignments',
+    body: { arrivalAt },
   });
 }

@@ -660,6 +660,8 @@ async function main() {
     const shots = {
       'en:booking refund': 'booking-refund-en-390',
       'ar:booking refund': 'booking-refund-ar-390',
+      'en:trip for carrier': 'trip-carrier-en-390',
+      'ar:driver trip': 'driver-trip-ar-390',
     };
     // Fictional numbers: country code 999 is not assigned. Unique per run.
     const stamp = String(Date.now()).slice(-7);
@@ -3683,6 +3685,111 @@ async function main() {
         swap.includes(forward) && !swap.includes(backward),
         `${locale}: the vehicle change reads ${swap}`,
       );
+    }
+
+    // Dispatch (slice 17a). The booking starts in about two days, so dispatch is refused as too
+    // early and the page says why. The migration role then widens the dispatch window to its
+    // highest permitted value (72 hours) for this run, and the carrier dispatches. The trip
+    // replaces cancelling and assignment; the driver sees the addresses and the shipper's name,
+    // records the first milestone, the carrier records the second on the driver's behalf, and
+    // the driver states an arrival estimate. The shipper sees all of it except the carrier's note.
+    // The same-category swap asked the driver to acknowledge the new set again.
+    await open('/en/driver', 390);
+    if ((await page.$(`[data-acknowledge="${bookingId}"]`)) !== null)
+      await submit(`[data-acknowledge="${bookingId}"]`);
+    await open(bookingPath('en', carrierOrg), 390);
+    if ((await ready()) !== 'yes' || (await page.$('#dispatch-booking')) === null)
+      throw new Error(`before dispatch the booking is not ready: ${await text('#dispatch')}`);
+    const earliestShown = (await text('#dispatch-from')) ?? '';
+    await submit('#dispatch-booking');
+    check(
+      'dispatch',
+      earliestShown.includes('UTC') &&
+        page.url().includes('aError=dispatch_refused') &&
+        page.url().includes('aReason=too_early') &&
+        ((await text('#error-summary')) ?? '').includes('too early') &&
+        (await owner.query('SELECT 1 FROM trucker.trip WHERE booking_id = $1', [bookingId]))
+          .rowCount === 0,
+      `an early dispatch led to ${page.url()}`,
+    );
+    await owner.query('UPDATE trucker.security_setting SET dispatch_lead_hours = 72');
+    try {
+      await open(bookingPath('en', carrierOrg), 390);
+      await submit('#dispatch-booking');
+      const trips = await owner.query('SELECT id FROM trucker.trip WHERE booking_id = $1', [
+        bookingId,
+      ]);
+      check(
+        'dispatch',
+        page.url().includes('aDone=dispatched') &&
+          trips.rowCount === 1 &&
+          (await page.$('#trip-facts')) !== null &&
+          (await page.$('#cancel-booking')) === null &&
+          (await page.$('#assign')) === null &&
+          (await page.$('#on-behalf-form')) !== null,
+        `dispatching led to ${page.url()}`,
+      );
+    } finally {
+      await owner.query('UPDATE trucker.security_setting SET dispatch_lead_hours = 12');
+    }
+    await open('/en/driver', 390);
+    const driverTrip = (await text(`[data-assignment="${bookingId}"]`)) ?? '';
+    check(
+      'dispatch',
+      driverTrip.includes(pickupAddress) &&
+        (await page.$(`[data-assignment="${bookingId}"] [data-shipper]`)) !== null &&
+        !driverTrip.includes('1250.50') &&
+        (await page.$(`[data-record-milestone="departed_for_pickup"]`)) !== null,
+      `the dispatched driver's page shows: ${driverTrip.slice(0, 300)}`,
+    );
+    await submit('[data-record-milestone="departed_for_pickup"]');
+    check(
+      'dispatch',
+      page.url().includes('aDone=recorded') &&
+        (await page.$('[data-milestone="departed_for_pickup"][data-basis="observed"]')) !== null &&
+        (await page.$('[data-record-milestone="arrived_at_pickup"]')) !== null,
+      `recording the first milestone led to ${page.url()}`,
+    );
+    await open(bookingPath('en', carrierOrg), 390);
+    await page.select('#on-behalf-reason', 'no_signal');
+    await page.type('#on-behalf-note', 'Gate note 4471');
+    await submit('#record-on-behalf');
+    check(
+      'dispatch',
+      page.url().includes('aDone=recorded') &&
+        (await page.$('[data-milestone="arrived_at_pickup"][data-basis="reported"]')) !== null &&
+        ((await text('#trip-milestones')) ?? '').includes('Gate note 4471'),
+      `recording on the driver's behalf led to ${page.url()}`,
+    );
+    await open('/en/driver', 390);
+    const estimate = new Date(Date.now() + 6 * 3600 * 1000).toISOString().slice(0, 16);
+    await page.$eval(
+      `#estimate-${bookingId}`,
+      (input, value) => {
+        input.value = value;
+      },
+      estimate,
+    );
+    await submit('[data-state-estimate]');
+    await open(bookingPath('en', verifyOrg), 390);
+    const shipperTrip = (await text('#trip')) ?? '';
+    check(
+      'dispatch',
+      (await page.$('#trip-estimate[data-stated-as="driver"]')) !== null &&
+        shipperTrip.includes(estimate.replace('T', ' ')) &&
+        (await page.$('[data-milestone="arrived_at_pickup"][data-basis="reported"]')) !== null &&
+        !shipperTrip.includes('Gate note 4471') &&
+        (await page.$('#cancel-booking')) === null &&
+        (await page.$('#on-behalf-form')) === null,
+      `the shipper's trip shows: ${shipperTrip.slice(0, 300)}`,
+    );
+    for (const locale of locales) {
+      await open(bookingPath(locale, carrierOrg), 390);
+      await inspect(locale, 'trip for carrier');
+      await open(bookingPath(locale, verifyOrg), 390);
+      await inspect(locale, 'trip for shipper');
+      await open(`/${locale}/driver`, 390);
+      await inspect(locale, 'driver trip');
     }
 
     // A second booking, left unassigned. The real clock cannot be moved here, so the migration

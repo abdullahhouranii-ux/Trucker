@@ -31,13 +31,14 @@ Each slice has a scope and a record with its evidence in this folder.
 | 26 | Trucker's fee before confirmation: bank transfer verified by two administrators, lapse at the deadline, refund records | PR #30 |
 | 27 | Online payment of the fee through a provider-neutral interface (development stand-in only), receipts; corrected after the independent review of 17 November 2026 (R2 to R5) | PR #31 |
 | 28 | Refunds of the fee (requested, approved, submitted, completed or failed; partial; never more than the payment) and reconciliation, by independent staff; no real provider, no money moves | PR #32 |
+| 17a | Dispatch (one step, refused with the first failing precondition, idempotent) and the trip's milestones by the driver or on the driver's behalf, the arrival estimate, and what each party sees; exceptions (17b) not built | PR #33 (planned number) |
 
-Pull requests #15 to #31 are stacked, open and green in CI; #32 (slice 28) is open. None is merged; each needs a dependency review and Abdullah's explicit authorisation.
+Pull requests #15 to #32 are stacked, open and green in CI; slice 17a's pull request is open. None is merged; each needs a dependency review and Abdullah's explicit authorisation.
 
 ## Next
 
 1. Phase five (dispatch, proof of delivery, settlement, closure), each as its own unmerged pull request, on development defaults, under the instruction of 17 November 2026 (11:46).
-2. Dispatch slice 17, with DD-1 to DD-10 as development defaults unless Abdullah says otherwise; it can run alongside phase four.
+2. Slice 17b (exceptions, the operations privilege, cases and holds) on DD-3, DD-4, DD-9 and DD-10 as development defaults; slice 17a is built: `DISPATCH_SLICE_17A.md`.
 
 ## Open decisions
 
