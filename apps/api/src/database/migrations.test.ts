@@ -399,7 +399,11 @@ test('a runner killed while migration 2 holds an uncommitted change leaves nothi
             WHERE l.locktype = 'advisory' AND NOT l.granted
               AND a.datname = current_database()`,
         );
-        waiter = found.rows[0];
+        // pg_stat_activity can be read a moment before pg_locks in the same query, so a waiter
+        // can briefly show the runner's previous statement. Only a row showing migration 2's
+        // SQL is taken; a stale one is read again.
+        const row = found.rows[0];
+        waiter = row && /CREATE TABLE b/.test(row.query) ? row : undefined;
         if (!waiter) await sleep(50);
       }
       assert.ok(waiter, 'the runner never reached the barrier in migration 2');
