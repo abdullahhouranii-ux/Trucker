@@ -1,6 +1,6 @@
 import type { Locale } from '../i18n/config.ts';
 import type { Messages } from '../i18n/messages.ts';
-import type { AcceptancePreview, Booking, BookingTerms } from '../server/api.ts';
+import type { AcceptancePreview, Booking, BookingPrice, BookingTerms } from '../server/api.ts';
 
 // A booking as both parties see it: the same figures for the shipper and the carrier. Amounts
 // arrive as exact decimal text and are shown as they are; nothing here calculates money.
@@ -24,7 +24,10 @@ const Money = ({ amount, currency }: { amount: string; currency: string }) => (
   </bdi>
 );
 
-/** The price, the fee and what each side pays or receives. */
+/**
+ * The price, and of the fee, the commission and the totals what the database gave this role
+ * (D-11): the shipper sees its fee and total, the carrier the commission and its net.
+ */
 export function MoneyFacts({
   t,
   currency,
@@ -32,13 +35,15 @@ export function MoneyFacts({
   fee,
   shipperTotal,
   carrierNet,
+  commission,
 }: {
   t: B;
   currency: string;
   transportAmount: string;
-  fee: Booking['fee'];
-  shipperTotal: string;
+  fee?: Booking['fee'];
+  shipperTotal?: string;
   carrierNet?: string;
+  commission?: BookingPrice['commission'];
 }) {
   return (
     <>
@@ -49,18 +54,30 @@ export function MoneyFacts({
             <Money amount={transportAmount} currency={currency} />
           </dd>
         </div>
-        <div>
-          <dt>{t.fee.replace('{percent}', percent(fee.basisPoints))}</dt>
-          <dd data-money="fee">
-            <Money amount={fee.amount} currency={currency} />, {t.feePayer[fee.payer]}
-          </dd>
-        </div>
-        <div>
-          <dt>{t.shipperTotal}</dt>
-          <dd data-money="total">
-            <Money amount={shipperTotal} currency={currency} />
-          </dd>
-        </div>
+        {fee ? (
+          <div>
+            <dt>{t.fee.replace('{percent}', percent(fee.basisPoints))}</dt>
+            <dd data-money="fee">
+              <Money amount={fee.amount} currency={currency} />, {t.feePayer[fee.payer]}
+            </dd>
+          </div>
+        ) : null}
+        {shipperTotal ? (
+          <div>
+            <dt>{t.shipperTotal}</dt>
+            <dd data-money="total">
+              <Money amount={shipperTotal} currency={currency} />
+            </dd>
+          </div>
+        ) : null}
+        {commission ? (
+          <div>
+            <dt>{t.commissionLine}</dt>
+            <dd data-money="commission">
+              <Money amount={commission.amount} currency={currency} />
+            </dd>
+          </div>
+        ) : null}
         {carrierNet ? (
           <div>
             <dt>{t.carrierNet}</dt>
@@ -72,6 +89,30 @@ export function MoneyFacts({
       </dl>
       <p className="field-hint">{t.taxNote}</p>
     </>
+  );
+}
+
+/** How and when the freight is paid to the carrier, as fixed on the booking. */
+export function FreightLine({
+  t,
+  freight,
+  dueDays,
+}: {
+  t: B;
+  freight: BookingPrice['freight'];
+  dueDays: number | null;
+}) {
+  if (!freight.method)
+    return <p data-freight="none">{t.payment.replace('{n}', String(dueDays ?? 0))}</p>;
+  return (
+    <p data-freight={freight.method}>
+      {freight.method === 'cash_on_delivery'
+        ? t.paymentCod
+        : t.paymentAfterProof
+            .replace('{method}', t.freightMethod[freight.method])
+            .replace('{n}', String(freight.dueDays ?? 0))}
+      {freight.payer ? ` ${t.freightPayer[freight.payer]}` : ''}
+    </p>
   );
 }
 
@@ -156,6 +197,7 @@ export function BookingCard({
         fee={booking.fee}
         shipperTotal={booking.shipperTotal}
         carrierNet={booking.carrierNet}
+        commission={booking.price.commission}
       />
       <ul className="evidence">
         {booking.inclusions.map((item) => (
@@ -165,7 +207,7 @@ export function BookingCard({
         ))}
       </ul>
       {booking.status !== 'cancelled' ? (
-        <p>{t.payment.replace('{n}', String(booking.paymentDueDays))}</p>
+        <FreightLine t={t} freight={booking.price.freight} dueDays={booking.paymentDueDays} />
       ) : null}
       <TermsLine t={t} terms={booking.terms} />
       <dl className="facts">
@@ -226,7 +268,22 @@ export function AcceptanceFacts({ t, preview }: { t: B; preview: AcceptancePrevi
         fee={preview.fee}
         shipperTotal={preview.shipperTotal ?? ''}
       />
-      <p>{t.payment.replace('{n}', String(preview.paymentDueDays ?? 0))}</p>
+      {preview.freight ? (
+        <div data-freight-offer={preview.freight.methods.join(' ')}>
+          <p>{t.offeredTitle}</p>
+          <ul>
+            {preview.freight.methods.map((method) => (
+              <li key={method}>
+                {method === 'cash_on_delivery'
+                  ? t.paymentCod
+                  : t.paymentAfterProof
+                      .replace('{method}', t.freightMethod[method])
+                      .replace('{n}', String(preview.freight?.dueDays ?? 0))}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
       {preview.terms ? <TermsLine t={t} terms={preview.terms} /> : null}
       {preview.assignmentDueAt ? (
         <p>

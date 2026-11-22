@@ -133,3 +133,10 @@ All Arabic and Urdu text in the repository is a draft written without a native r
 - Console: the effective date and time fields show whatever the radio choice; show them only for a set time.
 - Console: the version list repeats every value of every version; a comparison with the version before would read better.
 - Web: the percentage limit is written as "25" in the hint; the wording of the hint and the "within the limit shown" messages in English, Arabic and Urdu.
+
+## Slice 25 (price breakdown and freight)
+
+- The booking's freight sentence and "The receiver pays it." read as two sentences joined; one sentence per language would read better.
+- The days field on the quotation form shows whatever methods are ticked; show it only for a bank transfer.
+- The acceptance lists the offered methods and then asks to choose among them: the list and the choice could be one.
+- Wording of the freight, fee-payer and booked-price messages in English, Arabic and Urdu.

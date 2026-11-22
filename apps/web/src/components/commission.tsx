@@ -95,6 +95,42 @@ export async function CommissionSection({
       <p id="commission-current" data-option={commission?.option ?? 'none'}>
         {commission ? <CommissionPhrase t={t} terms={commission} /> : t.none}
       </p>
+      {reply.data.bookedPrice ? (
+        <div className="card" id="booked-price">
+          <h3>{t.bookedTitle}</h3>
+          <p className="field-hint">{t.bookedLead}</p>
+          <ul>
+            <li data-money="transport">
+              {t.bookedShipping}:{' '}
+              <Ltr>
+                {reply.data.bookedPrice.shippingPrice} {reply.data.bookedPrice.currency}
+              </Ltr>
+            </li>
+            {reply.data.bookedPrice.commission ? (
+              <li data-money="commission">
+                {t.commissionLine}:{' '}
+                <Ltr>
+                  {reply.data.bookedPrice.commission.amount} {reply.data.bookedPrice.currency}
+                </Ltr>
+              </li>
+            ) : null}
+            <li data-money="net">
+              {t.netCarrier}:{' '}
+              <Ltr>
+                {reply.data.bookedPrice.net} {reply.data.bookedPrice.currency}
+              </Ltr>
+            </li>
+            {reply.data.bookedPrice.fee ? (
+              <li data-money="fee">
+                {t.feeYouPay}:{' '}
+                <Ltr>
+                  {reply.data.bookedPrice.fee.amount} {reply.data.bookedPrice.currency}
+                </Ltr>
+              </li>
+            ) : null}
+          </ul>
+        </div>
+      ) : null}
       {editable ? (
         <form className="form card" id="commission-form" action={setShipmentCommissionAction}>
           <input type="hidden" name="locale" value={locale} />

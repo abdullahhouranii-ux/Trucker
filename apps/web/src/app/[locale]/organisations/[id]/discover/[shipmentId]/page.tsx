@@ -286,6 +286,7 @@ function QuotationSection({
               zone={context.pickupWindow.timeZone}
               deadline={context.quotationDeadline.local}
               window={context.pickupWindow}
+              freightMax={context.freightMaxDueDays}
             />
             {commission && figures ? (
               <CommissionAcceptance

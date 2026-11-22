@@ -8,6 +8,7 @@ import type {
   QuotationMoment,
   QuotationTerms,
   QuotationVersion,
+  FreightTerms,
 } from '../server/api.ts';
 
 type Q = Messages['quo'];
@@ -83,7 +84,31 @@ export function QuotationFacts({
           </dd>
         </div>
       ) : null}
+      <div data-freight={version.freight.methods.join(' ')}>
+        <dt>{t.freightTitle}</dt>
+        <dd>
+          <FreightOffer t={t} freight={version.freight} />
+        </dd>
+      </div>
     </dl>
+  );
+}
+
+/** The ways the freight may be paid, one per line. */
+export function FreightOffer({ t, freight }: { t: Q; freight: FreightTerms }) {
+  return (
+    <>
+      {freight.methods.map((method, index) => (
+        <span key={method}>
+          {index > 0 ? <br /> : null}
+          {method === 'cash_on_delivery'
+            ? t.freightMethods[method]
+            : t.freightDue
+                .replace('{method}', t.freightMethods[method])
+                .replace('{n}', String(freight.dueDays ?? 0))}
+        </span>
+      ))}
+    </>
   );
 }
 
@@ -173,11 +198,13 @@ export function QuotationFields({
   zone,
   deadline,
   window,
+  freightMax,
 }: {
   t: Q;
   locale: Locale;
   terms: QuotationTerms;
   current: QuotationVersion | undefined;
+  freightMax: number;
   errors: Map<string, string>;
   zone: string;
   deadline: string;
@@ -259,6 +286,53 @@ export function QuotationFields({
           );
         })}
       </fieldset>
+      <fieldset
+        className="fieldset"
+        id="freight-methods"
+        tabIndex={-1}
+        data-invalid={errors.has('freight-methods') ? 'true' : undefined}
+        aria-describedby={errors.has('freight-methods') ? 'freight-methods-error' : undefined}
+      >
+        <legend>{t.freightTitle}</legend>
+        <p className="field-hint">{t.freightLead}</p>
+        {errors.has('freight-methods') ? (
+          <p className="field-error" id="freight-methods-error">
+            {errors.get('freight-methods')}
+          </p>
+        ) : null}
+        {(['cash_on_delivery', 'bank_transfer'] as const).map((method) => (
+          <div className="check" key={method}>
+            <input
+              id={`freight-${method}`}
+              name={`freight-${method}`}
+              type="checkbox"
+              defaultChecked={
+                current ? current.freight.methods.includes(method) : method === 'bank_transfer'
+              }
+            />
+            <label htmlFor={`freight-${method}`}>{t.freightMethods[method]}</label>
+          </div>
+        ))}
+      </fieldset>
+      <Field
+        id="freightDueDays"
+        label={t.freightDueDays}
+        hint={fill(t.freightDueDaysHint, { max: freightMax })}
+        error={errors.get('freightDueDays')}
+      >
+        <input
+          id="freightDueDays"
+          name="freightDueDays"
+          type="text"
+          dir="ltr"
+          inputMode="numeric"
+          autoComplete="off"
+          maxLength={3}
+          defaultValue={String(current?.freight.dueDays ?? freightMax)}
+          aria-invalid={errors.has('freightDueDays') ? true : undefined}
+          aria-describedby={describedBy('freightDueDays', true, errors.has('freightDueDays'))}
+        />
+      </Field>
       <MomentFields
         name="validUntil"
         legend={t.validUntil}
@@ -332,6 +406,15 @@ export function quotationProblems(
       add('earliestPickupDate', e[`earliestPickup_${code}`] ?? e.earliestPickup_required!);
     else if (field === 'notes') add('notes', e.notes_length!);
     else if (field === 'currency') add('currency', e.currency_unavailable!);
+    else if (field === 'freight.methods')
+      add('freight-methods', e[`freight_methods_${code}`] ?? e.freight_methods_invalid!);
+    else if (field === 'freight.dueDays')
+      add(
+        'freightDueDays',
+        (e[`freight_dueDays_${code}`] ?? e.freight_dueDays_out_of_range!).replace('{n}', extra),
+      );
+    else if (field === 'freightMethod')
+      add(undefined, e[`freightMethod_${code}`] ?? e.freightMethod_required!);
     else add(undefined, e[part] ?? e.unavailable!);
   }
   return { errors, summary };

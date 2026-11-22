@@ -656,8 +656,11 @@ async function main() {
     mkdirSync(outDir, { recursive: true });
     // At most five pictures, for design review only.
     const shots = {
-      'ar:shipment commission': 'shipment-commission-limit-ar-390',
-      'en:contracts': 'contracts-limit-en-390',
+      'en:quotation freight': 'quotation-freight-en-390',
+      'ar:freight choice': 'freight-choice-ar-390',
+      'en:booking customer price': 'booking-customer-price-en-390',
+      'en:booking carrier price': 'booking-carrier-price-en-390',
+      'ar:booked price': 'booked-price-ar-390',
     };
     // Fictional numbers: country code 999 is not assigned. Unique per run.
     const stamp = String(Date.now()).slice(-7);
@@ -3254,7 +3257,8 @@ async function main() {
       `the awarded shipment page shows ${await stateShown()}`,
     );
     await inspect('en', 'awarded shipment');
-    // Both parties' booking lists show the same booking with the same figures.
+    // Both parties' booking lists show the same booking, each with its own figures (slice 25,
+    // D-11): the shipper the price, the fee and its total; the carrier the price and its net.
     const figures = async (org) => {
       await open(`/en/organisations/${org}/bookings`, 390);
       return page.evaluate(() =>
@@ -3271,10 +3275,8 @@ async function main() {
     const asCarrier = await figures(carrierOrg);
     check(
       'booking',
-      asShipper === asCarrier &&
-        asShipper.includes('transport=1250.50 XTS') &&
-        asShipper.includes('net=1250.50 XTS') &&
-        asShipper.includes('total=1288.02 XTS'),
+      asShipper === 'transport=1250.50 XTS;fee=37.52 XTS, paid by the shipper;total=1288.02 XTS' &&
+        asCarrier === 'transport=1250.50 XTS;net=1250.50 XTS',
       `the shipper saw ${asShipper} and the carrier ${asCarrier}`,
     );
     // The carrier's own quotation list leads to the booking, not to the closed shipment.
@@ -4110,6 +4112,147 @@ async function main() {
       'commission',
       customerSees.includes('1000.00') && !/commission|925\.00|75\.00/i.test(customerSees),
       `the customer's quotation page reads: ${customerSees.slice(0, 200)}`,
+    );
+
+    // Price breakdown and freight terms (slice 25). The customer accepts the arranged quotation;
+    // each role then sees only its own figures.
+    const arrangedQuotation = (
+      await owner.query('SELECT id FROM trucker.quotation WHERE shipment_id = $1', [
+        arrangedShipment,
+      ])
+    ).rows[0].id;
+    await open(`/en/organisations/${verifyOrg}/shipments/${arrangedShipment}/quotations`, 390);
+    const singleMethod = (await page.$('input[name="freightMethod"]')) === null;
+    await submit(`[data-accept="${arrangedQuotation}"]`);
+    const arrangedBooking = (
+      await owner.query('SELECT id FROM trucker.booking WHERE shipment_id = $1', [arrangedShipment])
+    ).rows[0]?.id;
+    const arrangedBookingPath = (locale, org) =>
+      `/${locale}/organisations/${org}/bookings/${arrangedBooking}`;
+    const moneyIn = (scope) =>
+      page.evaluate(
+        (selector) =>
+          Object.fromEntries(
+            [...document.querySelectorAll(selector)].map((item) => [
+              item.dataset.money,
+              item.textContent.trim(),
+            ]),
+          ),
+        `${scope} [data-money]`,
+      );
+    await open(arrangedBookingPath('en', verifyOrg), 390);
+    const customerMoney = await moneyIn('main');
+    const customerText = await page.evaluate(() => document.body.innerText);
+    await inspect('en', 'booking customer price');
+    await open(arrangedBookingPath('en', carrierOrg), 390);
+    const carrierMoney = await moneyIn('main');
+    await inspect('en', 'booking carrier price');
+    check(
+      'price',
+      singleMethod &&
+        arrangedBooking !== undefined &&
+        customerMoney.transport === '1000.00 XTS' &&
+        (customerMoney.fee ?? '').startsWith('30.00 XTS') &&
+        customerMoney.total === '1030.00 XTS' &&
+        customerMoney.commission === undefined &&
+        customerMoney.net === undefined &&
+        !/925\.00|75\.00/.test(customerText) &&
+        carrierMoney.commission === '75.00 XTS' &&
+        carrierMoney.net === '925.00 XTS' &&
+        carrierMoney.fee === undefined &&
+        carrierMoney.total === undefined,
+      `the customer saw ${JSON.stringify(customerMoney)}, the carrier ${JSON.stringify(carrierMoney)}`,
+    );
+    // The organiser sees the booked price on its own shipment.
+    for (const locale of locales) {
+      await open(arrangedPath(locale), 390);
+      await inspect(locale, 'booked price');
+    }
+    await open(arrangedPath('en'), 390);
+    const organiserMoney = await moneyIn('#booked-price');
+    check(
+      'price',
+      (organiserMoney.commission ?? '').includes('75.00') &&
+        (organiserMoney.net ?? '').includes('925.00') &&
+        organiserMoney.fee === undefined,
+      `the organiser saw ${JSON.stringify(organiserMoney)}`,
+    );
+
+    // A quotation offering two freight methods: the customer chooses one when accepting.
+    const freightShipment = await makeShipment('freight');
+    const freightPublished = await post(
+      `/organisations/${verifyOrg}/shipments/${freightShipment}/publish`,
+      {
+        version: 1,
+        cargoCategory: 'general_dry',
+        equipmentType: 'curtain_side',
+        dangerousGoods: false,
+        pickupArea: 'North industrial area',
+        deliveryArea: 'Port district',
+        quotationDeadline: { local: zoned(24, 4) },
+      },
+      'freight-publish',
+    );
+    const freightTerms = await post(
+      `/organisations/${verifyOrg}/shipments/${freightShipment}/quotation-terms`,
+      { version: 0, currency: 'XTS' },
+      'freight-terms',
+    );
+    const freightQuote = (locale) =>
+      `/${locale}/organisations/${carrierOrg}/discover/${freightShipment}`;
+    await open(freightQuote('en'), 390);
+    await fillQuotation('500');
+    await page.click('#freight-cash_on_delivery');
+    await page.$eval('#freightDueDays', (input) => (input.value = ''));
+    await page.type('#freightDueDays', '10');
+    await submit('#submit-quotation');
+    const offered = await page
+      .$eval('#own-quotation-facts [data-freight]', (item) => item.dataset.freight)
+      .catch(() => null);
+    for (const locale of locales) {
+      await open(freightQuote(locale), 390);
+      await inspect(locale, 'quotation freight');
+    }
+    const freightQuotation = (
+      await owner.query('SELECT id FROM trucker.quotation WHERE shipment_id = $1', [
+        freightShipment,
+      ])
+    ).rows[0]?.id;
+    const freightQuotes = (locale) =>
+      `/${locale}/organisations/${verifyOrg}/shipments/${freightShipment}/quotations`;
+    for (const locale of locales) {
+      await open(freightQuotes(locale), 390);
+      await inspect(locale, 'freight choice');
+    }
+    // Accepting without a choice is refused, and nothing is booked.
+    await open(freightQuotes('en'), 390);
+    await submit(`[data-accept="${freightQuotation}"]`);
+    const unchosen =
+      page.url().includes('freightMethod') &&
+      (await owner.query('SELECT 1 FROM trucker.booking WHERE shipment_id = $1', [freightShipment]))
+        .rowCount === 0;
+    await open(freightQuotes('en'), 390);
+    await page.click(`#freight-${freightQuotation}-cash_on_delivery`);
+    await submit(`[data-accept="${freightQuotation}"]`);
+    const fixed = (
+      await owner.query(
+        'SELECT freight_method AS m, freight_due_rule AS r FROM trucker.booking WHERE shipment_id = $1',
+        [freightShipment],
+      )
+    ).rows[0];
+    const freightLine = await page
+      .$eval('#booking [data-freight]', (item) => item.dataset.freight)
+      .catch(() => null);
+    check(
+      'price',
+      freightPublished.status === 200 &&
+        freightTerms.status === 200 &&
+        offered === 'cash_on_delivery bank_transfer' &&
+        unchosen &&
+        fixed?.m === 'cash_on_delivery' &&
+        fixed?.r === 'on_delivery' &&
+        freightLine === 'cash_on_delivery',
+      `freight: offered ${offered}, refused without a choice ${unchosen}, fixed ${JSON.stringify(fixed)}, shown ${freightLine} at ${page.url()}`,
     );
 
     // Commission contracts (slice 23b): the organiser proposes on its contracts page, the
