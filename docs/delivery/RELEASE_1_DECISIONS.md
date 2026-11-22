@@ -130,7 +130,10 @@ No legal or tax rule is stated here. Every value that is not approved is a prote
 | Redesign (PR #44) | **Approved by Abdullah**: the visual direction and the generated home page image |
 | Dispute model (PR #40) | **Deferred by Abdullah** to the last step of the project. The mediation model stays as built until then |
 | Invoice (PR #46) | **Decided by Abdullah** (08:22): build the internal invoice draft only. Nothing is issued or sent and no tax is calculated in Trucker; the tax invoice is to come from an accounting system once the accountant confirms the issuer, VAT registration and e-invoicing |
-| Mobile app (PR #45), approvals of 19 and 20 November | Recommendations given; no decision yet. The owner entity of Trucker is needed for the app's licence notice and identifier |
+| Owner of Trucker (22 November, 10:38) | **Decided by Abdullah**: his company owns Trucker. The exact legal name for the app's licence notice and identifier is to be settled before go-live |
+| Mobile signing and store publishing (PR #45) | **Decided by Abdullah**: after testing, before go-live. Until then the app stays a development build with no store identifier, signing keys or store listing |
+| Local Docker database | **Decided by Abdullah**: recreate it, as suggested, because it holds the migration numbers of the earlier Codex work. This deletes only the Trucker test volume, not Odoo |
+| Approvals of 19 and 20 November | Under review with Abdullah: the dispute hold release rule (19 November), counterclaim terms (20 November) and the invoice policy recorded by Codex (20 November). Not confirmed yet |
 
 ## 2. Exceptions to the proposed structures
 
