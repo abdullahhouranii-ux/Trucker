@@ -296,6 +296,12 @@ export class IdentityService {
     );
     const status = result.rows[0]?.status;
     if (status === 'closed') throw closed;
+    if (status === 'not_invited')
+      throw new ApiError(
+        403,
+        'invitation_required',
+        'Registration is by invitation during the pilot. This number has no open invitation.',
+      );
     const account = status === 'unauthorized' ? undefined : await this.account(auth.tokenHash);
     if (!account) throw unauthorized();
     return personView(account);

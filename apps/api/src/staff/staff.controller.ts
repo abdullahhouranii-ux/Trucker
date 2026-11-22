@@ -14,6 +14,7 @@ import { z } from 'zod';
 import { ApiError } from '../http/api-error.js';
 import { FeeService } from './fee.service.js';
 import { RefundService } from './refund.service.js';
+import { InvitationService } from './invitation.service.js';
 import { OperationsService } from './operations.service.js';
 import { FinanceService } from './finance.service.js';
 import { ReviewService, type QueueEntry } from './review.service.js';
@@ -257,6 +258,16 @@ const staffCargoBody = z
   .passthrough()
   .refine((value) => JSON.stringify(value).length <= 20_000);
 const withdrawBody = z.object({ version: z.number().int().min(1), note: z.string().max(2000) });
+// Pilot invitations: the database checks each field again and reports problems by field.
+const pilotInviteBody = z
+  .object({
+    phone: z.string().max(40),
+    organisationName: z.string().max(400),
+    contactName: z.string().max(400),
+  })
+  .strict();
+const pilotCancelBody = z.object({ version: z.number().int().min(1) }).strict();
+
 const financialMoveBody = z.object({
   version: z.number().int().min(1),
   move: z.enum(['approve', 'discard', 'withdraw']),
@@ -297,6 +308,7 @@ export class StaffController {
     @Inject(FeeService) private readonly fees: FeeService,
     @Inject(RefundService) private readonly refunds: RefundService,
     @Inject(OperationsService) private readonly operations: OperationsService,
+    @Inject(InvitationService) private readonly invitations: InvitationService,
   ) {}
 
   private caller(request: IncomingRequest): Promise<StaffCaller> {
@@ -506,6 +518,31 @@ export class StaffController {
   }
 
   // Financial settings: drafted by one administrator, approved by another.
+  // Pilot invitations (DB-17): who may register while the pilot is by invitation.
+  @Get('pilot-invitations')
+  async pilotInvitations(@Req() request: IncomingRequest) {
+    const caller = await this.caller(request);
+    return { pilot: await this.invitations.overview(caller) };
+  }
+
+  @Post('pilot-invitations')
+  @HttpCode(200)
+  async pilotInvite(@Body() body: unknown, @Req() request: IncomingRequest) {
+    const caller = await this.caller(request);
+    return this.invitations.invite(caller, parse(pilotInviteBody, body));
+  }
+
+  @Post('pilot-invitations/:id/cancel')
+  @HttpCode(200)
+  async pilotCancel(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Req() request: IncomingRequest,
+  ) {
+    const caller = await this.caller(request);
+    return this.invitations.cancel(caller, identifier(id), parse(pilotCancelBody, body).version);
+  }
+
   @Get('financial-settings')
   async financialSettings(@Req() request: IncomingRequest) {
     const caller = await this.caller(request);

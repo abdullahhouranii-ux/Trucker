@@ -1694,6 +1694,56 @@ async function main() {
     );
 
     // ------------------------------------------------------------------------------------
+    // Pilot invitations (db/migrations/0042). Real API and database: an invitation is
+    // refused by field, recorded, listed and cancelled. The number is fictional (+999).
+    // ------------------------------------------------------------------------------------
+    await one.open('/pilot');
+    const pilotEmpty =
+      (await one.page.$('#pilot-rule')) !== null &&
+      (await one.page.$('#no-open')) !== null &&
+      (await one.page.$('nav a[href="/pilot"]')) !== null;
+    await one.inspect('pilot empty');
+    await one.page.type('#phone', '12345');
+    await one.page.type('#organisationName', 'Pilot Carrier (fictional)');
+    await one.page.type('#contactName', 'Pilot Contact (fictional)');
+    await one.submit('[data-action="invite"]');
+    const pilotRefused =
+      one.page.url().includes('error=validation_failed') &&
+      (await one.page.$('#error-summary a[href="#phone"]')) !== null &&
+      (await one.page.$('#phone[aria-invalid="true"]')) !== null &&
+      (await db.query('SELECT count(*)::int AS n FROM trucker.pilot_invitation')).rows[0].n === 0;
+    await one.inspect('pilot refused');
+    const pilotPhone = '+999791234567';
+    await one.page.type('#phone', pilotPhone);
+    await one.page.type('#organisationName', 'Pilot Carrier (fictional)');
+    await one.page.type('#contactName', 'Pilot Contact (fictional)');
+    await one.submit('[data-action="invite"]');
+    const pilotListed =
+      one.page.url().includes('done=invited') &&
+      (await one.text('#pilot-confirmation'))?.includes('Nothing was sent') === true &&
+      (await one.page.$(
+        `#open-invitations li[data-phone="${pilotPhone}"][data-status="pending"]`,
+      )) !== null;
+    await one.inspect('pilot listed');
+    await one.submit(`#open-invitations li[data-phone="${pilotPhone}"] [data-action="cancel"]`);
+    const pilotCancelled =
+      one.page.url().includes('done=cancelled') &&
+      (await one.page.$(
+        `#ended-invitations li[data-phone="${pilotPhone}"][data-status="cancelled"]`,
+      )) !== null &&
+      (
+        await db.query('SELECT status FROM trucker.pilot_invitation WHERE phone_e164 = $1', [
+          pilotPhone,
+        ])
+      ).rows[0]?.status === 'cancelled';
+    await one.inspect('pilot cancelled');
+    check(
+      'pilot invitations',
+      pilotEmpty && pilotRefused && pilotListed && pilotCancelled,
+      `the pilot page ended at ${one.page.url()} (empty ${pilotEmpty}, refused ${pilotRefused}, listed ${pilotListed}, cancelled ${pilotCancelled})`,
+    );
+
+    // ------------------------------------------------------------------------------------
     // Operations (slice 17b). The administrator is given the operations privilege directly.
     // The queue and a booking are first shown empty or as this database has them, then with a
     // fixed, fictional list in every state. A step sent from them goes to the real API, which

@@ -206,6 +206,7 @@
       "too_many_code_requests": "Too many codes were requested for this number. Try again later.",
       "code_delivery_unavailable": "Codes cannot be sent in this environment.",
       "registration_closed": "Registration is not open in this environment.",
+      "invitation_required": "Registration is by invitation during the pilot, and this number has no open invitation. Ask Trucker to invite this number, then try again.",
       "terms_version_changed": "The notice has changed. Read the current text and try again.",
       "session_ended": "Your session has ended. Sign in again.",
       "name": "Enter your name.",
