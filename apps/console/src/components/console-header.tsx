@@ -28,6 +28,7 @@ export function ConsoleHeader({ staff, current }: { staff?: StaffAccount; curren
         ['/verification', 'Verification', reviewer],
         ['/verification/withdraw', 'Withdraw a verification', admin],
         ['/staff', 'Staff accounts', admin],
+        ['/pilot', 'Pilot invitations', admin],
         ['/audit', 'Audit', admin],
       ),
     },

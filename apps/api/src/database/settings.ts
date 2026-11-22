@@ -50,6 +50,11 @@ export const SECURITY_SETTING_DEFAULTS = {
   // Days a photo is kept once its record ended without a booking; 0 keeps it
   // (db/migrations/0040). Development default until a period is set.
   record_photo_retention_days: 0,
+  // Pilot invitations (db/migrations/0042, DB-17). Development defaults: registration does not
+  // need an invitation (0) until it is switched on (1), which production requires; an invitation
+  // lasts 14 days.
+  pilot_invitation_required: 0,
+  pilot_invitation_days: 14,
 } as const;
 
 export type SettingName = keyof typeof SECURITY_SETTING_DEFAULTS;

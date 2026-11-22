@@ -60,6 +60,7 @@ import { PAYMENT_PROVIDER } from './payment/provider.js';
 import { TestPaymentProvider } from './payment/test-provider.js';
 import { FeeService } from './staff/fee.service.js';
 import { RefundService } from './staff/refund.service.js';
+import { InvitationService } from './staff/invitation.service.js';
 import { OperationsService } from './staff/operations.service.js';
 import { TripWatchJob } from './trip/trip-watch.job.js';
 import { FinanceService } from './staff/finance.service.js';
@@ -161,6 +162,7 @@ export class AppModule {
         FinanceService,
         FeeService,
         RefundService,
+        InvitationService,
         OperationsService,
         TripWatchJob,
         FeeLapseJob,

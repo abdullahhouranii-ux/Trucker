@@ -733,3 +733,69 @@ export async function reconcileAction(form: FormData): Promise<void> {
     );
   refundRefused(reply);
 }
+
+// ---------------------------------------------------------------------------------------------
+// Pilot invitations (db/migrations/0042). Nothing is sent to the person: staff tell them.
+// ---------------------------------------------------------------------------------------------
+const INVITATION_REFUSALS = [
+  'staff_privilege_required',
+  'validation_failed',
+  'invitation_open',
+  'already_registered',
+  'invitation_not_open',
+  'record_changed',
+  'not_found',
+];
+function invitationRefusal(reply: Extract<ApiReply<unknown>, { ok: false }>): string {
+  if (unknown(reply)) return 'unconfirmed';
+  return INVITATION_REFUSALS.includes(reply.code) ? reply.code : 'refused';
+}
+
+export async function inviteParticipantAction(form: FormData): Promise<void> {
+  const token = await signedIn();
+  const reply = await api<{ outcome: 'invited' | 'already_invited'; invitation: { id: string } }>(
+    'POST',
+    '/staff/pilot-invitations',
+    {
+      token,
+      body: {
+        phone: text(form, 'phone').replace(/[\s-]/g, ''),
+        organisationName: text(form, 'organisationName'),
+        contactName: text(form, 'contactName'),
+      },
+    },
+  );
+  if (reply.ok) {
+    revalidatePath('/pilot');
+    redirect(`/pilot?done=${reply.data.outcome}#invitation-${reply.data.invitation.id}`);
+  }
+  if (reply.status === 401) await sessionEnded();
+  const fields =
+    reply.code === 'validation_failed' && Array.isArray(reply.details.fields)
+      ? (reply.details.fields as string[]).filter((field) =>
+          ['phone', 'organisationName', 'contactName'].includes(field),
+        )
+      : [];
+  const query = new URLSearchParams({ error: invitationRefusal(reply) });
+  if (fields.length > 0) query.set('fields', fields.join(','));
+  redirect(`/pilot?${query.toString()}#invite`);
+}
+
+export async function cancelInvitationAction(form: FormData): Promise<void> {
+  const token = await signedIn();
+  const id = text(form, 'invitationId');
+  const version = Number(text(form, 'version'));
+  if (!UUID.test(id) || !Number.isInteger(version) || version < 1)
+    redirect('/pilot?error=not_found');
+  const reply = await api<{ outcome: 'cancelled' | 'already_cancelled' }>(
+    'POST',
+    `/staff/pilot-invitations/${id}/cancel`,
+    { token, body: { version } },
+  );
+  if (reply.ok) {
+    revalidatePath('/pilot');
+    redirect(`/pilot?done=${reply.data.outcome}#invitation-${id}`);
+  }
+  if (reply.status === 401) await sessionEnded();
+  redirect(`/pilot?error=${invitationRefusal(reply)}#invitation-${id}`);
+}
