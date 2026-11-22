@@ -9,12 +9,19 @@ import {
   fleetProblems,
 } from '../../../components/fleet-view.tsx';
 import { ErrorSummary, Field } from '../../../components/form.tsx';
-import { ReportProblem, TripFacts, utcMinute } from '../../../components/trip-view.tsx';
+import {
+  DeliveryFacts,
+  DeliveryForm,
+  ReportProblem,
+  TripFacts,
+  utcMinute,
+} from '../../../components/trip-view.tsx';
 import { isLocale } from '../../../i18n/config.ts';
 import { getMessages } from '../../../i18n/messages.ts';
 import { api, type Country, type DriverAssignment, type DriverSide } from '../../../server/api.ts';
 import {
   acknowledgeAssignmentAction,
+  driverDeliveryAction,
   driverEstimateAction,
   driverReportProblemAction,
   driverMilestoneAction,
@@ -221,6 +228,33 @@ export default async function DriverPage({ params, searchParams }: Props) {
                       </dl>
                     ) : null}
                     <TripFacts t={m.trip} trip={item.trip} />
+                    {item.trip.delivery ? (
+                      <DeliveryFacts
+                        d={m.delivery}
+                        t={m.trip}
+                        delivery={item.trip.delivery}
+                        roles={a.roles}
+                      />
+                    ) : null}
+                    {item.trip.milestones.some(
+                      (entry) => entry.milestone === 'arrived_at_delivery',
+                    ) &&
+                    !item.trip.delivery?.outcome &&
+                    !item.trip.hold ? (
+                      <DeliveryForm
+                        d={m.delivery}
+                        t={m.trip}
+                        id={`delivery-${item.bookingId}`}
+                        action={driverDeliveryAction}
+                        hidden={
+                          <>
+                            <input type="hidden" name="locale" value={locale} />
+                            <input type="hidden" name="bookingId" value={item.bookingId} />
+                          </>
+                        }
+                        onBehalf={false}
+                      />
+                    ) : null}
                     {item.trip.next && !item.trip.hold ? (
                       <form className="form-inline" action={driverMilestoneAction}>
                         <input type="hidden" name="locale" value={locale} />

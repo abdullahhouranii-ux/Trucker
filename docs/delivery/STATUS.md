@@ -32,14 +32,15 @@ Each slice has a scope and a record with its evidence in this folder.
 | 27 | Online payment of the fee through a provider-neutral interface (development stand-in only), receipts; corrected after the independent review of 17 November 2026 (R2 to R5) | PR #31 |
 | 28 | Refunds of the fee (requested, approved, submitted, completed or failed; partial; never more than the payment) and reconciliation, by independent staff; no real provider, no money moves | PR #32 |
 | 17a | Dispatch (one step, refused with the first failing precondition, idempotent) and the trip's milestones by the driver or on the driver's behalf, the arrival estimate, and what each party sees; exceptions (17b) not built | PR #33 |
-| 17b | Exceptions reported by the driver, carrier or shipper; the operations privilege, queue and cases; overrun and missing-arrival cases; dispatch blocks, trip holds, operations' milestones and withdrawing a mistaken one | PR #34 (planned number) |
+| 17b | Exceptions reported by the driver, carrier or shipper; the operations privilege, queue and cases; overrun and missing-arrival cases; dispatch blocks, trip holds, operations' milestones and withdrawing a mistaken one | PR #34 |
+| 18a | Delivery outcome (by the driver, or on behalf), operations case for anything but full delivery, cargo custody and handover, release of each resource on the release condition | PR #35 (planned number) |
 
 Pull requests #15 to #32 are stacked, open and green in CI; slice 17a's pull request is open. None is merged; each needs a dependency review and Abdullah's explicit authorisation.
 
 ## Next
 
 1. Phase five (dispatch, proof of delivery, settlement, closure), each as its own unmerged pull request, on development defaults, under the instruction of 17 November 2026 (11:46).
-2. Slice 18 (delivery outcome, proof of delivery, release of resources). Slice 17 is built: `DISPATCH_SLICE_17A.md`, `EXCEPTIONS_SLICE_17B.md`.
+2. Slice 18b (proof of delivery: manifest, files behind a storage interface with a development stand-in, review by the shipper) and 18c (disputes and holds). Slice 18a is built: `DELIVERY_SLICE_18A.md`; its scope `DELIVERY_SLICE_18_SCOPE.md` is for approval.
 
 ## Open decisions
 

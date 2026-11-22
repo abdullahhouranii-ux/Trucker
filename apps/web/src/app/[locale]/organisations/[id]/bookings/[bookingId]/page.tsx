@@ -8,7 +8,14 @@ import {
   PayOnline,
 } from '../../../../../../components/booking-view.tsx';
 import { ErrorSummary, Field } from '../../../../../../components/form.tsx';
-import { ReportProblem, TripFacts, utcMinute } from '../../../../../../components/trip-view.tsx';
+import {
+  DeliveryFacts,
+  DeliveryForm,
+  HandoverForm,
+  ReportProblem,
+  TripFacts,
+  utcMinute,
+} from '../../../../../../components/trip-view.tsx';
 import { direction, isLocale, type Locale } from '../../../../../../i18n/config.ts';
 import { getMessages, type Messages } from '../../../../../../i18n/messages.ts';
 import {
@@ -24,7 +31,10 @@ import {
   cancelBookingAction,
   decideSubstitutionAction,
   dispatchBookingAction,
+  recordDeliveryAction,
+  recordHandoverAction,
   recordMilestoneOnBehalfAction,
+  releaseResourceAction,
   reportProblemAction,
   stateEstimateAction,
   waitForCarrierAction,
@@ -316,6 +326,19 @@ export default async function BookingPage({ params, searchParams }: Props) {
             <>
               <TripFacts t={tt} trip={trip} />
               {role === 'carrier' ? <CarrierTripForms t={tt} trip={trip} hidden={hidden} /> : null}
+              {trip.delivery ? (
+                <DeliveryFacts d={m.delivery} t={tt} delivery={trip.delivery} roles={a.roles} />
+              ) : null}
+              {role === 'carrier' ? (
+                <CarrierDeliveryForms
+                  m={m}
+                  trip={trip}
+                  hidden={hidden}
+                  assigned={(['truck', 'trailer', 'driver'] as const).filter(
+                    (item) => booking.resources?.[item],
+                  )}
+                />
+              ) : null}
               <ReportProblem
                 t={tt}
                 id="report-problem"
@@ -646,6 +669,61 @@ function CarrierTripForms({
           </button>
         </form>
       )}
+    </>
+  );
+}
+
+/** The carrier after arrival at delivery: the outcome, the handover, then releases (slice 18a). */
+function CarrierDeliveryForms({
+  m,
+  trip,
+  hidden,
+  assigned,
+}: {
+  m: Messages;
+  trip: NonNullable<BookingDetail['booking']['trip']>;
+  hidden: React.ReactNode;
+  assigned: ('truck' | 'trailer' | 'driver')[];
+}) {
+  const d = m.delivery;
+  const arrived = trip.milestones.some((item) => item.milestone === 'arrived_at_delivery');
+  if (!arrived) return null;
+  const outcome = trip.delivery?.outcome ?? null;
+  const released = new Set((trip.delivery?.releases ?? []).map((item) => item.role));
+  return (
+    <>
+      {!outcome && !trip.hold ? (
+        <DeliveryForm
+          d={d}
+          t={m.trip}
+          id="delivery-form"
+          action={recordDeliveryAction}
+          hidden={hidden}
+          onBehalf
+        />
+      ) : null}
+      {trip.delivery?.custody?.open ? (
+        <HandoverForm d={d} action={recordHandoverAction} hidden={hidden} />
+      ) : null}
+      {outcome && assigned.some((item) => !released.has(item)) ? (
+        <section className="card" id="release">
+          <h3>{d.releaseTitle}</h3>
+          <p className="field-hint">{d.releaseLead}</p>
+          <div className="form-inline">
+            {assigned
+              .filter((item) => !released.has(item))
+              .map((item) => (
+                <form key={item} action={releaseResourceAction}>
+                  {hidden}
+                  <input type="hidden" name="role" value={item} />
+                  <button className="button" type="submit" data-release={item}>
+                    {d.release.replace('{role}', m.asg.roles[item])}
+                  </button>
+                </form>
+              ))}
+          </div>
+        </section>
+      ) : null}
     </>
   );
 }

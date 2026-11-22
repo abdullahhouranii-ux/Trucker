@@ -1060,11 +1060,21 @@ async function openEpisode(booking: string, resource: string): Promise<string> {
   assert.equal(made.rowCount, 1);
   return made.rows[0]!.id;
 }
-const closeEpisode = (id: string) =>
-  owner.query(
-    `UPDATE trucker.occupancy_episode SET closed_at = $2, release_reason = 'released_in_test' WHERE id = $1`,
+/** An episode closes only through a recorded release (slice 18a): the migration role writes one. */
+const closeEpisode = async (id: string) => {
+  await owner.query(
+    `INSERT INTO trucker.resource_release
+       (booking_id, episode_id, reservation_id, role, released_by, released_at, basis)
+     SELECT e.booking_id, e.id, e.reservation_id, e.resource_kind, r.created_by, $2, 'condition'
+     FROM trucker.occupancy_episode e JOIN trucker.resource_reservation r ON r.id = e.reservation_id
+     WHERE e.id = $1`,
     [id, clock()],
   );
+  await owner.query(
+    `UPDATE trucker.occupancy_episode SET closed_at = $2, release_reason = 'released' WHERE id = $1`,
+    [id, clock()],
+  );
+};
 const refusal = (reply: Reply): unknown[] => [reply.status, reply.body.code, reply.body.details];
 const freshParty = async (party: Party): Promise<Party> => ({
   person: await again(party.person),

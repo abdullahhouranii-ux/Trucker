@@ -46,6 +46,7 @@ export const TYPES: Record<string, string> = {
   other: 'Other',
 };
 const KINDS: Record<string, string> = {
+  delivery_outcome: 'The delivery was not in full',
   overrun: 'A resource is still on this trip past its planned end',
   no_pickup_arrival: 'No arrival at pick-up by the end of the pick-up window',
 };
@@ -75,6 +76,8 @@ export const DONE: Record<string, string> = {
   held: 'The trip is on hold. No milestone is recorded until it is resumed.',
   resumed: 'The trip is resumed.',
   withdrawn: 'The milestone is withdrawn. It stays in the record, and the trip is back one step.',
+  handed_over: 'The handover is recorded. Custody is closed.',
+  released: 'The resource is released.',
 };
 export const ERRORS: Record<string, string> = {
   staff_privilege_required: 'Your account does not hold the operations privilege.',
@@ -91,6 +94,14 @@ export const ERRORS: Record<string, string> = {
   trip_on_hold: 'The trip is on hold: resume it before recording a milestone.',
   milestone_out_of_sequence: 'That is not the next milestone. Nothing was recorded.',
   nothing_to_withdraw: 'No milestone is recorded on this trip.',
+  not_arrived_at_delivery: 'The truck has not arrived at delivery.',
+  delivery_recorded: 'The delivery outcome is already recorded.',
+  delivery_settled: 'A handover or release is recorded: the outcome is no longer corrected.',
+  no_custody: 'No cargo is in custody on this trip.',
+  already_released: 'This resource is already released.',
+  no_delivery_outcome: 'No delivery outcome is recorded yet.',
+  custody_open:
+    'Cargo is still in custody. Record its handover, or release as an operations release with a note.',
   validation_failed:
     'Something is missing or not valid: every step except acknowledging needs a note, and a block or hold needs a reason.',
   unconfirmed:

@@ -1202,7 +1202,9 @@
       "already_dispatched": "This booking was already dispatched.",
       "stated": "The estimate is recorded.",
       "reported": "The problem is reported to Trucker operations.",
-      "already_reported": "This problem was already reported."
+      "already_reported": "This problem was already reported.",
+      "handed_over": "The handover is recorded. Custody is closed.",
+      "released": "The resource is released and free for its next booking."
     },
     "errors": {
       "unavailable": "This could not be loaded. Try again.",
@@ -1237,7 +1239,17 @@
       "milestone_unconfirmed": "It is not confirmed that the milestone was recorded. Check what is shown below before trying again.",
       "estimate_unconfirmed": "It is not confirmed that the estimate was recorded. Check what is shown below before trying again.",
       "trip_on_hold": "Trucker operations has put this trip on hold. Nothing was recorded.",
-      "report_unconfirmed": "It is not confirmed that the problem was reported. Check what is shown below before trying again."
+      "report_unconfirmed": "It is not confirmed that the problem was reported. Check what is shown below before trying again.",
+      "not_arrived_at_delivery": "The truck has not arrived at delivery yet.",
+      "delivery_recorded": "The delivery outcome is already recorded.",
+      "delivery_settled": "A handover or release is recorded: the outcome can no longer be corrected.",
+      "no_custody": "No cargo is in custody on this trip.",
+      "already_released": "This resource is already released.",
+      "no_delivery_outcome": "No delivery outcome is recorded yet: the resource stays on the trip.",
+      "custody_open": "Cargo is still in custody: record its handover first.",
+      "delivery_unconfirmed": "It is not confirmed that the outcome was recorded. Check what is shown below before trying again.",
+      "handover_unconfirmed": "It is not confirmed that the handover was recorded. Check what is shown below before trying again.",
+      "release_unconfirmed": "It is not confirmed that the resource was released. Check what is shown below before trying again."
     },
     "driver": {
       "title": "Your assignments",
@@ -1549,7 +1561,8 @@
     "noCases": "No problem is reported.",
     "caseKinds": {
       "overrun": "A resource is still on this trip past its planned end (seen by Trucker)",
-      "no_pickup_arrival": "No arrival at pick-up by the end of the pick-up window (seen by Trucker)"
+      "no_pickup_arrival": "No arrival at pick-up by the end of the pick-up window (seen by Trucker)",
+      "delivery_outcome": "The delivery outcome was not delivered in full (seen by Trucker)"
     },
     "exceptionTypes": {
       "delay": "Delay",
@@ -1583,5 +1596,51 @@
     "exceptionType": "What happened",
     "description": "Describe it",
     "report": "Report the problem"
+  },
+  "delivery": {
+    "title": "Delivery",
+    "outcomes": {
+      "delivered_in_full": "Delivered in full",
+      "delivered_with_remarks": "Delivered with remarks",
+      "partly_delivered": "Partly delivered",
+      "refused": "Refused",
+      "not_delivered": "Not delivered"
+    },
+    "none": "No delivery outcome is recorded yet.",
+    "receiver": "Received by",
+    "remarks": "Remarks",
+    "cargoRemains": "Cargo remains on the vehicle",
+    "earlier": "Corrected: earlier outcomes",
+    "recordedByDriver": "Recorded by the driver as it happened",
+    "enteredByOperations": "Reported by Trucker operations for {about}",
+    "custodyOpen": "Cargo is in custody on the vehicle until its handover is recorded.",
+    "custodyClosed": "Cargo handed over",
+    "handoverKinds": {
+      "returned_to_shipper": "Returned to the shipper",
+      "delivered_elsewhere": "Delivered to another place",
+      "replacement_vehicle": "Handed to a replacement vehicle"
+    },
+    "handedBy": "Handed over by",
+    "receivedBy": "Received by",
+    "handedAt": "When (UTC)",
+    "place": "Where",
+    "releasesTitle": "Released resources",
+    "released": "released",
+    "releasedByOperations": "released by Trucker operations",
+    "recordTitle": "Record the delivery outcome",
+    "recordLead": "Choose what happened at delivery. Anything other than delivered in full goes to Trucker operations.",
+    "outcome": "Outcome",
+    "receiverName": "Receiver's name (not needed if refused or not delivered)",
+    "remarksField": "Remarks (needed unless delivered in full)",
+    "cargoRemainsField": "Some cargo is still on the vehicle",
+    "record": "Record the outcome",
+    "onBehalfTitle": "Record the outcome on the driver's behalf",
+    "handoverTitle": "Record the handover of the cargo",
+    "handoverKind": "What happened to the cargo",
+    "note": "Note (seen by your organisation only)",
+    "recordHandover": "Record the handover",
+    "releaseTitle": "Release resources",
+    "releaseLead": "Release each resource when it is free. It can then be dispatched on its next booking. Nothing is released automatically.",
+    "release": "Release the {role}"
   }
 }

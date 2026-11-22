@@ -41,6 +41,30 @@ const ERRORS: Record<string, [number, string, string]> = {
     'milestone_out_of_sequence',
     'That is not the next milestone of this trip. Nothing was recorded.',
   ],
+  not_arrived: [
+    409,
+    'not_arrived_at_delivery',
+    'The truck has not arrived at delivery: no outcome is recorded yet.',
+  ],
+  already_recorded: [409, 'delivery_recorded', 'The delivery outcome is already recorded.'],
+  settled: [
+    409,
+    'delivery_settled',
+    'A handover or a release is recorded: the outcome is no longer corrected.',
+  ],
+  no_custody: [409, 'no_custody', 'No cargo is in custody on this trip.'],
+  already_released: [409, 'already_released', 'This resource is already released.'],
+  no_outcome: [
+    409,
+    'no_delivery_outcome',
+    'No delivery outcome is recorded: the resource stays on the trip.',
+  ],
+  custody_open: [
+    409,
+    'custody_open',
+    'Cargo is still in custody: record its handover before releasing the resource.',
+  ],
+  not_assigned: [404, 'not_found', 'No such resource on this booking.'],
   nothing_to_withdraw: [409, 'nothing_to_withdraw', 'No milestone is recorded on this trip.'],
 };
 
@@ -150,5 +174,38 @@ export class OperationsService {
     );
     if (row.status !== 'withdrawn') refuse(row.status, row.detail);
     return { outcome: 'withdrawn', trip: row.detail };
+  }
+
+  async delivery(caller: StaffCaller, bookingId: string, version: number, content: Detail) {
+    const row = await this.run(
+      'SELECT status, detail FROM trucker.staff_delivery_record($1, $2, $3, $4, $5)',
+      [caller.tokenHash, bookingId, version, JSON.stringify(content), caller.requestId ?? null],
+    );
+    if (row.status !== 'recorded') refuse(row.status, row.detail);
+    return { outcome: 'recorded', trip: row.detail };
+  }
+
+  async handover(caller: StaffCaller, bookingId: string, content: Detail) {
+    const row = await this.run(
+      'SELECT status, detail FROM trucker.staff_cargo_handover($1, $2, $3, $4)',
+      [caller.tokenHash, bookingId, JSON.stringify(content), caller.requestId ?? null],
+    );
+    if (row.status !== 'recorded') refuse(row.status, row.detail);
+    return { outcome: 'handed_over', trip: row.detail };
+  }
+
+  async release(
+    caller: StaffCaller,
+    bookingId: string,
+    role: string,
+    override: boolean,
+    note: string | null,
+  ) {
+    const row = await this.run(
+      'SELECT status, detail FROM trucker.staff_resource_release($1, $2, $3, $4, $5, $6)',
+      [caller.tokenHash, bookingId, role, override, note, caller.requestId ?? null],
+    );
+    if (row.status !== 'released') refuse(row.status, row.detail);
+    return { outcome: 'released', trip: row.detail };
   }
 }

@@ -50,6 +50,32 @@ const exceptionBody = z.object({
   type: z.enum(EXCEPTION_TYPES),
   description: z.string().max(4000),
 });
+const OUTCOMES = [
+  'delivered_in_full',
+  'delivered_with_remarks',
+  'partly_delivered',
+  'refused',
+  'not_delivered',
+] as const;
+const deliveryBody = z.object({
+  version: z.number().int().min(0),
+  outcome: z.enum(OUTCOMES),
+  receiverName: z.union([z.string().max(400), z.null()]).optional(),
+  remarks: z.union([z.string().max(4000), z.null()]).optional(),
+  cargoRemains: z.boolean().optional(),
+  statedAt: z.string().max(40).optional(),
+  reason: z.enum(['no_phone', 'no_signal', 'driver_unable', 'correction', 'other']).optional(),
+  note: z.union([z.string().max(2000), z.null()]).optional(),
+});
+const handoverBody = z.object({
+  kind: z.enum(['returned_to_shipper', 'delivered_elsewhere', 'replacement_vehicle']),
+  handedBy: z.string().max(400),
+  receivedBy: z.string().max(400),
+  handedAt: z.string().max(40),
+  place: z.string().max(1000),
+  note: z.union([z.string().max(2000), z.null()]).optional(),
+});
+const ROLES = ['truck', 'trailer', 'driver'];
 function retryKey(key: string | undefined): string {
   if (!key || !RETRY_KEY.test(key))
     throw new ApiError(
@@ -154,6 +180,56 @@ export class TripController {
     );
   }
 
+  @Post('delivery')
+  @HttpCode(200)
+  async delivery(
+    @Param('organisationId') organisationId: string,
+    @Param('bookingId') bookingId: string,
+    @Body() body: unknown,
+    @Req() request: IncomingRequest,
+  ) {
+    const caller = await callerOf(this.identity, request);
+    const { version, ...content } = parse(deliveryBody, body);
+    return this.trips.delivery(
+      caller,
+      identifier(organisationId),
+      identifier(bookingId),
+      version,
+      content,
+    );
+  }
+
+  @Post('handover')
+  @HttpCode(200)
+  async handover(
+    @Param('organisationId') organisationId: string,
+    @Param('bookingId') bookingId: string,
+    @Body() body: unknown,
+    @Req() request: IncomingRequest,
+  ) {
+    const caller = await callerOf(this.identity, request);
+    return this.trips.handover(
+      caller,
+      identifier(organisationId),
+      identifier(bookingId),
+      parse(handoverBody, body),
+    );
+  }
+
+  @Post('resources/:role/release')
+  @HttpCode(200)
+  async release(
+    @Param('organisationId') organisationId: string,
+    @Param('bookingId') bookingId: string,
+    @Param('role') role: string,
+    @Req() request: IncomingRequest,
+  ) {
+    const caller = await callerOf(this.identity, request);
+    if (!ROLES.includes(role))
+      throw new ApiError(404, 'not_found', 'The requested resource was not found.');
+    return this.trips.release(caller, identifier(organisationId), identifier(bookingId), role);
+  }
+
   @Post('estimate')
   @HttpCode(200)
   async estimate(
@@ -225,5 +301,17 @@ export class DriverTripController {
       checked,
       parse(exceptionBody, body),
     );
+  }
+
+  @Post('delivery')
+  @HttpCode(200)
+  async delivery(
+    @Param('bookingId') bookingId: string,
+    @Body() body: unknown,
+    @Req() request: IncomingRequest,
+  ) {
+    const caller = await callerOf(this.identity, request);
+    const { version, ...content } = parse(deliveryBody, body);
+    return this.trips.delivery(caller, '', identifier(bookingId), version, content);
   }
 }

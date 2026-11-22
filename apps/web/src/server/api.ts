@@ -801,6 +801,49 @@ export type ExceptionType =
   | 'safety_concern'
   | 'no_show'
   | 'other';
+export type DeliveryOutcomeCode =
+  'delivered_in_full' | 'delivered_with_remarks' | 'partly_delivered' | 'refused' | 'not_delivered';
+export interface DeliveryOutcome {
+  version: number;
+  outcome: DeliveryOutcomeCode;
+  receiverName: string | null;
+  remarks: string | null;
+  cargoRemains: boolean;
+  statedAt: string;
+  recordedAt: string;
+  basis: 'observed' | 'reported';
+  about: string;
+  enteredAs: 'driver' | 'carrier' | 'operations';
+  enteredBy: string | null;
+  reason: 'no_phone' | 'no_signal' | 'driver_unable' | 'correction' | 'other' | null;
+  note?: string | null;
+}
+export interface TripDelivery {
+  outcome: DeliveryOutcome | null;
+  earlier: DeliveryOutcome[];
+  custody: {
+    open: boolean;
+    handover: {
+      kind: 'returned_to_shipper' | 'delivered_elsewhere' | 'replacement_vehicle';
+      handedBy: string;
+      receivedBy: string;
+      handedAt: string;
+      place: string;
+      enteredAs: 'carrier' | 'operations';
+      note?: string | null;
+    } | null;
+  } | null;
+  /** Not shown to the shipper. */
+  releases:
+    | {
+        role: 'truck' | 'trailer' | 'driver';
+        releasedAt: string;
+        basis: 'condition' | 'operations';
+        releasedAs: 'carrier' | 'operations';
+        releasedBy: string | null;
+      }[]
+    | null;
+}
 /** A case on a trip (slice 17b). Parties see that it exists, its type and its state. */
 export interface TripCase {
   id: string;
@@ -824,6 +867,8 @@ export interface Trip {
   /** Put on hold by Trucker operations: no milestone is recorded until it is resumed. */
   hold?: { reason: OperationsReason; heldAt: string } | null;
   cases?: TripCase[];
+  /** The delivery outcome, custody and releases (slice 18a). */
+  delivery?: TripDelivery;
   estimate: {
     arrivalAt: string;
     statedAt: string;

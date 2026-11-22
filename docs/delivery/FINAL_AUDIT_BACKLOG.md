@@ -186,3 +186,7 @@ All Arabic and Urdu text in the repository is a draft written without a native r
 - Web: the report form sits under every trip on the driver's phone; a button that opens it would keep the trip shorter.
 - Wording of the exception, hold and block messages in English, Arabic and Urdu.
 - Console: in the blocks, holds and resolved lists the booking button stands on its own line and the reason wraps under it; a small table would read better.
+- Web: the delivery outcome form shows every field for every outcome; showing the receiver and the "cargo remains" box only where they apply would be clearer.
+- Web: release buttons are offered once an outcome is recorded even while cargo is in custody; the refusal explains why, but the buttons could wait for the handover.
+- Console: the delivery panel lists the outcome, custody and releases as one list; a small timeline would read better.
+- Wording of the delivery, custody and release messages in English, Arabic and Urdu.
