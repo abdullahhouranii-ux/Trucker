@@ -137,6 +137,13 @@ export default async function OrganisationPage({ params, searchParams }: Props) 
         >
           {t.carrierLink}
         </a>
+        <a
+          className="button"
+          id="open-bookings"
+          href={`/${locale}/organisations/${organisation.id}/bookings`}
+        >
+          {m.book.link}
+        </a>
       </div>
       <div className="notice" role="note" id="organisation-status">
         <h2>

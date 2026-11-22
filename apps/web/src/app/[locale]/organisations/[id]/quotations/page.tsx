@@ -53,12 +53,22 @@ export default async function MyQuotationsPage({ params }: Props) {
               </h3>
               <Standing t={q} quotation={quotation} />
               <p>{q.version.replace('{n}', String(quotation.currentVersion))}</p>
-              <a
-                className="button"
-                href={`/${locale}/organisations/${id}/discover/${quotation.shipmentId}#quotation`}
-              >
-                {q.openShipment}
-              </a>
+              {quotation.status === 'accepted' ? (
+                <a
+                  className="button"
+                  data-booking-link={quotation.id}
+                  href={`/${locale}/organisations/${id}/bookings`}
+                >
+                  {m.book.link}
+                </a>
+              ) : quotation.status === 'not_selected' ? null : (
+                <a
+                  className="button"
+                  href={`/${locale}/organisations/${id}/discover/${quotation.shipmentId}#quotation`}
+                >
+                  {q.openShipment}
+                </a>
+              )}
             </li>
           ))}
         </ol>

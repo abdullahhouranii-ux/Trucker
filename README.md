@@ -100,6 +100,14 @@ document. Eligibility is judged live over a time window. Ownership, operating co
 approval and availability are separate: nothing is reserved, assigned or booked. Document types,
 vehicle categories and licence classes are fictional test items.
 
+## Acceptance and booking
+
+The shipper's administrator accepts one exact quotation version; one booking is created with an
+immutable snapshot of the price, Trucker's fee and the terms (docs/delivery/BOOKING_SLICE_14.md).
+The booking is awaiting resources, not confirmed: nothing is assigned, reserved, invoiced or paid.
+The fee, payment period, assignment deadline and buffers are development defaults, and acceptance
+is closed outside a database marked for development. No tax is calculated or stated.
+
 Release 1 is planned as an invitation-only pilot of the whole journey, from shipment to operational
 closure, with manual recorded bank transfers: docs/delivery/RELEASE_1_READINESS.md,
 RELEASE_1_GAP_TO_LAUNCH.md and RELEASE_1_DECISIONS.md. No launch country or lane is chosen.

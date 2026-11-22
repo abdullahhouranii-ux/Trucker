@@ -1199,7 +1199,7 @@ test('only an organisation that can discover the shipment may quote; others are 
   );
 });
 
-test("the API's role reaches quotations only through their functions, and no fee, payment, booking or acceptance route exists", async () => {
+test("the API's role reaches quotations only through their functions, and no fee, payment, invoice or confirmation route exists", async () => {
   const { shipment, carrier } = await market();
   await quoted(carrier.person, carrier.org, shipment.id);
   for (const table of [
@@ -1227,8 +1227,9 @@ test("the API's role reaches quotations only through their functions, and no fee
       },
     );
   for (const path of [
-    `/organisations/${carrier.org}/quotations/${randomUUID()}/accept`,
-    `/organisations/${carrier.org}/bookings`,
+    // Acceptance and the booking list arrived with slice 14 (booking.test.ts). These did not.
+    `/organisations/${carrier.org}/bookings/${randomUUID()}/confirm`,
+    `/organisations/${carrier.org}/bookings/${randomUUID()}/invoice`,
     `/organisations/${carrier.org}/quotations/${randomUUID()}/fee`,
     `/organisations/${carrier.org}/payments`,
   ]) {

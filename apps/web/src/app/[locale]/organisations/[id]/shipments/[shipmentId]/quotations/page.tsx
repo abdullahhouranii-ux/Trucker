@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { notFound, redirect } from 'next/navigation';
+import { AcceptanceFacts, BookingCard } from '../../../../../../../components/booking-view.tsx';
 import { ErrorSummary } from '../../../../../../../components/form.tsx';
 import {
   QuotationFacts,
@@ -8,16 +9,22 @@ import {
 } from '../../../../../../../components/quotation-view.tsx';
 import { isLocale } from '../../../../../../../i18n/config.ts';
 import { getMessages } from '../../../../../../../i18n/messages.ts';
-import { api, type Quotation, type ShipmentQuotations } from '../../../../../../../server/api.ts';
 import {
+  api,
+  type BookingOverview,
+  type Quotation,
+  type ShipmentQuotations,
+} from '../../../../../../../server/api.ts';
+import {
+  acceptQuotationAction,
   rejectQuotationAction,
   setQuotationTermsAction,
 } from '../../../../../../../server/quotation-actions.ts';
 import { requirePerson } from '../../../../../../../server/session.ts';
 
 // The quotations on one of the organisation's shipments: the currency and inclusions they all
-// use, and each carrier's current quotation side by side. The shipper may reject one. Nothing
-// is accepted or booked in this version.
+// use, and each carrier's current quotation side by side. The shipper may reject one, or accept
+// one: that creates a booking, which is not confirmed until the carrier assigns its resources.
 
 type Props = {
   params: Promise<{ locale: string; id: string; shipmentId: string }>;
@@ -54,11 +61,16 @@ export default async function ShipmentQuotationsPage({ params, searchParams }: P
   // An unconfirmed session (the API gave no answer) is not an ended one: the requests below
   // either fail as unavailable, shown as such, or are refused with 401 and end it.
   const shipmentPath = `/${locale}/organisations/${id}/shipments/${shipmentId}`;
-  const reply = await api<{ quotations: ShipmentQuotations }>(
-    'GET',
-    `/organisations/${id}/shipments/${shipmentId}/quotations`,
-    { token: person.token },
-  );
+  const [reply, booked] = await Promise.all([
+    api<{ quotations: ShipmentQuotations }>(
+      'GET',
+      `/organisations/${id}/shipments/${shipmentId}/quotations`,
+      { token: person.token },
+    ),
+    api<BookingOverview>('GET', `/organisations/${id}/shipments/${shipmentId}/booking`, {
+      token: person.token,
+    }),
+  ]);
   if (!reply.ok && reply.status === 401) redirect(`/${locale}/sign-in?error=session_ended`);
   if (!reply.ok && reply.status === 404) notFound();
   const back = (
@@ -94,6 +106,8 @@ export default async function ShipmentQuotationsPage({ params, searchParams }: P
     </>
   );
   const closed = data.currencyChoices.length === 0 || !data.inclusionsAvailable;
+  const preview = (quotationId: string) =>
+    booked.ok ? booked.data.acceptance.find((item) => item.quotationId === quotationId) : undefined;
 
   return (
     <div className="page page-narrow" data-state="shipment-quotations">
@@ -106,6 +120,17 @@ export default async function ShipmentQuotationsPage({ params, searchParams }: P
       {confirmation && summary.length === 0 ? (
         <p className="notice notice-success" role="status" id="quotation-confirmation">
           {confirmation}
+        </p>
+      ) : null}
+
+      {booked.ok && booked.data.booking ? (
+        <section className="section" aria-labelledby="booking-title" id="booking">
+          <h2 id="booking-title">{m.book.bookingTitle}</h2>
+          <BookingCard t={m.book} locale={locale} booking={booked.data.booking} />
+        </section>
+      ) : !booked.ok ? (
+        <p className="notice notice-error" role="alert" id="booking-unavailable">
+          {m.book.unavailable}
         </p>
       ) : null}
 
@@ -212,6 +237,26 @@ export default async function ShipmentQuotationsPage({ params, searchParams }: P
                     ? ` (${q.earlierCount.replace('{n}', String(quotation.versions.length - 1))})`
                     : ''}
                 </p>
+                {quotation.status === 'submitted' && preview(quotation.id) ? (
+                  <>
+                    <AcceptanceFacts t={m.book} preview={preview(quotation.id)!} />
+                    {preview(quotation.id)!.state === 'ok' ? (
+                      <form className="form-inline" action={acceptQuotationAction}>
+                        {hidden('accept')}
+                        <input type="hidden" name="quotationId" value={quotation.id} />
+                        <input type="hidden" name="version" value={quotation.currentVersion} />
+                        <p className="field-hint">{m.book.acceptNote}</p>
+                        <button
+                          className="button button-primary"
+                          type="submit"
+                          data-accept={quotation.id}
+                        >
+                          {m.book.accept}
+                        </button>
+                      </form>
+                    ) : null}
+                  </>
+                ) : null}
                 {quotation.status === 'submitted' ? (
                   <form className="form-inline" action={rejectQuotationAction}>
                     {hidden('reject')}

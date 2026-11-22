@@ -33,8 +33,8 @@ Status values: **Open** (nothing done), **Partial** (some of it is built or chec
 | R1-F3 | Carrier capability and discovery | Partial | PR #15, CI green, awaiting a focused dependency review and merge authorisation |
 | R1-F4 | Comparable quotations | Partial | PR #16, CI green, awaiting review and merge authorisation |
 | R1-F5 | Fleet and drivers with eligible documents | Partial | Slice 13 built on `feat/fleet` with fictional registers; awaiting review and merge authorisation. Real document rules: R1-V6 |
-| R1-F6 | Acceptance and booking with an immutable snapshot | Open | Slice 14; decisions DB-1, DB-2, DB-3, DB-6 |
-| R1-F7 | Resource assignment and database-enforced reservations | Open | Slice 15; decisions DB-5, DB-6, DB-7 |
+| R1-F6 | Acceptance and booking with an immutable snapshot | Partial | Slice 14 built on `feat/booking` against development-default commercial values; awaiting review and merge authorisation. Production values: R1-C1, R1-C2, R1-C6 |
+| R1-F7 | Resource assignment and database-enforced reservations | Open | Slice 15 scope written for approval (ASSIGNMENT_SLICE_15_SCOPE.md); decisions AB-1 to AB-5 |
 | R1-F8 | Cancellation before dispatch | Open | Slice 16; decision DB-8 |
 | R1-F9 | Dispatch and trip execution with milestones and exceptions | Open | Slice 17; decisions DB-9 to DB-11 |
 | R1-F10 | Proof of delivery, delivery exceptions, disputes and holds | Open | Slice 18; decisions DB-12 to DB-14 |

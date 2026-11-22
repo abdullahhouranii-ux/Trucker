@@ -127,6 +127,7 @@ interface FixtureFile {
     name: { en: string; ar: string; ur: string };
     categories: string[];
   }[];
+  bookingTerms?: { code: string; version: number; body: string }[];
   fleetDocumentTypes?: {
     country: string;
     subject: string;
@@ -319,5 +320,15 @@ export async function loadCountryFixtures(
       ],
     );
   }
+  // A version of the terms is never changed: one that is already there is left as it is.
+  for (const terms of data.bookingTerms ?? [])
+    await owner.query(
+      `INSERT INTO trucker.booking_terms (code, version_no, demonstration, body, content_hash, created_at)
+       VALUES ($1::text, $2::integer, true, $3::text,
+               encode(sha256(convert_to($1::text || ':' || $2::integer || ':' || $3::text, 'UTF8')), 'hex'),
+               transaction_timestamp())
+       ON CONFLICT (code, version_no) DO NOTHING`,
+      [terms.code, terms.version, terms.body],
+    );
   return data.countries.map((country) => country.code);
 }

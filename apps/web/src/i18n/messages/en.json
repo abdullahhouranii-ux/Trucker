@@ -487,13 +487,15 @@
       "published": "Published",
       "suspended": "Published, suspended",
       "withdrawn": "Withdrawn",
-      "expired": "Expired"
+      "expired": "Expired",
+      "awarded": "Awarded"
     },
     "notice": {
       "published": "Published as version {n}. Quotations close at the deadline.",
       "suspended": "Suspended. Carriers could not find it and no new quotation would be accepted. Nothing is cancelled. It is no longer suspended only when every cause below has passed again, before the deadline.",
       "withdrawn": "Withdrawn. This cannot be undone. To publish again, make a new draft from a copy.",
-      "expired": "The quotation deadline has passed. You can publish it again with a new deadline, or make a new draft from a copy."
+      "expired": "The quotation deadline has passed. You can publish it again with a new deadline, or make a new draft from a copy.",
+      "awarded": "Awarded: a quotation was accepted and a booking exists. It is not confirmed until the carrier has assigned its resources."
     },
     "causes": {
       "verification": "Your organisation's verification was withdrawn or no longer allows publication.",
@@ -616,7 +618,7 @@
     "back": "Back to the organisation",
     "title": "Find shipments",
     "lead": "Published shipments that match your declared service, soonest quotation deadline first. Shown as the shipper published them, without the shipper's name, addresses or contacts.",
-    "noQuotations": "Nothing here commits you or the shipper: no quotation is accepted or booked in this version of Trucker.",
+    "noQuotations": "Seeing a shipment commits nobody. A booking exists only when the shipper accepts a quotation.",
     "filterTitle": "Filter",
     "pickupCountry": "Pick-up country",
     "deliveryCountry": "Delivery country",
@@ -653,8 +655,8 @@
     "backToShipment": "Back to the shipment",
     "backToDiscovery": "Back to shipments",
     "openShipment": "Open the shipment",
-    "noCommitment": "A quotation names no vehicle or driver, and nothing is accepted or booked in this version of Trucker.",
-    "noCommitmentShipper": "You can compare and reject quotations. Accepting a quotation, booking and payment are not available in this version of Trucker.",
+    "noCommitment": "A quotation names no vehicle or driver. If the shipper accepts it, a booking is created; it is confirmed only when you have assigned your resources.",
+    "noCommitmentShipper": "You can compare, reject or accept quotations. Accepting one creates a booking that is not confirmed until the carrier has assigned its resources. Dispatch and payment are not available in this version of Trucker.",
     "termsTitle": "Currency and inclusions",
     "termsLead": "Every carrier quotes in the currency you choose, and says for each inclusion whether its amount includes it, so the quotations can be compared. These cannot change once a quotation exists.",
     "currency": "Currency",
@@ -703,7 +705,9 @@
       "shipment_closed": "The shipment is closed",
       "withdrawn": "Withdrawn by the carrier",
       "rejected": "Rejected by the shipper",
-      "closed": "Closed: the shipment was withdrawn"
+      "closed": "Closed: the shipment was withdrawn",
+      "accepted": "Accepted by the shipper",
+      "not_selected": "Not selected: the shipper accepted another quotation"
     },
     "done": {
       "submitted": "Your quotation was sent.",
@@ -717,7 +721,9 @@
       "set": "The currency was saved.",
       "already_set": "The currency was saved.",
       "rejected": "The quotation was rejected.",
-      "already_rejected": "The quotation was rejected."
+      "already_rejected": "The quotation was rejected.",
+      "accepted": "The quotation was accepted. A booking was created and is waiting for the carrier's resources.",
+      "already_accepted": "The quotation was accepted. A booking was created and is waiting for the carrier's resources."
     },
     "errors": {
       "amount_invalid": "Enter the amount with digits and a point, for example 1250.50.",
@@ -761,7 +767,13 @@
       "not_found": "This quotation or shipment is not available.",
       "shipment_not_open": "The currency can be chosen only while the shipment is open.",
       "invalid": "Some details were not accepted. Check them and try again.",
-      "unavailable": "Quotations could not be loaded. Try again."
+      "unavailable": "Quotations could not be loaded. Try again.",
+      "accept_unconfirmed": "It was not confirmed that the quotation was accepted. It may have been. Check below; accepting again will not create a second booking.",
+      "shipment_already_awarded": "This shipment is already awarded. Its booking is shown below.",
+      "quotation_needs_reconfirmation": "The shipment changed after this quotation was made. The carrier must confirm or revise it before it can be accepted.",
+      "quotation_carrier_not_eligible": "The carrier may not carry this shipment now, so its quotation cannot be accepted.",
+      "assignment_deadline_passed": "The pick-up is too soon: the time the carrier needs to assign a truck and a driver has already passed. No booking was created.",
+      "booking_closed": "Accepting is not available here: the commercial terms are not approved for this environment."
     }
   },
   "fleet": {
@@ -927,5 +939,54 @@
       "invalid": "Some details were not accepted. Check them and try again.",
       "unavailable": "The page could not be loaded. Try again."
     }
+  },
+  "book": {
+    "link": "Bookings",
+    "title": "Bookings",
+    "noBookings": "No booking yet.",
+    "back": "Back to the organisation",
+    "bookingTitle": "Booking",
+    "status": {
+      "awaiting_resources": "Awaiting the carrier's resources"
+    },
+    "statusNote": "Not confirmed. A booking is confirmed only when the carrier has assigned and reserved every resource it needs. Nothing is assigned yet.",
+    "provisional": "The fee, payment period, assignment deadline and reservation times are development values. They are not approved for real use.",
+    "shipper": "Shipper",
+    "carrier": "Carrier",
+    "transport": "Transport price, as agreed",
+    "fee": "Trucker's fee ({percent}%)",
+    "feePayer": {
+      "shipper": "paid by the shipper",
+      "carrier": "paid by the carrier"
+    },
+    "shipperTotal": "Total for the shipper",
+    "carrierNet": "The carrier receives",
+    "taxNote": "No tax is calculated or shown here. How tax applies is not decided.",
+    "payment": "The shipper pays the carrier by bank transfer within {n} days of accepting the proof of delivery. Trucker does not hold the transport money.",
+    "terms": "Terms: demonstration booking terms, version {n}",
+    "termsNote": "Demonstration terms for development only. They are not approved terms and bind nobody.",
+    "assignmentDue": "The carrier assigns its resources by",
+    "planned": "Planned time for the resources",
+    "plannedNote": "A plan only: nothing is reserved yet.",
+    "acceptedAt": "Accepted",
+    "quotationVersion": "Quotation version {n}",
+    "asRole": {
+      "shipper": "You are the shipper",
+      "carrier": "You are the carrier"
+    },
+    "acceptTitle": "If you accept this quotation",
+    "accept": "Accept this quotation",
+    "acceptNote": "Accepting is final. It creates one booking with these figures and ends the other quotations.",
+    "cannotAccept": {
+      "closed": "Accepting is not available here.",
+      "already_awarded": "The shipment is already awarded.",
+      "shipment_not_open": "The shipment is not open.",
+      "not_open": "This quotation is no longer open.",
+      "reconfirmation_needed": "Waiting for the carrier to confirm it for the changed shipment.",
+      "carrier_not_eligible": "The carrier may not carry this shipment now.",
+      "shipment_suspended": "The shipment is suspended.",
+      "assignment_deadline_passed": "The pick-up is too soon for the carrier to assign its resources in time, so this cannot be accepted."
+    },
+    "unavailable": "The booking could not be loaded. Try again."
   }
 }

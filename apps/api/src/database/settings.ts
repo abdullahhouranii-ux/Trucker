@@ -27,6 +27,13 @@ export const SECURITY_SETTING_DEFAULTS = {
   fleet_vehicle_limit: 200,
   fleet_driver_limit: 200,
   fleet_document_version_limit: 5,
+  // Commercial development defaults (CC-2 to CC-6). Not approved for production.
+  booking_fee_basis_points: 300,
+  booking_payment_due_days: 15,
+  booking_assignment_hours: 12,
+  booking_assignment_lead_hours: 6,
+  reservation_positioning_minutes: 120,
+  reservation_completion_minutes: 720,
   staff_session_idle_minutes: 15,
   staff_session_absolute_hours: 8,
   staff_failure_limit: 5,

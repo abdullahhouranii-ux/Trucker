@@ -63,6 +63,9 @@ No accessibility conformance is claimed for any page.
 | WD-26 | The console names fleet records by raw codes ("fictional rigid truck") and asks for an identifier to suspend | Slice 13, console fleet page | Readable for staff; names and a button per record would be better |
 | WD-27 | A driver's status line and the eligibility line repeat each other ("Working with you", "Eligible now") and the reason for ineligibility is one short sentence | Slice 13, fleet and driver pages | Correct; could say which document is missing |
 | WD-28 | "Expires" is followed by the date with no separator in right-to-left text | Slice 13, document lists | Readable; check with native readers |
+| WD-29 | Booking times (assignment deadline, planned interval, accepted) are shown in UTC, not at the pick-up place | Slice 14, booking card | Correct; local time with the zone would read better |
+| WD-30 | The shipment list has no filter for awarded shipments; they appear under "all" | Slice 14, shipments page | Add the filter with the list's other states |
+| WD-31 | Inclusions on a booking are marked with ✓ and ✗ | Slice 14, booking card | Use the words "included" and "not included" |
 
 ## 4. Translation corrections (Arabic and Urdu)
 
@@ -88,6 +91,7 @@ All Arabic and Urdu text in the repository is a draft written without a native r
 | TR-16 | All quotation messages (`quo`) and the corrected `disc.noQuotations` | Slice 12 | High: "nothing is accepted or booked", "Trucker does not determine how tax applies" and the "not confirmed" messages must not shift |
 | TR-17 | Names of the fictional inclusions and the test currency | Slice 12, fixtures | Low: development data only |
 | TR-18 | All fleet and driver messages (`fleet`) | Slice 13 | High: "reserves and assigns nothing", "a claim until staff verify it" and "not its number" must not shift |
+| TR-20 | All booking messages (`book`), the new quotation standings and errors, and three corrected statements about acceptance | Slice 14 | High: "not confirmed", "development values", "no tax is calculated" and "Trucker does not hold the transport money" must not shift |
 | TR-19 | Names of the fictional vehicle categories, licence classes and document types | Slice 13, fixtures | Low: development data only |
 
 ## 5. How this list is used

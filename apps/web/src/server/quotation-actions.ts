@@ -164,11 +164,14 @@ export async function withdrawQuotationAction(form: FormData): Promise<void> {
 }
 
 // The shipper --------------------------------------------------------------------------------
-async function shipperCommand(form: FormData, operation: 'terms' | 'reject'): Promise<void> {
+async function shipperCommand(
+  form: FormData,
+  operation: 'terms' | 'reject' | 'accept',
+): Promise<void> {
   const { locale, token, organisationId, retryKey } = await target(form);
   const shipment = text(form, 'shipmentId');
   const quotation = text(form, 'quotationId');
-  if (!UUID.test(shipment) || (operation === 'reject' && !UUID.test(quotation)))
+  if (!UUID.test(shipment) || (operation !== 'terms' && !UUID.test(quotation)))
     redirect(`/${locale}/organisations/${organisationId}/shipments?error=shipment_not_found`);
   const here = `/${locale}/organisations/${organisationId}/shipments/${shipment}/quotations`;
   const back = (error: string, keep: boolean): never =>
@@ -185,7 +188,7 @@ async function shipperCommand(form: FormData, operation: 'terms' | 'reject'): Pr
         )
       : await api<{ outcome: string }>(
           'POST',
-          `/organisations/${organisationId}/quotations/${quotation}/reject`,
+          `/organisations/${organisationId}/quotations/${quotation}/${operation}`,
           { token, retryKey, body: { version } },
         );
   if (reply.ok) redirect(withQuery(here, { qDone: reply.data.outcome }));
@@ -200,4 +203,8 @@ export async function setQuotationTermsAction(form: FormData): Promise<void> {
 }
 export async function rejectQuotationAction(form: FormData): Promise<void> {
   await shipperCommand(form, 'reject');
+}
+/** Accepts one exact quotation version. Final: one booking, or a clear refusal. */
+export async function acceptQuotationAction(form: FormData): Promise<void> {
+  await shipperCommand(form, 'accept');
 }

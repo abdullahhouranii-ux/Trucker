@@ -135,7 +135,7 @@ export interface RouteCheck {
   }[];
 }
 export type ShipmentState =
-  'draft' | 'discarded' | 'published' | 'suspended' | 'withdrawn' | 'expired';
+  'draft' | 'discarded' | 'published' | 'suspended' | 'withdrawn' | 'expired' | 'awarded';
 export interface ShipmentPublication {
   cargoCategory: string | null;
   equipmentType: string | null;
@@ -372,11 +372,14 @@ export type QuotationStanding =
   | 'shipment_closed'
   | 'withdrawn'
   | 'rejected'
-  | 'closed';
+  | 'closed'
+  | 'accepted'
+  | 'not_selected';
 export interface Quotation {
   id: string;
   shipmentId: string;
-  status: 'submitted' | 'withdrawn' | 'rejected' | 'expired' | 'closed';
+  status:
+    'submitted' | 'withdrawn' | 'rejected' | 'expired' | 'closed' | 'accepted' | 'not_selected';
   standing: QuotationStanding;
   currentVersion: number;
   reconfirmationNeeded: boolean;
@@ -488,4 +491,67 @@ export interface DriverSide {
   } | null;
   documents: FleetDocument[];
   registers: FleetRegisters;
+}
+
+// Acceptance and booking (slice 14) -----------------------------------------------------------
+export interface BookingFee {
+  payer: 'shipper' | 'carrier';
+  basisPoints: number;
+  rounding: 'half_up';
+  /** Exact decimal text, never a binary number. */
+  amount: string;
+}
+export interface BookingTerms {
+  code: string;
+  version: number;
+  demonstration: boolean;
+  contentHash: string;
+}
+export interface Booking {
+  id: string;
+  status: 'awaiting_resources';
+  shipmentId: string;
+  quotationId: string;
+  quotationVersion: number;
+  shipper: { id: string; legalName: string; tradingName: string | null };
+  carrier: { id: string; legalName: string; tradingName: string | null };
+  currency: string;
+  transportAmount: string;
+  fee: BookingFee;
+  shipperTotal: string;
+  carrierNet: string;
+  paymentDueDays: number;
+  terms: BookingTerms;
+  inclusions: { code: string; included: boolean; name: { en: string; ar: string; ur: string } }[];
+  assignment: { dueAt: string; hours: number; leadHours: number };
+  plannedReservation: { startAt: string; endAt: string };
+  acceptedAt: string;
+  role?: 'shipper' | 'carrier';
+}
+export type AcceptanceState =
+  | 'ok'
+  | 'closed'
+  | 'already_awarded'
+  | 'shipment_not_open'
+  | 'not_open'
+  | 'reconfirmation_needed'
+  | 'carrier_not_eligible'
+  | 'shipment_suspended'
+  | 'assignment_deadline_passed';
+export interface AcceptancePreview {
+  quotationId: string;
+  state: AcceptanceState;
+  version?: number;
+  currency?: string;
+  transportAmount?: string;
+  fee?: BookingFee;
+  shipperTotal?: string;
+  paymentDueDays?: number;
+  terms?: BookingTerms;
+  assignmentDueAt?: string | null;
+}
+export interface BookingOverview {
+  open: boolean;
+  booking: Booking | null;
+  acceptance: AcceptancePreview[];
 }
