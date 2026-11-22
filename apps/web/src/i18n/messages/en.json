@@ -1256,7 +1256,7 @@
       "contract": "The contract with each carrier"
     },
     "percent": "Percentage",
-    "percentHint": "From 0.01 to 25, for example 7.5. Used when you choose a percentage.",
+    "percentHint": "From 0.01 to {max}. Used when you choose a percentage.",
     "amount": "Fixed amount",
     "amountHint": "Used when you choose a fixed amount.",
     "currency": "Currency code",
@@ -1279,9 +1279,10 @@
       "record_changed": "This changed after the page was loaded. Nothing was changed. Check it and try again.",
       "shipment_roles_fixed": "The commission is fixed once the shipment has been published.",
       "commission_own_shipment": "A commission applies only to a shipment you arrange for a customer. Choose the customer first.",
-      "commissionPercentage_out_of_range": "Enter a percentage from 0.01 to 25.",
+      "commissionPercentage_out_of_range": "Enter a percentage within the limit shown.",
       "commissionAmount_invalid": "Enter the fixed amount as a number above zero, in the currency’s units.",
-      "commissionCurrency_unavailable": "This currency is not available."
+      "commissionCurrency_unavailable": "This currency is not available.",
+      "commission_not_offered": "This commission option is not available now. Choose another."
     },
     "isContract": "The commission in each carrier’s own contract with you",
     "carrierContract": "The organiser of this shipment takes the commission in your contract with it:",
@@ -1298,7 +1299,7 @@
     "carrierCodeHint": "The carrier finds it on this page of its own account.",
     "option": "Commission",
     "settlementDays": "Payable within (days)",
-    "settlementDaysHint": "From 1 to 60 days after the commission is earned.",
+    "settlementDaysHint": "From 1 to {max} days after the commission is earned.",
     "earningNote": "The commission is earned when the carrier records that it received the freight payment.",
     "propose": "Propose the contract",
     "listTitle": "Your contracts",
@@ -1340,10 +1341,10 @@
       "organiser_not_eligible": "This account is not a verified organiser now.",
       "carrier_not_eligible": "This account is not a verified carrier now.",
       "record_changed": "This changed after the page was loaded. Nothing was changed. Check it and try again.",
-      "basisPoints_out_of_range": "Enter a percentage from 0.01 to 25.",
+      "basisPoints_out_of_range": "Enter a percentage within the limit shown.",
       "amount_invalid": "Enter the fixed amount as a number above zero, in the currency’s units.",
       "currency_unavailable": "This currency is not available.",
-      "settlementDays_out_of_range": "Enter a number of days from 1 to 60."
+      "settlementDays_out_of_range": "Enter a number of days within the limit shown."
     }
   }
 }

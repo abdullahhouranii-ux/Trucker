@@ -13,6 +13,8 @@ export interface DatabaseAccess {
   readonly environment: EnvironmentKind;
   /** The protected security settings have been recorded as reviewed for production. */
   readonly settingsReviewed: boolean;
+  /** An approved version of the financial settings, not a development default, is in force. */
+  readonly financialSettingsApproved: boolean;
   /** This connection to the database is encrypted, as the server itself reports it. */
   readonly connectionEncrypted: boolean;
   /** The server is set never to write statement parameters to its log. */
@@ -56,6 +58,9 @@ export async function inspectAccess(pool: Pick<pg.Pool, 'query'>): Promise<Datab
   const reviewed = await pool.query<{ reviewed: boolean | null }>(
     'SELECT trucker.security_settings_reviewed() AS reviewed',
   );
+  const financial = await pool.query<{ ready: boolean | null }>(
+    'SELECT trucker.financial_settings_ready() AS ready',
+  );
   // The key for one-time codes and the codes people type travel to the database as statement
   // parameters. Both gates are read from the server, for this connection and this role.
   const transport = await pool.query<{
@@ -72,6 +77,7 @@ export async function inspectAccess(pool: Pick<pg.Pool, 'query'>): Promise<Datab
     problems,
     environment: mark.rows[0]?.kind ?? 'unmarked',
     settingsReviewed: reviewed.rows[0]?.reviewed === true,
+    financialSettingsApproved: financial.rows[0]?.ready === true,
     connectionEncrypted: transport.rows[0]?.encrypted === true,
     parametersKeptOutOfLogs:
       transport.rows[0]?.in_statements === '0' && transport.rows[0]?.on_error === '0',
@@ -157,6 +163,11 @@ export function productionStartProblems(access: DatabaseAccess): string[] {
   if (!access.settingsReviewed) {
     problems.push(
       'the security settings in the database are development defaults that have not been recorded as reviewed for production (npm run db:settings)',
+    );
+  }
+  if (!access.financialSettingsApproved) {
+    problems.push(
+      'no approved version of the financial settings is in force: only the development default is (draft one in the staff console and have a second administrator approve it)',
     );
   }
   return problems;

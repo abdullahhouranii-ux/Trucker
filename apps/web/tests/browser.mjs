@@ -656,11 +656,8 @@ async function main() {
     mkdirSync(outDir, { recursive: true });
     // At most five pictures, for design review only.
     const shots = {
-      'en:contracts': 'contracts-en-390',
-      'ar:contracts': 'contracts-ar-390',
-      'en:contract terms': 'contract-terms-en-390',
-      'ar:contract terms': 'contract-terms-ar-390',
-      'en:no contract': 'no-contract-en-390',
+      'ar:shipment commission': 'shipment-commission-limit-ar-390',
+      'en:contracts': 'contracts-limit-en-390',
     };
     // Fictional numbers: country code 999 is not assigned. Unique per run.
     const stamp = String(Date.now()).slice(-7);
@@ -4013,6 +4010,13 @@ async function main() {
         (await urApi(`/organisations/${personalOrg}/shipments/${arrangedShipment}/commission`)).body
           .commission?.basisPoints === 750,
       `26% answered ${page.url()}`,
+    );
+    // The hint gives the limit of the financial settings in force (slice 24): 25% by default.
+    await open(arrangedPath('en'), 390);
+    check(
+      'settings',
+      ((await text('#commissionPercent-hint')) ?? '').includes('0.01 to 25.'),
+      `the commission hint reads: ${await text('#commissionPercent-hint')}`,
     );
     for (const locale of locales) {
       await open(arrangedPath(locale), 390);

@@ -25,13 +25,14 @@ Each slice has a scope and a record with its evidence in this folder.
 | 21 | Individual accounts and truck owners | PR #24 |
 | 22 | Shipment roles and authority | PR #25 |
 | 23 | Organiser commission: percentage and fixed amount | PR #26 |
-| 23b | Commission contracts accepted in advance | `feat/commission-contracts` |
+| 23b | Commission contracts accepted in advance | PR #27 |
+| 24 | Financial settings: versions, second-administrator approval, effective time | `feat/financial-settings` |
 
 Pull requests #15 to #22 are stacked, open, mergeable and green in CI. None is merged; each needs a dependency review and Abdullah's explicit authorisation.
 
 ## Next
 
-1. Phase three (financial settings, price breakdown, freight payment method and due date on the booking), phase four (fee payment and confirmation) and phase five (dispatch, proof of delivery, settlement, closure), each as its own unmerged pull request, on development defaults, under the instruction of 17 November 2026 (11:46).
+1. Phase three continued (slice 25: price breakdown and views by role, fee payer from the shipment's roles, freight payment method and due date on each booking) (financial settings, price breakdown, freight payment method and due date on the booking), phase four (fee payment and confirmation) and phase five (dispatch, proof of delivery, settlement, closure), each as its own unmerged pull request, on development defaults, under the instruction of 17 November 2026 (11:46).
 3. Dispatch slice 17 once DD-1 to DD-10 are approved; it can run alongside phases two to four.
 
 ## Open decisions

@@ -142,7 +142,8 @@ fieldset.choice legend {
   gap: var(--s-2);
   min-height: var(--target-min);
 }
-.choice input[type='radio'] {
+.choice input[type='radio'],
+.choice input[type='checkbox'] {
   flex: none;
   width: 1.75rem;
   height: 1.75rem;

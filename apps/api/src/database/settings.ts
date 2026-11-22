@@ -27,9 +27,8 @@ export const SECURITY_SETTING_DEFAULTS = {
   fleet_vehicle_limit: 200,
   fleet_driver_limit: 200,
   fleet_document_version_limit: 5,
-  // Commercial development defaults (CC-2 to CC-6). Not approved for production.
-  booking_fee_basis_points: 300,
-  booking_payment_due_days: 15,
+  // Commercial development defaults (CC-5, CC-6). Not approved for production. Trucker's fee
+  // and the freight due days are financial settings, versioned (db/migrations/0022).
   booking_assignment_hours: 12,
   booking_assignment_lead_hours: 6,
   reservation_positioning_minutes: 120,

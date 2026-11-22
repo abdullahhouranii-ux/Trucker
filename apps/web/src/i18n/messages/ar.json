@@ -1256,7 +1256,7 @@
       "contract": "العقد مع كل ناقل"
     },
     "percent": "النسبة المئوية",
-    "percentHint": "من 0.01 إلى 25، مثلاً 7.5. تُستخدم عند اختيار النسبة.",
+    "percentHint": "من 0.01 إلى {max}. تُستخدم عند اختيار النسبة.",
     "amount": "المبلغ الثابت",
     "amountHint": "يُستخدم عند اختيار المبلغ الثابت.",
     "currency": "رمز العملة",
@@ -1279,9 +1279,10 @@
       "record_changed": "تغيّر هذا بعد تحميل الصفحة. لم يتغير شيء. راجعه وحاول مرة أخرى.",
       "shipment_roles_fixed": "تُثبَّت العمولة بعد نشر الشحنة.",
       "commission_own_shipment": "لا تنطبق العمولة إلا على شحنة ترتّبها لعميل. اختر العميل أولاً.",
-      "commissionPercentage_out_of_range": "أدخل نسبة من 0.01 إلى 25.",
+      "commissionPercentage_out_of_range": "أدخل نسبة ضمن الحد المبيّن.",
       "commissionAmount_invalid": "أدخل المبلغ الثابت رقماً أكبر من صفر بوحدات العملة.",
-      "commissionCurrency_unavailable": "هذه العملة غير متاحة."
+      "commissionCurrency_unavailable": "هذه العملة غير متاحة.",
+      "commission_not_offered": "خيار العمولة هذا غير متاح الآن. اختر خياراً آخر."
     },
     "isContract": "العمولة المحددة في عقد كل ناقل معك",
     "carrierContract": "يأخذ منظِّم هذه الشحنة العمولة المحددة في عقدك معه:",
@@ -1298,7 +1299,7 @@
     "carrierCodeHint": "يجده الناقل في هذه الصفحة من حسابه.",
     "option": "العمولة",
     "settlementDays": "تُدفع خلال (أيام)",
-    "settlementDaysHint": "من 1 إلى 60 يوماً بعد استحقاق العمولة.",
+    "settlementDaysHint": "من 1 إلى {max} يوماً بعد استحقاق العمولة.",
     "earningNote": "تُستحق العمولة عندما يسجل الناقل استلامه أجرة الشحن.",
     "propose": "اقترح العقد",
     "listTitle": "عقودك",
@@ -1340,10 +1341,10 @@
       "organiser_not_eligible": "هذا الحساب ليس منظِّماً موثّقاً الآن.",
       "carrier_not_eligible": "هذا الحساب ليس ناقلاً موثّقاً الآن.",
       "record_changed": "تغيّر هذا بعد تحميل الصفحة. لم يتغير شيء. راجعه وحاول مرة أخرى.",
-      "basisPoints_out_of_range": "أدخل نسبة من 0.01 إلى 25.",
+      "basisPoints_out_of_range": "أدخل نسبة ضمن الحد المبيّن.",
       "amount_invalid": "أدخل المبلغ الثابت رقماً أكبر من صفر بوحدات العملة.",
       "currency_unavailable": "هذه العملة غير متاحة.",
-      "settlementDays_out_of_range": "أدخل عدد أيام من 1 إلى 60."
+      "settlementDays_out_of_range": "أدخل عدد أيام ضمن الحد المبيّن."
     }
   }
 }
