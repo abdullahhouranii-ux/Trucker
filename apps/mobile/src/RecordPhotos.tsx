@@ -8,6 +8,13 @@ import { disputePhotoMessages, type Language } from './messages';
 
 type Photo = { id: string; uri: string; mime: 'image/jpeg' | 'image/png' };
 
+const PHOTO_MAX_BYTES = 5 * 1024 * 1024;
+const photoTooLarge: Record<Language, string> = {
+  en: 'Choose a JPEG or PNG up to 5 MB.',
+  ar: 'اختر صورة JPEG أو PNG بحجم لا يتجاوز 5 ميجابايت.',
+  ur: '5 MB تک کی JPEG یا PNG تصویر منتخب کریں۔',
+};
+
 export function RecordPhotos({
   org,
   record,
@@ -36,7 +43,8 @@ export function RecordPhotos({
   const [status, setStatus] = useState<'invalid' | 'sent' | null>(null);
   const uri = useRef<string | null>(null);
   const mounted = useRef(false);
-  const t = disputePhotoMessages[language];
+  // Shipment and vehicle photos are at most 5 MB (22 November 2026); dispute evidence keeps 10 MB.
+  const t = { ...disputePhotoMessages[language], invalid: photoTooLarge[language] };
   const path = recordPhotoPath(org, kind, record);
   const title =
     kind === 'vehicles'
@@ -65,7 +73,7 @@ export function RecordPhotos({
     if (
       !mounted.current ||
       !file.size ||
-      file.size > 10 * 1024 * 1024 ||
+      file.size > PHOTO_MAX_BYTES ||
       (file.mimeType !== 'image/jpeg' && file.mimeType !== 'image/png')
     ) {
       clearFile(file.uri);
