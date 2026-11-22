@@ -38,4 +38,5 @@ if (config.NODE_ENV === 'production') {
     process.exit(1);
   }
 }
-await app.listen(config.PORT);
+if (process.env.TRUCKER_BIND_LOOPBACK === '1') await app.listen(config.PORT, '127.0.0.1');
+else await app.listen(config.PORT);

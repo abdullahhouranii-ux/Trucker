@@ -70,6 +70,8 @@ export function DraftKeeper({
           if (typeof value === 'boolean') field.checked = value;
         } else if (typeof value === 'string' && (overwrite || field.value === '')) {
           field.value = value;
+          const details = field.closest<HTMLDetailsElement>('details[data-draft-details]');
+          if (details && field.value) details.open = true;
         }
       }
     } catch {

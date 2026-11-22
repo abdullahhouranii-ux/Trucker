@@ -65,7 +65,7 @@ export default async function BookingsPage() {
               {reply.data.attention.bookings.length === 0 ? (
                 <p id="no-attention">No booking needs attention now.</p>
               ) : (
-                <ol className="organisation-list" id="attention-list">
+                <ol className="organisation-list record-collection" id="attention-list">
                   {reply.data.attention.bookings.map((item) => (
                     <li className="card" key={item.id} data-booking={item.id}>
                       <h2>

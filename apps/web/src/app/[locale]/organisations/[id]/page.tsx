@@ -1,3 +1,4 @@
+import { financialNavigation } from '../../../../components/booking-completion-labels.ts';
 import { notFound, redirect } from 'next/navigation';
 import { DraftKeeper } from '../../../../components/draft-keeper.tsx';
 import { ErrorSummary } from '../../../../components/form.tsx';
@@ -11,7 +12,6 @@ import { getMessages } from '../../../../i18n/messages.ts';
 import { api, type Country, type Organisation } from '../../../../server/api.ts';
 import { updateOrganisationAction } from '../../../../server/organisation-actions.ts';
 import { requirePerson } from '../../../../server/session.ts';
-import { financialNavigation } from '../../../../components/booking-completion-labels.ts';
 
 type Props = {
   params: Promise<{ locale: string; id: string }>;
@@ -101,29 +101,45 @@ export default async function OrganisationPage({ params, searchParams }: Props) 
   const dropDraft = Boolean(confirmation) || error === 'organisation_changed';
 
   return (
-    <div className="page page-narrow">
+    <div className="page page-narrow workspace-overview">
       <div className="form-inline">
         <a className="button" href={`/${locale}/organisations`}>
           {t.backToList}
         </a>
       </div>
-      <h1>
-        <bdi>{organisation.legalName}</bdi>
-      </h1>
+      <section className="workspace-overview-hero" aria-labelledby="workspace-overview-title">
+        <h1 id="workspace-overview-title">
+          <bdi>{organisation.legalName}</bdi>
+        </h1>
+        <div className="workspace-overview-status" role="note" id="organisation-status">
+          <h2>
+            {t.statusLabel}: {statusText}
+          </h2>
+          {draft ? <p>{t.draftNotice}</p> : null}
+          {verified ? <p>{t.verifiedNotice}</p> : null}
+          {!editable && !verified ? <p>{t.lockedNotice}</p> : null}
+        </div>
+        <a
+          className="button workspace-hero-action"
+          href={'/' + locale + '/organisations/' + id + '/operations'}
+        >
+          {m.operationsWorkspace.title}
+        </a>
+        <a
+          className="button workspace-hero-action"
+          id="open-shipments"
+          href={`/${locale}/organisations/${organisation.id}/shipments`}
+        >
+          {t.shipmentsLink}
+        </a>
+      </section>
       <ErrorSummary title={m.auth.errors.summary} problems={problems} />
       {confirmation && problems.length === 0 ? (
         <p className="notice notice-success" role="status" id="organisation-confirmation">
           {confirmation}
         </p>
       ) : null}
-      <div className="form-inline">
-        <a
-          className="button"
-          id="open-shipments"
-          href={`/${locale}/organisations/${organisation.id}/shipments`}
-        >
-          {t.shipmentsLink}
-        </a>
+      <div className="workspace-shortcuts">
         <a
           className="button"
           id="open-verification"
@@ -154,13 +170,6 @@ export default async function OrganisationPage({ params, searchParams }: Props) 
         </a>
         <a
           className="button"
-          id="open-financial-completion"
-          href={`/${locale}/organisations/${organisation.id}/financial-completion`}
-        >
-          {financialNavigation[locale].title}
-        </a>
-        <a
-          className="button"
           id="open-carrier-page"
           href={`/${locale}/organisations/${organisation.id}/carrier`}
         >
@@ -173,14 +182,12 @@ export default async function OrganisationPage({ params, searchParams }: Props) 
         >
           {m.book.link}
         </a>
-      </div>
-      <div className="notice" role="note" id="organisation-status">
-        <h2>
-          {t.statusLabel}: {statusText}
-        </h2>
-        {draft ? <p>{t.draftNotice}</p> : null}
-        {verified ? <p>{t.verifiedNotice}</p> : null}
-        {!editable && !verified ? <p>{t.lockedNotice}</p> : null}
+        <a
+          className="button"
+          href={`/${locale}/organisations/${organisation.id}/financial-completion`}
+        >
+          {financialNavigation[locale].title}
+        </a>
       </div>
       <section className="section" aria-labelledby="details-title">
         <h2 id="details-title">{t.detailsTitle}</h2>

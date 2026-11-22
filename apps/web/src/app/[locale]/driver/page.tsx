@@ -1,3 +1,4 @@
+import { RecordOptions } from '../../../components/record-options.tsx';
 import { randomUUID } from 'node:crypto';
 import { notFound, redirect } from 'next/navigation';
 import { InstantText } from '../../../components/booking-view.tsx';
@@ -168,7 +169,7 @@ export default async function DriverPage({ params, searchParams }: Props) {
         ) : assigned.data.assignments.length === 0 ? (
           <p id="no-assignments">{a.driver.none}</p>
         ) : (
-          <ol className="organisation-list" id="assignment-list">
+          <ol className="organisation-list record-collection" id="assignment-list">
             {assigned.data.assignments.map((item) => (
               <li className="card" key={item.bookingId} data-assignment={item.bookingId}>
                 <dl className="facts">
@@ -390,7 +391,7 @@ export default async function DriverPage({ params, searchParams }: Props) {
         {side.invitations.length === 0 ? (
           <p id="no-invitations">{t.noInvitations}</p>
         ) : (
-          <ol className="organisation-list" id="invitation-list">
+          <ol className="organisation-list record-collection" id="invitation-list">
             {side.invitations.map((invitation) => (
               <li className="card organisation" key={invitation.id} data-invitation={invitation.id}>
                 <p>
@@ -398,29 +399,35 @@ export default async function DriverPage({ params, searchParams }: Props) {
                   <bdi>{nameOf(invitation.carrier)}</bdi>
                   {t.invitationFrom.split('{carrier}')[1]}
                 </p>
-                <form className="form-inline" action={respondInvitationAction}>
-                  {hidden('respond')}
-                  <input type="hidden" name="affiliationId" value={invitation.id} />
-                  <input type="hidden" name="version" value={invitation.version} />
-                  <button
-                    className="button button-primary"
-                    type="submit"
-                    name="decision"
-                    value="accept"
-                    data-accept={invitation.id}
-                  >
-                    {t.accept}
-                  </button>
-                  <button
-                    className="button"
-                    type="submit"
-                    name="decision"
-                    value="decline"
-                    data-decline={invitation.id}
-                  >
-                    {t.decline}
-                  </button>
-                </form>
+                <RecordOptions
+                  label={m.operationsWorkspace.actions + ' ' + nameOf(invitation.carrier)}
+                >
+                  <li>
+                    <form className="form-inline" action={respondInvitationAction}>
+                      {hidden('respond')}
+                      <input type="hidden" name="affiliationId" value={invitation.id} />
+                      <input type="hidden" name="version" value={invitation.version} />
+                      <button
+                        className="button button-primary"
+                        type="submit"
+                        name="decision"
+                        value="accept"
+                        data-accept={invitation.id}
+                      >
+                        {t.accept}
+                      </button>
+                      <button
+                        className="button"
+                        type="submit"
+                        name="decision"
+                        value="decline"
+                        data-decline={invitation.id}
+                      >
+                        {t.decline}
+                      </button>
+                    </form>
+                  </li>
+                </RecordOptions>
               </li>
             ))}
           </ol>

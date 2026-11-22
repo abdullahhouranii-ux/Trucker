@@ -1,5 +1,29 @@
 /* Staff console additions. Everything else comes from the web application's stylesheet and
    the design tokens, so the two applications look like one product. */
+.ops-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(9rem, 100%), 1fr));
+  gap: 1rem;
+}
+.ops-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: clamp(0.75rem, 2vw, 1.25rem);
+  color: var(--c-text);
+  text-decoration: none;
+  min-block-size: 6rem;
+  overflow-wrap: anywhere;
+}
+.ops-metric span {
+  color: var(--c-muted);
+  font-size: var(--t-sm);
+}
+.ops-metric strong {
+  font-size: 2.25rem;
+  line-height: 1.2;
+  color: var(--workspace-current);
+}
 .console-header {
   display: flex;
   flex-wrap: wrap;
@@ -177,4 +201,95 @@ input[type='password'] {
   min-height: var(--target-min);
   padding-block: var(--s-1);
   cursor: pointer;
+}
+
+.console-identity {
+  color: var(--c-surface);
+  font-size: var(--t-sm);
+  overflow-wrap: anywhere;
+}
+.console-workspace nav a {
+  border-radius: 0.6rem;
+  padding: 0.55rem 0.8rem;
+  text-decoration: none;
+}
+.console-workspace {
+  border-block-end: 1px solid var(--c-hairline);
+  background: var(--workspace-ink);
+  color: #f5fbf9;
+}
+.console-workspace nav a[aria-current='page'],
+.console-workspace nav a:hover {
+  background: var(--workspace-current);
+  color: #fff;
+  border-color: var(--workspace-accent);
+  text-decoration: none;
+}
+@media screen and (min-width: 64rem) {
+  body:has(.console-workspace) {
+    display: grid;
+    grid-template-columns: 16rem minmax(0, 1fr);
+    align-items: start;
+  }
+  body:has(.console-workspace) > .environment {
+    grid-column: 1 / -1;
+  }
+  .console-workspace {
+    grid-column: 1;
+    grid-row: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    min-block-size: calc(100vh - 3rem);
+    padding: 1.5rem 1rem;
+    position: sticky;
+    inset-block-start: 0;
+    max-block-size: 100vh;
+    overflow-y: auto;
+  }
+  .console-workspace + main {
+    grid-column: 2;
+    grid-row: 2;
+    min-inline-size: 0;
+  }
+  .console-workspace .brand {
+    font-size: 1.3rem;
+    margin: 0;
+    line-height: 1.4;
+  }
+  .console-workspace nav {
+    margin-block-start: 1rem;
+  }
+  .console-workspace nav ul {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+  .console-workspace nav a {
+    inline-size: 100%;
+  }
+  .console-workspace + main .page {
+    max-inline-size: 100rem;
+    padding-inline: clamp(1.5rem, 3vw, 3rem);
+  }
+  .console-workspace + main .page-narrow {
+    max-inline-size: 52rem;
+  }
+}
+@media (max-width: 63.99rem) {
+  .console-workspace {
+    align-items: flex-start;
+  }
+  .console-workspace nav {
+    flex-basis: 100%;
+  }
+  .console-workspace nav ul {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(9rem, 100%), 1fr));
+    gap: 0.35rem;
+  }
+  .console-workspace nav a {
+    inline-size: 100%;
+  }
 }

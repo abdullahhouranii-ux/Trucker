@@ -13,6 +13,17 @@ export default tseslint.config(
     ],
   },
   js.configs.recommended,
+  {
+    files: ['tools/dev/design-review.mjs'],
+    languageOptions: {
+      globals: {
+        document: 'readonly',
+        innerWidth: 'readonly',
+        getComputedStyle: 'readonly',
+        performance: 'readonly',
+      },
+    },
+  },
   ...tseslint.configs.recommended,
   {
     // Plain Node.js helper scripts.

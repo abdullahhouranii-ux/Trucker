@@ -84,44 +84,46 @@ export default async function CargoCasesPage({ params, searchParams }: Props) {
         </p>
       ) : null}
       {reply.data.cases.length === 0 ? <p id="cargo-cases-none">{c.casesNone}</p> : null}
-      {reply.data.cases.map((item) => {
-        // Whether this organisation's mandate covers anything now; the server decides again.
-        const inForce = (item.cargo.authorities ?? []).some(
-          (authority) =>
-            authority.holderRole === 'organiser' &&
-            authority.endedAt === null &&
-            (authority.validUntil === null || new Date(authority.validUntil).getTime() > now),
-        );
-        return (
-          <section key={item.bookingId} className="section" data-booking={item.bookingId}>
-            <h2>
-              {c.openBooking}: <bdi>{item.shipper ?? ''}</bdi>
-              {item.delivery ? (
-                <>
-                  {' '}
-                  (<bdi>{item.delivery}</bdi>)
-                </>
-              ) : null}
-            </h2>
-            <CargoPanel
-              c={c}
-              cargo={item.cargo}
-              side="organiser"
-              action={cargoAction}
-              retryKey={cargoKey}
-              canInstruct={inForce}
-              hidden={
-                <>
-                  <input type="hidden" name="locale" value={locale} />
-                  <input type="hidden" name="organisationId" value={id} />
-                  <input type="hidden" name="bookingId" value={item.bookingId} />
-                  <input type="hidden" name="returnTo" value="cases" />
-                </>
-              }
-            />
-          </section>
-        );
-      })}
+      <div className="record-collection">
+        {reply.data.cases.map((item) => {
+          // Whether this organisation's mandate covers anything now; the server decides again.
+          const inForce = (item.cargo.authorities ?? []).some(
+            (authority) =>
+              authority.holderRole === 'organiser' &&
+              authority.endedAt === null &&
+              (authority.validUntil === null || new Date(authority.validUntil).getTime() > now),
+          );
+          return (
+            <section key={item.bookingId} className="card" data-booking={item.bookingId}>
+              <h2>
+                {c.openBooking}: <bdi>{item.shipper ?? ''}</bdi>
+                {item.delivery ? (
+                  <>
+                    {' '}
+                    (<bdi>{item.delivery}</bdi>)
+                  </>
+                ) : null}
+              </h2>
+              <CargoPanel
+                c={c}
+                cargo={item.cargo}
+                side="organiser"
+                action={cargoAction}
+                retryKey={cargoKey}
+                canInstruct={inForce}
+                hidden={
+                  <>
+                    <input type="hidden" name="locale" value={locale} />
+                    <input type="hidden" name="organisationId" value={id} />
+                    <input type="hidden" name="bookingId" value={item.bookingId} />
+                    <input type="hidden" name="returnTo" value="cases" />
+                  </>
+                }
+              />
+            </section>
+          );
+        })}
+      </div>
     </div>
   );
 }

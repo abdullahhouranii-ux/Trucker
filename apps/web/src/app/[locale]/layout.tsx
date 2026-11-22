@@ -1,18 +1,13 @@
-import '@fontsource/barlow/400.css';
-import '@fontsource/barlow/500.css';
-import '@fontsource/barlow/600.css';
-import '@fontsource/barlow/700.css';
-import '@fontsource/noto-sans-arabic/400.css';
-import '@fontsource/noto-sans-arabic/500.css';
-import '@fontsource/noto-sans-arabic/600.css';
-import '@fontsource/noto-sans-arabic/700.css';
+import { latinFont, arabicFont } from '../../design/fonts.ts';
 import '../../design/tokens.css';
 import '../../styles/site.css';
+import '../../styles/experience.css';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { EnvironmentBanner } from '../../components/environment-banner.tsx';
 import { SiteHeader } from '../../components/site-header.tsx';
+import { WorkspaceNav } from '../../components/workspace-nav.tsx';
 import { direction, isLocale, locales } from '../../i18n/config.ts';
 import { getMessages } from '../../i18n/messages.ts';
 
@@ -37,13 +32,18 @@ export default async function LocaleLayout({ children, params }: Props) {
   if (!isLocale(locale)) notFound();
   const messages = getMessages(locale);
   return (
-    <html lang={locale} dir={direction(locale)}>
+    <html
+      lang={locale}
+      dir={direction(locale)}
+      className={`${latinFont.variable} ${arabicFont.variable}`}
+    >
       <body>
         <a className="skip-link" href="#main">
           {messages.skip}
         </a>
         <EnvironmentBanner messages={messages} />
         <SiteHeader locale={locale} messages={messages} />
+        <WorkspaceNav locale={locale} />
         <main id="main" tabIndex={-1}>
           {children}
         </main>

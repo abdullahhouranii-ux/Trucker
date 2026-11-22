@@ -41,7 +41,8 @@ Each slice has a scope and a record with its evidence in this folder.
 | 18c | Booking disputes and settlement holds (split from Codex's local work): mediated agreement, counterclaims, independent holds released only on a recorded basis | PR #40 |
 | 19 | Financial completion and operational closure (split from Codex's local work): external freight and commission payments reported and confirmed by the parties, independent reconciliation by two administrators, hold-aware eligibility, one automatic closure record. The fee invoice draft is held back pending the VAT and issuer decisions | PR #41 |
 | Public board | Public board of open shipments without sign-in (countries, equipment, deadline only) and the fleet gate at quotation (split from Codex's local work) | PR #42 |
-| Record photos | Private photos on shipments and vehicles for the owning company's administrators (split from Codex's local work) | PR #43 (planned number) |
+| Record photos | Private photos on shipments and vehicles for the owning company's administrators (split from Codex's local work) | PR #43 |
+| Redesign | Web and console redesign: design tokens 0.4.0, workspace navigation, operations workspace, responsive record lists, self-hosted fonts (split from Codex's local work) | PR #44 (planned number) |
 
 Pull requests #15 onward are stacked and open; none is merged, and each needs a dependency review and Abdullah's explicit authorisation. CI passed on #15 to #32 when it ran. On later pull requests (at least #36 to #39) GitHub has not started the checks because of a billing block on the account, so they have no CI result: their only results are the local runs recorded in each slice record.
 
