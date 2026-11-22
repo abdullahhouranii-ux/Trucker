@@ -133,7 +133,8 @@ No legal or tax rule is stated here. Every value that is not approved is a prote
 | Owner of Trucker (22 November, 10:38) | **Decided by Abdullah**: his company owns Trucker. The exact legal name for the app's licence notice and identifier is to be settled before go-live |
 | Mobile signing and store publishing (PR #45) | **Decided by Abdullah**: after testing, before go-live. Until then the app stays a development build with no store identifier, signing keys or store listing |
 | Local Docker database | **Decided by Abdullah**: recreate it, as suggested, because it holds the migration numbers of the earlier Codex work. This deletes only the Trucker test volume, not Odoo |
-| Approvals of 19 and 20 November | Under review with Abdullah: the dispute hold release rule (19 November), counterclaim terms (20 November) and the invoice policy recorded by Codex (20 November). Not confirmed yet |
+| Approvals of 19 and 20 November | **Confirmed by Abdullah (12:30)** as suggested: the dispute hold release rule (19 November) as an interim rule and the counterclaim terms (20 November), in `DISPUTES_SLICE_18C.md`. A release rule after an external decision is still needed before go-live |
+| Invoice policy recorded by Codex (20 November) | **Decided by Abdullah (12:30)** as suggested: internal draft after payment, no sending yet, no tax in Trucker, fees non-refundable by default (exception rule to be defined), the carrier issues the freight invoice; the commission document issuer stays open. In `FINANCIAL_COMPLETION_AND_CLOSURE.md` |
 
 ## 2. Exceptions to the proposed structures
 
