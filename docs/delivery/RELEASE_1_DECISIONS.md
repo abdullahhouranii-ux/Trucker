@@ -106,6 +106,7 @@ No legal or tax rule is stated here. Every value that is not approved is a prote
 | What it does not do | It does not merge, deploy, approve any production financial policy, or approve D-1 to D-12, O-1 to O-7 or DD-1 to DD-10. Each default used is listed in the record of the slice that uses it |
 | Dispatch | DD-1 to DD-10 will be taken as development defaults when the dispatch slice is reached, unless Abdullah says otherwise |
 | Slice 23 | Built with D-1, D-2, D-3 and O-1 as development defaults: `COMMISSION_SLICE_23.md` |
+| Slice 23b | Built with D-3, D-10, C-1 and C-2 as development defaults: `COMMISSION_CONTRACTS_SLICE_23B.md`. C-2 (quotations under an ended contract) is open for Abdullah |
 
 ## 2. Exceptions to the proposed structures
 

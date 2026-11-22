@@ -791,7 +791,8 @@
       "booking_closed": "Accepting is not available here: the commercial terms are not approved for this environment.",
       "commission_acceptance_required": "This shipment carries an organiser commission. Check the commission and your net earnings below, tick to accept them, and send again.",
       "commission_currency": "The organiser commission is a fixed amount in another currency, so this shipment cannot be quoted in this currency.",
-      "commission_leaves_nothing": "This price does not cover the organiser commission. Enter a higher price."
+      "commission_leaves_nothing": "This price does not cover the organiser commission. Enter a higher price.",
+      "commission_contract_required": "This shipment takes the commission of your contract with its organiser, and no contract is in force. Agree one with the organiser to quote."
     },
     "carrierIndividual": "Truck owner (an individual)",
     "carrierCompany": "Transport company"
@@ -1251,7 +1252,8 @@
     "options": {
       "none": "No commission",
       "percentage": "A percentage of the shipping price",
-      "fixed": "A fixed amount"
+      "fixed": "A fixed amount",
+      "contract": "The contract with each carrier"
     },
     "percent": "Percentage",
     "percentHint": "From 0.01 to 25, for example 7.5. Used when you choose a percentage.",
@@ -1280,6 +1282,68 @@
       "commissionPercentage_out_of_range": "Enter a percentage from 0.01 to 25.",
       "commissionAmount_invalid": "Enter the fixed amount as a number above zero, in the currency’s units.",
       "commissionCurrency_unavailable": "This currency is not available."
+    },
+    "isContract": "The commission in each carrier’s own contract with you",
+    "carrierContract": "The organiser of this shipment takes the commission in your contract with it:",
+    "carrierNoContract": "The organiser of this shipment takes the commission set in a contract with each carrier. You have no contract in force with this organiser, so you cannot quote. Agree one with the organiser first.",
+    "openContracts": "Open your commission contracts"
+  },
+  "contracts": {
+    "link": "Commission contracts",
+    "pageTitle": "Commission contracts",
+    "pageLead": "A commission contract between an organiser and a carrier states the organiser’s commission on shipments it arranges, when it is earned and when it is payable. It applies only once the carrier has accepted it. Its terms never change: to change them, end it and propose another.",
+    "codeLead": "Give this code to an organiser so that it can propose a contract to you.",
+    "proposeTitle": "Propose a contract to a carrier",
+    "carrierCode": "The carrier’s account code",
+    "carrierCodeHint": "The carrier finds it on this page of its own account.",
+    "option": "Commission",
+    "settlementDays": "Payable within (days)",
+    "settlementDaysHint": "From 1 to 60 days after the commission is earned.",
+    "earningNote": "The commission is earned when the carrier records that it received the freight payment.",
+    "propose": "Propose the contract",
+    "listTitle": "Your contracts",
+    "none": "There are none.",
+    "asCarrier": "This organiser takes this commission on shipments you carry for it under the contract option.",
+    "asOrganiser": "You take this commission on shipments this carrier carries for you under the contract option.",
+    "status": {
+      "proposed": "Waiting for the carrier",
+      "active": "In force",
+      "declined": "Declined",
+      "ended": "Ended"
+    },
+    "commission": "Commission",
+    "earned": "Earned when",
+    "days": "{n} days",
+    "earningConditions": {
+      "freight_receipt_recorded": "The carrier records receipt of the freight payment"
+    },
+    "accept": "Accept",
+    "decline": "Decline",
+    "end": "End this contract",
+    "withdraw": "Withdraw the proposal",
+    "saved": "Saved.",
+    "done": {
+      "proposed": "The contract has been proposed. Nothing applies until the carrier accepts.",
+      "already_proposed": "A contract with this carrier is already proposed or in force.",
+      "accepted": "The contract is in force.",
+      "declined": "The contract was declined.",
+      "already_decided": "This contract was already decided.",
+      "ended": "The contract has ended.",
+      "already_ended": "This contract had already ended."
+    },
+    "errors": {
+      "unavailable": "The page could not be loaded. Try again.",
+      "invalid": "Some details were not accepted. Check them and try again.",
+      "unconfirmed": "It was not confirmed that this was recorded. It may have been. Check below before trying again.",
+      "not_found": "This record is not available.",
+      "account_code_not_found": "No carrier can be offered a contract with this code. Check the code with the carrier.",
+      "organiser_not_eligible": "This account is not a verified organiser now.",
+      "carrier_not_eligible": "This account is not a verified carrier now.",
+      "record_changed": "This changed after the page was loaded. Nothing was changed. Check it and try again.",
+      "basisPoints_out_of_range": "Enter a percentage from 0.01 to 25.",
+      "amount_invalid": "Enter the fixed amount as a number above zero, in the currency’s units.",
+      "currency_unavailable": "This currency is not available.",
+      "settlementDays_out_of_range": "Enter a number of days from 1 to 60."
     }
   }
 }

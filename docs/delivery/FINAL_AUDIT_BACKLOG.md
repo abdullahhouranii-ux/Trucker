@@ -120,3 +120,10 @@ All Arabic and Urdu text in the repository is a draft written without a native r
 - The acceptance hint ("If you change the price…") sits beside the tick box label at 390 px; it should sit under it.
 - Wording of the commission messages in English, Arabic and Urdu, including the percentage phrase in right-to-left text.
 - The commission form shows the percentage, amount and currency fields together; show only those of the chosen option.
+
+## Slice 23b (commission contracts)
+
+- The account code box renders as a thin strip on the contracts page (and on the authorities page, which shares it).
+- "Payable within (days): 7 days" repeats "days"; label and value wording.
+- The proposal form shows percentage, amount and currency fields together; show only those of the chosen option.
+- Wording of the contract messages in English, Arabic and Urdu.

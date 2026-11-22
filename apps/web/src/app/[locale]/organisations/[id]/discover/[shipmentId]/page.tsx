@@ -141,6 +141,7 @@ export default async function DiscoveredShipmentPage({ params, searchParams }: P
         done={qDone}
         keyFor={keyFor}
         commission={commission.ok ? commission.data.commission : null}
+        contract={commission.ok ? (commission.data.contract ?? null) : null}
         lines={commissions.ok ? commissions.data.commissions.quotations : []}
         figures={
           FIGURE.test(one(search.cc)) && FIGURE.test(one(search.cn))
@@ -162,6 +163,7 @@ function QuotationSection({
   done,
   keyFor,
   commission,
+  contract,
   lines,
   figures,
 }: {
@@ -174,6 +176,7 @@ function QuotationSection({
   done: string | undefined;
   keyFor: (operation: string) => string;
   commission: CommissionView['commission'];
+  contract: CommissionView['contract'];
   lines: CommissionLine[];
   figures: { commission: string; net: string } | null;
 }) {
@@ -217,7 +220,14 @@ function QuotationSection({
         </p>
       ) : (
         <>
-          {commission ? <CarrierCommissionNotice t={m.commission} terms={commission} /> : null}
+          {commission ? (
+            <CarrierCommissionNotice
+              t={m.commission}
+              terms={commission}
+              contract={contract}
+              contractsHref={`/${locale}/organisations/${organisationId}/contracts`}
+            />
+          ) : null}
           <p className="field-hint" id="inclusions-fictional">
             {q.inclusionsFictional}
           </p>

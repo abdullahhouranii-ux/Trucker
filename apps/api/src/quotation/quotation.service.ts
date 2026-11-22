@@ -130,6 +130,12 @@ async function withCommission<T>(
         'The organiser commission is a fixed amount in another currency. Quote in that currency.',
         { currency: detail },
       );
+    if (code === 'TR013')
+      throw new ApiError(
+        409,
+        'commission_contract_required',
+        'This shipment takes the commission of your contract with its organiser, and no contract is in force. Agree one with the organiser to quote.',
+      );
     if (code === 'TR012')
       throw new ApiError(
         409,
@@ -289,11 +295,16 @@ export class QuotationService {
     quotationId: string,
     retryKey: string,
     version: number,
+    commissionAccepted?: QuotationInput['commissionAccepted'],
   ): Promise<{ outcome: 'reconfirmed' | 'already_reconfirmed'; quotation: QuotationView }> {
     return this.asCaller(caller, organisationId, async (client, allowFixtures) => {
-      const result = await client.query<{ status: string; detail: unknown }>(
-        'SELECT status, detail FROM trucker.reconfirm_quotation($1, $2, $3, $4)',
-        [quotationId, version, retryKey, allowFixtures],
+      // Usually nothing to accept again; only if the commission changed since the last version.
+      const accepted = { commissionAccepted } as QuotationInput;
+      const result = await withCommission(client, accepted, () =>
+        client.query<{ status: string; detail: unknown }>(
+          'SELECT status, detail FROM trucker.reconfirm_quotation($1, $2, $3, $4)',
+          [quotationId, version, retryKey, allowFixtures],
+        ),
       );
       const row = result.rows[0]!;
       if (row.status !== 'reconfirmed' && row.status !== 'repeated') refuse(row.status, row.detail);

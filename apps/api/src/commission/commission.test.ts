@@ -914,9 +914,10 @@ test('CM-2: no quotation exists on a commissioned shipment unless the carrier ac
   assert.deepEqual(shape((await commissions(second)).quotations), [
     ['carrier', '1250.50', '12.51', '1237.99'],
   ]);
-  assert.deepEqual(shape((await commissions(organiser)).quotations), [
-    ['organiser', '2000.00', '20.00', '1980.00'],
+  // Compared without regard to order: quotations may share an instant under the test clock.
+  assert.deepEqual(shape((await commissions(organiser)).quotations).sort(), [
     ['organiser', '1250.50', '12.51', '1237.99'],
+    ['organiser', '2000.00', '20.00', '1980.00'],
   ]);
   assert.deepEqual(await commissions(customer), { quotations: [], bookings: [] });
   const read = await quotationsOf(customer, shipment.id);

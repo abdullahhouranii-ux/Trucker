@@ -139,6 +139,13 @@ export default async function OrganisationPage({ params, searchParams }: Props) 
         </a>
         <a
           className="button"
+          id="open-contracts"
+          href={`/${locale}/organisations/${organisation.id}/contracts`}
+        >
+          {m.contracts.link}
+        </a>
+        <a
+          className="button"
           id="open-carrier-page"
           href={`/${locale}/organisations/${organisation.id}/carrier`}
         >

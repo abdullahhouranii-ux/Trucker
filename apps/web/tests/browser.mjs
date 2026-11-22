@@ -656,11 +656,11 @@ async function main() {
     mkdirSync(outDir, { recursive: true });
     // At most five pictures, for design review only.
     const shots = {
-      'en:shipment commission': 'shipment-commission-en-390',
-      'ar:shipment commission': 'shipment-commission-ar-390',
-      'en:commission acceptance': 'commission-acceptance-en-390',
-      'ar:commission acceptance': 'commission-acceptance-ar-390',
-      'en:commission accepted': 'commission-accepted-en-390',
+      'en:contracts': 'contracts-en-390',
+      'ar:contracts': 'contracts-ar-390',
+      'en:contract terms': 'contract-terms-en-390',
+      'ar:contract terms': 'contract-terms-ar-390',
+      'en:no contract': 'no-contract-en-390',
     };
     // Fictional numbers: country code 999 is not assigned. Unique per run.
     const stamp = String(Date.now()).slice(-7);
@@ -4107,6 +4107,141 @@ async function main() {
       customerSees.includes('1000.00') && !/commission|925\.00|75\.00/i.test(customerSees),
       `the customer's quotation page reads: ${customerSees.slice(0, 200)}`,
     );
+
+    // Commission contracts (slice 23b): the organiser proposes on its contracts page, the
+    // carrier accepts on its own; a shipment then takes each carrier's contract commission.
+    const contractsPath = (locale, org) => `/${locale}/organisations/${org}/contracts`;
+    const carrierCode = (await urApi(`/organisations/${carrierOrg}/commission-contracts`)).body
+      .contracts.accountCode;
+    await open(contractsPath('en', personalOrg), 390);
+    await page.type('#carrierCode', carrierCode);
+    await page.type('#contractPercent', '5');
+    await page.type('#settlementDays', '0');
+    await submit('#propose-contract');
+    const daysRefused = ((await text('#contract-error')) ?? '').includes(
+      messagesFor('en').contracts.errors.settlementDays_out_of_range,
+    );
+    await page.type('#carrierCode', carrierCode);
+    await page.type('#contractPercent', '5');
+    await page.type('#settlementDays', '7');
+    await submit('#propose-contract');
+    const proposedRow = await page.$('[data-status="proposed"][data-role="organiser"]');
+    await open(contractsPath('en', carrierOrg), 390);
+    await submit('[data-status="proposed"][data-role="carrier"] [data-accept]');
+    const inForce = (
+      await urApi(`/organisations/${carrierOrg}/commission-contracts`)
+    ).body.contracts.contracts.find((item) => item.status === 'active');
+    check(
+      'contracts',
+      daysRefused &&
+        proposedRow !== null &&
+        inForce?.basisPoints === 500 &&
+        inForce.settlementDays === 7 &&
+        (await page.$('[data-status="active"][data-role="carrier"]')) !== null,
+      `the contract journey ended at ${page.url()} with ${JSON.stringify(inForce)}`,
+    );
+    for (const locale of locales) {
+      await open(contractsPath(locale, carrierOrg), 390);
+      await inspect(locale, 'contracts');
+    }
+    // A shipment arranged with the contract option, chosen in the browser.
+    const contractShipment = await makeShipment('arr-contract', personalOrg);
+    const contractParties = await post(
+      `/organisations/${personalOrg}/shipments/${contractShipment}/parties`,
+      {
+        version: 1,
+        customerAuthorityId: granted.id,
+        sender: 'customer',
+        receiver: 'not_named',
+        freightPayer: 'customer',
+        feePayer: 'customer',
+      },
+      'contract-parties',
+    );
+    await open(`/en/organisations/${personalOrg}/shipments/${contractShipment}`, 390);
+    await page.select('#commissionOption', 'contract');
+    await submit('#save-commission');
+    const contractOption = (
+      await urApi(`/organisations/${personalOrg}/shipments/${contractShipment}/commission`)
+    ).body.commission?.option;
+    const contractPublished = await post(
+      `/organisations/${personalOrg}/shipments/${contractShipment}/publish`,
+      {
+        version: 1,
+        cargoCategory: 'general_dry',
+        equipmentType: 'curtain_side',
+        dangerousGoods: false,
+        pickupArea: 'North industrial area',
+        deliveryArea: 'Port district',
+        quotationDeadline: { local: zoned(24, 4) },
+      },
+      'contract-publish',
+    );
+    const contractTerms = await post(
+      `/organisations/${personalOrg}/shipments/${contractShipment}/quotation-terms`,
+      { version: 0, currency: 'XTS' },
+      'contract-terms',
+    );
+    const contractQuote = (locale, query = '') =>
+      `/${locale}/organisations/${carrierOrg}/discover/${contractShipment}${query}`;
+    await open(contractQuote('en'), 390);
+    const toldContract = (await text('#commission-terms')) ?? '';
+    check(
+      'contracts',
+      contractParties.status === 200 &&
+        contractOption === 'contract' &&
+        contractPublished.status === 200 &&
+        contractTerms.status === 200 &&
+        toldContract.includes('5%') &&
+        (await page.$('#commission-terms[data-option="contract"]')) !== null,
+      `the carrier was told: ${toldContract.slice(0, 200)} (option ${contractOption}, publish ${contractPublished.status})`,
+    );
+    for (const locale of locales) {
+      await open(contractQuote(locale), 390);
+      await inspect(locale, 'contract terms');
+    }
+    await open(contractQuote('en'), 390);
+    await fillQuotation('1000');
+    await submit('#submit-quotation');
+    const askedContract = (await text('#commission-acceptance')) ?? '';
+    await open(
+      contractQuote('en', '?qError=commission_acceptance_required&cc=50.00&cn=950.00'),
+      390,
+    );
+    await fillQuotation('1000');
+    await page.click('#commissionAccept');
+    await submit('#submit-quotation');
+    const contractRow = (
+      await owner.query(
+        `SELECT trucker.amount_text(c.commission_amount, c.minor_units) AS commission, c.contract_id AS contract
+         FROM trucker.quotation q JOIN trucker.quotation_commission c ON c.quotation_id = q.id
+         WHERE q.shipment_id = $1`,
+        [contractShipment],
+      )
+    ).rows;
+    check(
+      'contracts',
+      askedContract.includes('50.00') &&
+        askedContract.includes('950.00') &&
+        page.url().includes('qDone=submitted') &&
+        contractRow.length === 1 &&
+        contractRow[0].commission === '50.00' &&
+        contractRow[0].contract === inForce?.id,
+      `quoting under the contract: asked ${askedContract.slice(0, 120)}, then ${page.url()} with ${JSON.stringify(contractRow)}`,
+    );
+    // The carrier ends the contract: the shipment page then says it cannot quote.
+    await open(contractsPath('en', carrierOrg), 390);
+    await submit('[data-status="active"][data-role="carrier"] [data-end]');
+    await open(contractQuote('en'), 390);
+    check(
+      'contracts',
+      (await page.$('#open-contracts')) !== null &&
+        ((await text('#commission-terms')) ?? '').includes(
+          messagesFor('en').commission.carrierNoContract.slice(0, 40),
+        ),
+      `after the contract ended the carrier page reads: ${(await text('#commission-terms')) ?? ''}`,
+    );
+    await inspect('en', 'no contract');
     await open(arrangedPath('en'), 390);
     // The customer sees the shipment arranged in its name, with who arranged it.
     await open(authPath('en', verifyOrg), 390);
