@@ -36,6 +36,7 @@
     "dev:migrate": "node tools/dev/with-env.mjs npm run db:migrate",
     "dev:app-role": "node tools/dev/with-env.mjs npm run db:app-role",
     "dev:fixtures": "node tools/dev/with-env.mjs npm run db:fixtures",
+    "dev:demo:journey": "npm run build -w @trucker/api && node tools/dev/with-env.mjs node tools/dev/journey-demo.mjs",
     "dev:verify": "node tools/dev/with-env.mjs npm run verify",
     "dev:api": "npm run build -w @trucker/api && node tools/dev/with-env.mjs npm run start:api",
     "verify": "npm run format:check && npm run lint && npm run typecheck && npm run db:check && npm run test",
