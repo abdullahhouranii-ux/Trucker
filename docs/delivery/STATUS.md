@@ -46,7 +46,7 @@ Each slice has a scope and a record with its evidence in this folder.
 | Mobile app | Native Expo app for participants and drivers, development only (split from Codex's local work) | PR #45 |
 | Invoice draft | Internal draft of the platform fee invoice at settled payment; nothing issued or sent, no tax calculated | PR #46 (planned number) |
 
-Pull requests #15 onward are stacked and open; none is merged, and each needs a dependency review and Abdullah's explicit authorisation. CI passed on #15 to #32 when it ran. On later pull requests (at least #36 to #39) GitHub has not started the checks because of a billing block on the account, so they have no CI result: their only results are the local runs recorded in each slice record.
+Pull requests #15 onward are stacked and open; none is merged, and each needs a dependency review and Abdullah's explicit authorisation. CI passed on #15 to #32 when it ran. On #36 to #46 all checks (verify, windows, compose) pass as of 22 November 2026, after three tests that failed at random on slow runs were fixed (EXC-4, FS-4, the migration kill test).
 
 ## Next
 
