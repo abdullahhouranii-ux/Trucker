@@ -1509,7 +1509,11 @@ test("TRP-6: the driver sees the addresses, access notes and the shipper's name 
     delivery: { address: 'Depot 3, Hidden Road', accessNotes: 'Use the north entrance' },
   });
   assert.equal((after.shipper as { legalName: string }).legalName, made.booking.shipper.legalName);
-  const text = JSON.stringify(after);
+  // Identifiers are removed first: a random id such as "…0fee…" is not the fee.
+  const text = JSON.stringify(after).replace(
+    /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi,
+    '<id>',
+  );
   for (const hidden of [
     'transportAmount',
     'fee',
