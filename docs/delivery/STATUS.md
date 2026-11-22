@@ -46,6 +46,7 @@ Each slice has a scope and a record with its evidence in this folder.
 | Mobile app | Native Expo app for participants and drivers, development only (split from Codex's local work) | PR #45 |
 | Invoice draft | Internal draft of the platform fee invoice at settled payment; nothing issued or sent, no tax calculated | PR #46 |
 | Pilot invitation | Only invited contacts (and drivers invited by a carrier) register while invitations are required; staff invite and cancel; nothing is sent | `PILOT_INVITATIONS.md` |
+| Journey test | Demo data (`npm run dev:demo:journey`) and a step-by-step manual test from the pilot invitation to closure; `-- --run` drives the whole journey through the API | `JOURNEY_TEST_SCENARIO.md` |
 
 Pull requests #15 to #46 were merged into `staging` on 22 November 2026, in order, with merge commits, on Abdullah's instruction (13:35). Each passed its checks (verify, windows, compose) before it was merged. Nothing was deployed and `main` was not changed.
 
