@@ -161,6 +161,17 @@ export async function inviteDriverAction(form: FormData): Promise<void> {
   });
 }
 
+/** The owner of a truck owner account records themself as its driver. */
+export async function becomeOwnDriverAction(form: FormData): Promise<void> {
+  await command(form, {
+    operation: 'self',
+    path: within(form, (id) => `/organisations/${id}/fleet/drivers/self`),
+    here: fleetPage,
+    anchor: 'own-driver',
+    body: {},
+  });
+}
+
 export async function endAffiliationAction(form: FormData): Promise<void> {
   const affiliation = text(form, 'affiliationId');
   await command(form, {

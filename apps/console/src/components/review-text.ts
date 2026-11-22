@@ -60,8 +60,16 @@ export const REVIEW_ERRORS: Record<string, string> = {
   refused: 'That was refused.',
 };
 
-/** The two capabilities, decided and withdrawn independently. */
+/** The capabilities, each decided and withdrawn independently. */
 export const CAPABILITY: Record<string, string> = {
   ship: 'Shipper',
   carry_as_company: 'Carrier',
+  organise: 'Organiser',
+  carry_as_owner_operator: 'Truck owner',
+};
+
+/** The kind of account: a company, or one person's personal account. */
+export const ACCOUNT_KIND: Record<string, string> = {
+  company: 'Company',
+  individual: 'Individual (personal account)',
 };

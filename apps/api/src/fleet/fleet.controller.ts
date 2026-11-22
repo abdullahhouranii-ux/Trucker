@@ -196,6 +196,16 @@ export class FleetController {
     );
   }
 
+  @Post('drivers/self')
+  @HttpCode(200)
+  async becomeOwnDriver(
+    @Param('organisationId') organisationId: string,
+    @Req() request: IncomingRequest,
+  ) {
+    const caller = await this.caller(request);
+    return this.fleet.becomeOwnDriver(caller, identifier(organisationId));
+  }
+
   @Post('drivers/:affiliationId/end')
   @HttpCode(200)
   async endAffiliation(

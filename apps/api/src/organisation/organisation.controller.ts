@@ -55,7 +55,10 @@ const organisationFields = {
   address: optionalText(500),
   contactName: optionalText(120),
 };
-const createBody = z.object(organisationFields);
+const createBody = z.object({
+  ...organisationFields,
+  kind: z.enum(['company', 'individual']).optional(),
+});
 const updateBody = z.object({ ...organisationFields, version: z.number().int().min(1) });
 
 function parse<T>(schema: z.ZodType<T>, body: unknown): T {

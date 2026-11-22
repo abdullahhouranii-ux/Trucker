@@ -41,7 +41,7 @@ const submissionBody = z.object({
     .optional()
     .transform((value) => value ?? null),
   capability: z
-    .union([z.enum(['ship', 'carry_as_company']), z.null()])
+    .union([z.enum(['ship', 'carry_as_company', 'organise', 'carry_as_owner_operator']), z.null()])
     .optional()
     .transform((value) => value ?? null),
   service: z

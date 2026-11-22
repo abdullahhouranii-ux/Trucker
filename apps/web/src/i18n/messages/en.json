@@ -229,12 +229,17 @@
       "registration_incomplete": "Finish registration first.",
       "forbidden": "You are not allowed to change this organisation.",
       "organisation_unavailable": "The service did not answer, so this cannot be shown. Try again.",
-      "identity_needs_review": "The legal name, country and registration number of a verified organisation change only through a reviewed amendment. Nothing was saved. Propose the change on the verification page."
+      "identity_needs_review": "The legal name, country and registration number of a verified organisation change only through a reviewed amendment. Nothing was saved. Propose the change on the verification page.",
+      "personal_account_exists": "You already have a personal account. Open it from your list."
     },
     "shipmentsLink": "Shipment drafts",
     "verifiedNotice": "The legal name, country and registration number are verified and change only through a reviewed amendment. The other details can be changed here.",
     "lockedNotice": "The details cannot be changed while an application is under review.",
-    "carrierLink": "Carrier capability"
+    "carrierLink": "Carrier capability",
+    "personalTitle": "Create a personal account",
+    "personalLead": "A personal account is for one person: a coordinator or a truck owner. It is a draft until staff verify it, and it gives no right to trade on Trucker. Enter your own name as the legal name and the number of your identity document as the registration number.",
+    "personalLink": "I am an individual: create a personal account instead",
+    "companyLink": "Create an organisation instead"
   },
   "ship": {
     "listTitle": "Shipment drafts",
@@ -455,11 +460,16 @@
     "revalidates": "Revalidates",
     "capabilityName": {
       "ship": "Shipper",
-      "carry_as_company": "Carrier"
+      "carry_as_company": "Carrier",
+      "organise": "Organiser",
+      "carry_as_owner_operator": "Truck owner"
     },
     "shipperApplyTitle": "Apply as a shipper",
     "shipperApplyLead": "Your organisation is verified as a carrier. To publish shipments it also needs the shipper capability, decided by staff on its own.",
-    "carrierLink": "Carrier capability"
+    "carrierLink": "Carrier capability",
+    "organiserApplyTitle": "Apply as an organiser",
+    "organiserApplyLead": "An organiser (a coordinator or a broker) creates and publishes its own shipments. Staff decide this capability on its own.",
+    "kindOrganiser": "Organiser application"
   },
   "pub": {
     "sectionTitle": "Publish",
@@ -777,7 +787,9 @@
       "quotation_carrier_not_eligible": "The carrier may not carry this shipment now, so its quotation cannot be accepted.",
       "assignment_deadline_passed": "The pick-up is too soon: the time the carrier needs to assign a truck and a driver has already passed. No booking was created.",
       "booking_closed": "Accepting is not available here: the commercial terms are not approved for this environment."
-    }
+    },
+    "carrierIndividual": "Truck owner (an individual)",
+    "carrierCompany": "Transport company"
   },
   "fleet": {
     "title": "Fleet",
@@ -900,7 +912,9 @@
       "already_submitted": "The document was sent. Staff will check it.",
       "accepted": "You now drive for this carrier.",
       "declined": "You declined the invitation.",
-      "already_answered": "This invitation was already answered."
+      "already_answered": "This invitation was already answered.",
+      "affiliated": "You are recorded as the driver of this account.",
+      "already_affiliated": "You are recorded as the driver of this account."
     },
     "errors": {
       "kind_required": "Choose truck or trailer.",
@@ -940,8 +954,15 @@
       "carrier_not_eligible": "This organisation is not a verified carrier now, so it has no fleet page.",
       "not_found": "This record is not available.",
       "invalid": "Some details were not accepted. Check them and try again.",
-      "unavailable": "The page could not be loaded. Try again."
-    }
+      "unavailable": "The page could not be loaded. Try again.",
+      "owner_fleet_limit": "A truck owner account holds one truck and one trailer. Retire the current one before registering another.",
+      "owner_is_only_driver": "The owner is the only driver of a truck owner account.",
+      "not_a_personal_account": "Only a truck owner account can do this.",
+      "self_unconfirmed": "It was not confirmed that you were recorded as the driver. You may have been. Check the list."
+    },
+    "ownDriverTitle": "The driver of this account",
+    "ownDriverLead": "A truck owner account holds one truck, one trailer and one driver: you. Record yourself as the driver here, then add your driving documents on your driver page.",
+    "becomeOwnDriver": "Record me as the driver"
   },
   "book": {
     "link": "Bookings",

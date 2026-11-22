@@ -22,8 +22,10 @@ export interface QueueEntry {
   readonly legalName: string;
   readonly countryCode: string;
   readonly submittedAt: string;
-  readonly capability: 'ship' | 'carry_as_company';
-  readonly revalidates: ('ship' | 'carry_as_company')[] | null;
+  readonly capability: 'ship' | 'carry_as_company' | 'organise' | 'carry_as_owner_operator';
+  readonly accountKind: 'company' | 'individual';
+  readonly revalidates:
+    ('ship' | 'carry_as_company' | 'organise' | 'carry_as_owner_operator')[] | null;
 }
 export type Decision = 'verified' | 'changes_requested' | 'rejected';
 
@@ -91,6 +93,7 @@ export class ReviewService {
       submitted_at: Date;
       capability: QueueEntry['capability'];
       revalidates: QueueEntry['revalidates'];
+      account_kind: QueueEntry['accountKind'];
     }>('SELECT * FROM trucker.staff_verification_queue($1)', [caller.tokenHash]);
     return result.rows.map((row) => ({
       applicationId: row.application_id,
@@ -103,6 +106,7 @@ export class ReviewService {
       submittedAt: row.submitted_at.toISOString(),
       capability: row.capability,
       revalidates: row.revalidates,
+      accountKind: row.account_kind,
     }));
   }
 
@@ -170,7 +174,7 @@ export class ReviewService {
     caller: StaffCaller,
     organisationId: string,
     input: {
-      capability: 'ship' | 'carry_as_company';
+      capability: 'ship' | 'carry_as_company' | 'organise' | 'carry_as_owner_operator';
       reason: string;
       note: string | null;
       noConflict: boolean;

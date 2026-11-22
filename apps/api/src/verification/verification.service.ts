@@ -48,7 +48,13 @@ export interface SubmissionInput {
   readonly service: ServiceInput | null;
 }
 
-export type Capability = 'ship' | 'carry_as_company';
+export type Capability = 'ship' | 'carry_as_company' | 'organise' | 'carry_as_owner_operator';
+const CARRIER: readonly string[] = ['carry_as_company', 'carry_as_owner_operator'];
+/** Which capability which kind of account may hold: the database's rule, repeated for the page. */
+const ALLOWED: Record<string, readonly Capability[]> = {
+  company: ['ship', 'carry_as_company', 'organise'],
+  individual: ['organise', 'carry_as_owner_operator'],
+};
 export interface ServiceInput {
   readonly countries: string[];
   readonly equipmentTypes: string[];
@@ -100,6 +106,7 @@ export interface ApplicationView {
 }
 export interface VerificationOverview {
   readonly organisation: {
+    readonly kind: string;
     id: string;
     status: string;
     version: number;
@@ -200,11 +207,12 @@ export class VerificationService {
       country_code: string;
       registration_number: string;
       requested_capability: string;
+      kind: string;
       admin: boolean;
       may_publish: boolean;
     }>(
       `SELECT id, status, version, legal_name, country_code, registration_number,
-              requested_capability, trucker.is_admin(id) AS admin,
+              requested_capability, kind, trucker.is_admin(id) AS admin,
               trucker.organisation_may_publish() AS may_publish
        FROM trucker.organisation WHERE id = $1`,
       [organisationId],
@@ -302,6 +310,8 @@ export class VerificationService {
     const requirementsFor = {
       ship: await requirementsOf(['ship']),
       carry_as_company: await requirementsOf(['carry_as_company']),
+      organise: await requirementsOf(['organise']),
+      carry_as_owner_operator: await requirementsOf(['carry_as_owner_operator']),
     };
     const amendmentRequirements = await requirementsOf(granted.map((row) => row.capability));
     const verified = organisation.status === 'verified';
@@ -312,11 +322,12 @@ export class VerificationService {
       'verification_withdrawn',
     ].includes(organisation.status);
     const applyFor = (cap: Capability): 'initial' | 'capability' | 'service_change' | null => {
+      if (!(ALLOWED[organisation.kind] ?? []).includes(cap)) return null;
       if (open || requirementsFor[cap].length === 0) return null;
       if (reopenable) return 'initial';
       if (!verified) return null;
       const grant = capability.rows.find((row) => row.capability === cap);
-      if (grant?.status === 'granted') return cap === 'carry_as_company' ? 'service_change' : null;
+      if (grant?.status === 'granted') return CARRIER.includes(cap) ? 'service_change' : null;
       return 'capability';
     };
     const ownService =
@@ -324,6 +335,7 @@ export class VerificationService {
     return {
       organisation: {
         id: organisation.id,
+        kind: organisation.kind,
         status: organisation.status,
         version: organisation.version,
         legalName: organisation.legal_name,
@@ -338,18 +350,20 @@ export class VerificationService {
         capability: row.capability,
         status: row.status,
         basis: 'demonstration' as const,
-        effective:
-          row.capability === 'ship' ? organisation.may_publish : discovery.rows[0]!.status === 'ok',
+        effective: CARRIER.includes(row.capability)
+          ? discovery.rows[0]!.status === 'ok'
+          : organisation.may_publish,
         grantedAt: row.granted_at.toISOString(),
         revokedAt: row.revoked_at ? row.revoked_at.toISOString() : null,
         revokeReason: row.revoke_reason,
         revokeNote: row.revoke_note,
-        service:
-          row.capability === 'carry_as_company' && row.status === 'granted' ? ownService : null,
+        service: CARRIER.includes(row.capability) && row.status === 'granted' ? ownService : null,
       })),
       mayApply: {
         ship: applyFor('ship'),
         carry_as_company: applyFor('carry_as_company'),
+        organise: applyFor('organise'),
+        carry_as_owner_operator: applyFor('carry_as_owner_operator'),
       },
       applications: applications.rows.map((row) => ({
         id: row.id,

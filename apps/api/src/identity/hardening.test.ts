@@ -208,6 +208,7 @@ const count = async (table: string, where: string, values: unknown[]): Promise<n
 /** Functions the API's role may run. Anything else in the schema must be closed to it. */
 const CALLABLE = [
   'accept_quotation(p_quotation uuid, p_expected_version integer, p_key text, p_allow_fixtures boolean)',
+  'become_own_driver()',
   'booking_detail(p_booking uuid, p_allow_fixtures boolean)',
   'booking_overview(p_shipment uuid, p_allow_fixtures boolean)',
   'cancel_booking(p_booking uuid, p_expected_version integer, p_reason text, p_note text, p_allow_fixtures boolean)',
@@ -215,6 +216,7 @@ const CALLABLE = [
   'complete_registration(p_token_hash text, p_display_name text, p_contact_email text, p_terms_version text, p_terms_language text, p_request_id text)',
   'copy_shipment(p_shipment uuid, p_key text)',
   'create_organisation(p_legal_name text, p_trading_name text, p_country_code text, p_registration_number text, p_address text, p_contact_name text, p_allow_fixtures boolean)',
+  'create_personal_account(p_legal_name text, p_country_code text, p_registration_number text, p_address text, p_allow_fixtures boolean)',
   'create_shipment_draft(p_key text, p_content jsonb, p_allow_fixtures boolean)',
   'decide_booking_substitution(p_substitution uuid, p_expected_version integer, p_decision text, p_allow_fixtures boolean)',
   'discard_shipment_draft(p_draft uuid, p_expected_version integer, p_key text)',

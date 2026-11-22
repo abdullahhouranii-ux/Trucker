@@ -90,7 +90,11 @@ export async function submitVerificationAction(form: FormData): Promise<void> {
   const amendment = text(form, 'kind') === 'amendment';
   const capabilityValue = text(form, 'capability');
   const capability =
-    !amendment && (capabilityValue === 'ship' || capabilityValue === 'carry_as_company')
+    !amendment &&
+    (capabilityValue === 'ship' ||
+      capabilityValue === 'carry_as_company' ||
+      capabilityValue === 'organise' ||
+      capabilityValue === 'carry_as_owner_operator')
       ? capabilityValue
       : undefined;
   // The carrier's declared service: matching criteria only. Codes from the page's own lists.
@@ -99,7 +103,7 @@ export async function submitVerificationAction(form: FormData): Promise<void> {
       .getAll(name)
       .filter((value): value is string => typeof value === 'string' && CODE.test(value));
   const service =
-    capability === 'carry_as_company'
+    capability === 'carry_as_company' || capability === 'carry_as_owner_operator'
       ? { countries: codes('serviceCountry'), equipmentTypes: codes('serviceEquipment') }
       : undefined;
   const proposed = amendment

@@ -1,5 +1,5 @@
 import { ConsoleHeader, Unavailable } from '../../../components/console-header.tsx';
-import { REASONS, REVIEW_ERRORS } from '../../../components/review-text.ts';
+import { CAPABILITY, REASONS, REVIEW_ERRORS } from '../../../components/review-text.ts';
 import { revokeVerificationAction } from '../../../server/actions.ts';
 import { requireStaff } from '../../../server/session.ts';
 
@@ -34,7 +34,7 @@ export default async function WithdrawPage({ searchParams }: Props) {
       : null;
   const done = typeof search.done === 'string' ? DONE[search.done] : undefined;
   const capability =
-    search.capability === 'ship' || search.capability === 'carry_as_company'
+    typeof search.capability === 'string' && search.capability in CAPABILITY
       ? search.capability
       : '';
   const admin = found.staff.privileges.includes('staff_admin');
@@ -90,8 +90,11 @@ export default async function WithdrawPage({ searchParams }: Props) {
                 <label htmlFor="capability">Capability</label>
                 <select id="capability" name="capability" required defaultValue={capability}>
                   <option value="">Choose</option>
-                  <option value="ship">Shipper</option>
-                  <option value="carry_as_company">Carrier</option>
+                  {Object.entries(CAPABILITY).map(([code, name]) => (
+                    <option value={code} key={code}>
+                      {name}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div className="field">

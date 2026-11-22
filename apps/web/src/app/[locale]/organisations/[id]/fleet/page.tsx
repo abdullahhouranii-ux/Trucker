@@ -5,9 +5,16 @@ import { EligibilityTag, fleetProblems } from '../../../../../components/fleet-v
 import { describedBy, ErrorSummary, Field } from '../../../../../components/form.tsx';
 import { isLocale } from '../../../../../i18n/config.ts';
 import { getMessages } from '../../../../../i18n/messages.ts';
-import { api, type Catalogues, type Country, type Fleet } from '../../../../../server/api.ts';
+import {
+  api,
+  type Catalogues,
+  type Country,
+  type Fleet,
+  type Organisation,
+} from '../../../../../server/api.ts';
 import {
   authoriseDriverAction,
+  becomeOwnDriverAction,
   endAffiliationAction,
   inviteDriverAction,
   registerVehicleAction,
@@ -41,10 +48,11 @@ export default async function FleetPage({ params, searchParams }: Props) {
   };
   const person = await requirePerson(locale);
   // An unconfirmed session is not an ended one: the requests fail as unavailable or with 401.
-  const [reply, countries, catalogues] = await Promise.all([
+  const [reply, countries, catalogues, account] = await Promise.all([
     api<{ fleet: Fleet }>('GET', `/organisations/${id}/fleet`, { token: person.token }),
     api<{ countries: Country[] }>('GET', '/registration/countries', { token: person.token }),
     api<Catalogues>('GET', `/organisations/${id}/shipment-catalogues`, { token: person.token }),
+    api<{ organisation: Organisation }>('GET', `/organisations/${id}`, { token: person.token }),
   ]);
   if (!reply.ok && reply.status === 401) redirect(`/${locale}/sign-in?error=session_ended`);
   if (!reply.ok && reply.status === 404) notFound();
@@ -91,6 +99,7 @@ export default async function FleetPage({ params, searchParams }: Props) {
   const countryName = (code: string): string =>
     (countries.ok ? countries.data.countries.find((country) => country.code === code) : undefined)
       ?.name[locale] ?? code;
+  const personal = account.ok && account.data.organisation.kind === 'individual';
   const hidden = (operation: string) => (
     <>
       <input type="hidden" name="locale" value={locale} />
@@ -301,29 +310,51 @@ export default async function FleetPage({ params, searchParams }: Props) {
             })}
           </ol>
         )}
-        <h3 id="invite-form-title">{t.inviteTitle}</h3>
-        <form className="form card" id="invite-form" action={inviteDriverAction}>
-          {hidden('invite')}
-          <Field id="phone" label={t.phone} hint={t.phoneHint} error={inviteErrors.get('phone')}>
-            <input
-              id="phone"
-              name="phone"
-              type="tel"
-              dir="ltr"
-              autoComplete="off"
-              maxLength={20}
-              data-draft
-              aria-invalid={inviteErrors.has('phone') ? true : undefined}
-              aria-describedby={describedBy('phone', true, inviteErrors.has('phone'))}
-            />
-          </Field>
-          <p className="field-hint" id="invite-note">
-            {t.inviteNote}
-          </p>
-          <button className="button button-primary" type="submit" id="invite-driver">
-            {t.invite}
-          </button>
-        </form>
+        {personal ? (
+          <div className="card" id="own-driver">
+            <h3>{t.ownDriverTitle}</h3>
+            <p>{t.ownDriverLead}</p>
+            {fleet.drivers.some((driver) => driver.status === 'active') ? null : (
+              <form action={becomeOwnDriverAction}>
+                {hidden('self')}
+                <button className="button button-primary" type="submit" id="become-own-driver">
+                  {t.becomeOwnDriver}
+                </button>
+              </form>
+            )}
+          </div>
+        ) : (
+          <>
+            <h3 id="invite-form-title">{t.inviteTitle}</h3>
+            <form className="form card" id="invite-form" action={inviteDriverAction}>
+              {hidden('invite')}
+              <Field
+                id="phone"
+                label={t.phone}
+                hint={t.phoneHint}
+                error={inviteErrors.get('phone')}
+              >
+                <input
+                  id="phone"
+                  name="phone"
+                  type="tel"
+                  dir="ltr"
+                  autoComplete="off"
+                  maxLength={20}
+                  data-draft
+                  aria-invalid={inviteErrors.has('phone') ? true : undefined}
+                  aria-describedby={describedBy('phone', true, inviteErrors.has('phone'))}
+                />
+              </Field>
+              <p className="field-hint" id="invite-note">
+                {t.inviteNote}
+              </p>
+              <button className="button button-primary" type="submit" id="invite-driver">
+                {t.invite}
+              </button>
+            </form>
+          </>
+        )}
       </section>
       {fleet.open ? (
         <DraftKeeper formId="vehicle-form" scope={`fleet-vehicle-${id}`} clear={done !== ''} />

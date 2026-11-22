@@ -79,6 +79,7 @@ export interface Terms {
 
 export interface Organisation {
   id: string;
+  kind: 'company' | 'individual';
   status: string;
   requestedCapability: string;
   legalName: string;
@@ -235,6 +236,7 @@ export interface VerificationApplication {
 export interface VerificationOverview {
   organisation: {
     id: string;
+    kind: 'company' | 'individual';
     status: string;
     version: number;
     legalName: string;
@@ -260,7 +262,7 @@ export interface VerificationOverview {
   mayApply: Record<Capability, 'initial' | 'capability' | 'service_change' | null>;
 }
 
-export type Capability = 'ship' | 'carry_as_company';
+export type Capability = 'ship' | 'carry_as_company' | 'organise' | 'carry_as_owner_operator';
 /** Declared by the carrier and decided by staff: matching criteria for discovery only. Not
  * verified vehicles, availability or permission to accept work. */
 export interface DeclaredService {
@@ -394,7 +396,13 @@ export interface Quotation {
   closedReason: string | null;
   createdAt: string;
   versions: QuotationVersion[];
-  carrier?: { id: string; legalName: string; tradingName: string | null; verified: boolean };
+  carrier?: {
+    id: string;
+    legalName: string;
+    tradingName: string | null;
+    verified: boolean;
+    accountKind?: 'company' | 'individual';
+  };
   lane?: { origin: string; destination: string };
 }
 export interface QuotationContext {

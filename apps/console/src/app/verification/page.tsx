@@ -1,7 +1,12 @@
 import { redirect } from 'next/navigation';
 import { api } from '../../../../web/src/server/api.ts';
 import { ConsoleHeader, Unavailable, utc } from '../../components/console-header.tsx';
-import { APPLICATION_STATUS, CAPABILITY, REVIEW_ERRORS } from '../../components/review-text.ts';
+import {
+  ACCOUNT_KIND,
+  APPLICATION_STATUS,
+  CAPABILITY,
+  REVIEW_ERRORS,
+} from '../../components/review-text.ts';
 import { requireStaff } from '../../server/session.ts';
 import type { QueueEntry } from '../../server/types.ts';
 
@@ -72,6 +77,9 @@ export default async function VerificationQueuePage({ searchParams }: Props) {
                   data-application={entry.applicationId}
                 >
                   <h2>{entry.legalName}</h2>
+                  <p className="chip" data-account-kind={entry.accountKind}>
+                    {ACCOUNT_KIND[entry.accountKind]}
+                  </p>
                   <p className="chip">{APPLICATION_STATUS[entry.status]}</p>
                   <p>
                     {entry.kind === 'amendment'

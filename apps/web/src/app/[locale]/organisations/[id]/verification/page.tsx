@@ -28,6 +28,12 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const RETRY_KEY = /^[A-Za-z0-9._-]{16,128}$/;
 const when = (iso: string): string => `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC`;
 
+// A capability a verified account may add on this page; each has its own form.
+const EXTRA = [
+  { capability: 'ship', name: 'shipper' },
+  { capability: 'organise', name: 'organiser' },
+] as const;
+
 export default async function VerificationPage({ params, searchParams }: Props) {
   const { locale, id } = await params;
   if (!isLocale(locale)) notFound();
@@ -83,6 +89,8 @@ export default async function VerificationPage({ params, searchParams }: Props) 
     ...v.requirements,
     ...v.requirementsFor.ship,
     ...v.requirementsFor.carry_as_company,
+    ...v.requirementsFor.organise,
+    ...v.requirementsFor.carry_as_owner_operator,
   ];
   const requirementName = (type: string): string =>
     allRequirements.find((item) => item.documentType === type)?.name[locale] ?? type;
@@ -387,40 +395,46 @@ export default async function VerificationPage({ params, searchParams }: Props) 
         </section>
       ) : null}
 
-      {v.mayApply.ship === 'capability' ? (
-        <section className="section" aria-labelledby="shipper-title">
-          <h2 id="shipper-title">{t.shipperApplyTitle}</h2>
-          <p>{t.shipperApplyLead}</p>
-          <form
-            className="form card"
-            id={`shipper-form-${v.organisation.id}`}
-            action={submitVerificationAction}
-            noValidate
-          >
-            <input type="hidden" name="locale" value={locale} />
-            <input type="hidden" name="organisationId" value={v.organisation.id} />
-            <input type="hidden" name="version" value={v.organisation.version} />
-            <input type="hidden" name="retryKey" value={retryKey} />
-            <input type="hidden" name="kind" value="capability" />
-            <input type="hidden" name="capability" value="ship" />
-            <h3>{t.evidenceTitle}</h3>
-            <p>{t.evidenceLead}</p>
-            <EvidenceFields
-              locale={locale}
-              t={t}
-              requirements={v.requirementsFor.ship}
-              previous={v.applications.find((item) => item.capability === 'ship')?.evidence ?? []}
-              countries={open}
-              defaultCountry={v.organisation.countryCode}
-              invalid={invalid}
-            />
-            <DeclarationField t={t} invalid={invalid} />
-            <button className="button button-primary" type="submit" id="submit-shipper">
-              {t.submit}
-            </button>
-          </form>
-        </section>
-      ) : null}
+      {EXTRA.filter(({ capability }) => v.mayApply[capability] === 'capability').map(
+        ({ capability, name }) => (
+          <section className="section" aria-labelledby={`${name}-title`} key={capability}>
+            <h2 id={`${name}-title`}>
+              {capability === 'ship' ? t.shipperApplyTitle : t.organiserApplyTitle}
+            </h2>
+            <p>{capability === 'ship' ? t.shipperApplyLead : t.organiserApplyLead}</p>
+            <form
+              className="form card"
+              id={`${name}-form-${v.organisation.id}`}
+              action={submitVerificationAction}
+              noValidate
+            >
+              <input type="hidden" name="locale" value={locale} />
+              <input type="hidden" name="organisationId" value={v.organisation.id} />
+              <input type="hidden" name="version" value={v.organisation.version} />
+              <input type="hidden" name="retryKey" value={retryKey} />
+              <input type="hidden" name="kind" value="capability" />
+              <input type="hidden" name="capability" value={capability} />
+              <h3>{t.evidenceTitle}</h3>
+              <p>{t.evidenceLead}</p>
+              <EvidenceFields
+                locale={locale}
+                t={t}
+                requirements={v.requirementsFor[capability]}
+                previous={
+                  v.applications.find((item) => item.capability === capability)?.evidence ?? []
+                }
+                countries={open}
+                defaultCountry={v.organisation.countryCode}
+                invalid={invalid}
+              />
+              <DeclarationField t={t} invalid={invalid} />
+              <button className="button button-primary" type="submit" id={`submit-${name}`}>
+                {t.submit}
+              </button>
+            </form>
+          </section>
+        ),
+      )}
 
       <p>
         <a className="button" id="open-carrier" href={`/${locale}/organisations/${id}/carrier`}>
@@ -442,10 +456,13 @@ export default async function VerificationPage({ params, searchParams }: Props) 
                 {fill(t.version, { n: application.versionNo })}:{' '}
                 {application.kind === 'amendment'
                   ? t.kindAmendment
-                  : application.capability === 'carry_as_company'
+                  : application.capability === 'carry_as_company' ||
+                      application.capability === 'carry_as_owner_operator'
                     ? t.kindCarrier
                     : application.kind === 'capability'
-                      ? t.kindShipper
+                      ? application.capability === 'organise'
+                        ? t.kindOrganiser
+                        : t.kindShipper
                       : t.kindInitial}
               </h3>
               {application.revalidates ? (
