@@ -47,6 +47,9 @@ export const SECURITY_SETTING_DEFAULTS = {
   staff_lock_minutes: 15,
   staff_ticket_seconds: 300,
   staff_enrolment_hours: 24,
+  // Days a photo is kept once its record ended without a booking; 0 keeps it
+  // (db/migrations/0040). Development default until a period is set.
+  record_photo_retention_days: 0,
 } as const;
 
 export type SettingName = keyof typeof SECURITY_SETTING_DEFAULTS;

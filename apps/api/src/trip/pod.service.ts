@@ -123,14 +123,34 @@ export class PodService implements OnApplicationBootstrap, OnApplicationShutdown
   onApplicationBootstrap(): void {
     if (!this.store) return;
     this.sweeping = setInterval(() => {
-      // A failed sweep removes nothing; the next one tries again.
-      void this.sweepUnrecorded(new Date(Date.now() - POD_SWEEP_GRACE_MS)).catch(() => undefined);
+      // Photos past their keeping time lose their record first; their files then become
+      // unrecorded and the sweep removes them after its grace period. A failure removes
+      // nothing; the next run tries again.
+      void this.removeExpiredPhotos()
+        .catch(() => undefined)
+        .then(() => this.sweepUnrecorded(new Date(Date.now() - POD_SWEEP_GRACE_MS)))
+        .catch(() => undefined);
     }, POD_SWEEP_EVERY_MS);
     this.sweeping.unref();
   }
 
   onApplicationShutdown(): void {
     if (this.sweeping) clearInterval(this.sweeping);
+  }
+
+  /** Removes the records of photos past their keeping time (a setting); returns how many. */
+  async removeExpiredPhotos(): Promise<number> {
+    await this.access.requireBoundRole();
+    let total = 0;
+    for (;;) {
+      const removed = (
+        await this.pool.query<{ removed: number }>(
+          'SELECT trucker.record_photo_retention_sweep() AS removed',
+        )
+      ).rows[0]!.removed;
+      total += removed;
+      if (removed < 200) return total;
+    }
   }
 
   /**
