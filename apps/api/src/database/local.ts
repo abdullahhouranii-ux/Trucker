@@ -99,7 +99,7 @@ interface FixtureFile {
   /** Demonstration only: not a statement of any legal requirement. */
   evidenceRequirements?: {
     country: string;
-    capability: 'ship';
+    capability: 'ship' | 'carry_as_company';
     documentType: string;
     required: boolean;
     name: { en: string; ar: string; ur: string };

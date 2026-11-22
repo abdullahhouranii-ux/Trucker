@@ -28,6 +28,15 @@ const ACTION: Record<string, string> = {
   'shipment.suspension_ended': 'A cause of suspension ended',
 };
 
+/** One carrier read of the projection, from the staff-only, append-only access log. */
+interface AccessEntry {
+  occurredAt: string;
+  kind: 'list' | 'detail';
+  outcome: 'shown' | 'not_found' | 'refused';
+  organisation: { id: string; legalName: string };
+  requestId: string | null;
+}
+
 interface Detail {
   shipment: Record<string, unknown> & { id: string; state: string };
   organisation: { id: string; legalName: string; status: string; countryCode: string };
@@ -57,7 +66,12 @@ export default async function ShipmentPage({ params }: Props) {
       </>
     );
   }
-  const one = await api<Detail>('GET', `/staff/shipments/${id}`, { token: found.token });
+  const [one, access] = await Promise.all([
+    api<Detail>('GET', `/staff/shipments/${id}`, { token: found.token }),
+    api<{ entries: AccessEntry[] }>('GET', `/staff/shipments/${id}/carrier-access`, {
+      token: found.token,
+    }),
+  ]);
   if (!one.ok && one.status === 401) redirect('/sign-in?error=session_ended');
   if (!one.ok && one.status === 404) notFound();
   if (!one.ok) {
@@ -99,7 +113,10 @@ export default async function ShipmentPage({ params }: Props) {
           <p className="chip" id="shipment-state" data-state={shipment.state}>
             {STATE[shipment.state] ?? shipment.state}
           </p>
-          <p>Read-only. No carrier can see this shipment yet in this environment.</p>
+          <p>
+            Read-only. Verified carriers whose declared service matches see the projection below
+            while it is published.
+          </p>
           <section className="section" aria-labelledby="record-title">
             <h2 id="record-title">The shipment</h2>
             <dl className="card facts" id="shipment-record">
@@ -134,6 +151,37 @@ export default async function ShipmentPage({ params }: Props) {
             <pre className="card code-block" id="carrier-view">
               {JSON.stringify(carrierView, null, 2)}
             </pre>
+          </section>
+          <section className="section" aria-labelledby="access-title">
+            <h2 id="access-title">Carrier access</h2>
+            <p>
+              Each time a carrier listed or opened this shipment. Staff only; the shipper does not
+              see it. Entries cannot be changed or removed. How long they are kept is not decided
+              for production.
+            </p>
+            {access.ok ? (
+              access.data.entries.length === 0 ? (
+                <p id="no-access">No carrier has read it.</p>
+              ) : (
+                <ul className="evidence" id="carrier-access">
+                  {access.data.entries.map((entry, index) => (
+                    <li
+                      key={`${entry.occurredAt}-${index}`}
+                      data-kind={entry.kind}
+                      data-outcome={entry.outcome}
+                    >
+                      {utc(entry.occurredAt)}: {entry.organisation.legalName},{' '}
+                      {entry.kind === 'list' ? 'in a list' : 'opened'}
+                      {entry.outcome === 'shown' ? '' : ` (${entry.outcome.replace('_', ' ')})`}
+                    </li>
+                  ))}
+                </ul>
+              )
+            ) : (
+              <p className="notice notice-error" role="alert" id="access-unavailable">
+                The access log could not be read. Reload the page.
+              </p>
+            )}
           </section>
           <section className="section" aria-labelledby="suspensions-title">
             <h2 id="suspensions-title">Suspensions</h2>

@@ -589,7 +589,7 @@ test('only an organisation that may publish can publish, judged after the locks'
   const admin = await newStaff(['staff_admin']);
   const revoked = await call('POST', `/staff/verification/organisations/${ok.org}/revoke`, {
     token: admin.token,
-    body: { reason: 'verified_in_error', noConflict: true },
+    body: { capability: 'ship', reason: 'verified_in_error', noConflict: true },
   });
   assert.equal(revoked.status, 200, revoked.text);
   const later = await draft(ok.person, ok.org);
@@ -1241,7 +1241,7 @@ test('an expired shipment is published again as a new version, after every check
   const admin = await newStaff(['staff_admin']);
   await call('POST', `/staff/verification/organisations/${org}/revoke`, {
     token: admin.token,
-    body: { reason: 'verified_in_error', noConflict: true },
+    body: { capability: 'ship', reason: 'verified_in_error', noConflict: true },
   });
   await advance(13 * 60);
   person = await again(person);
@@ -1263,7 +1263,7 @@ test('verification withdrawn: suspended for that cause, once; restored: resumed 
   const admin = await newStaff(['staff_admin']);
   const revoked = await call('POST', `/staff/verification/organisations/${org}/revoke`, {
     token: admin.token,
-    body: { reason: 'verified_in_error', noConflict: true },
+    body: { capability: 'ship', reason: 'verified_in_error', noConflict: true },
   });
   assert.equal(revoked.status, 200, revoked.text);
   // Recorded in the withdrawal's own transaction, not at the next read.
@@ -1321,7 +1321,7 @@ test('expiry comes before suspension: a suspended shipment past its deadline exp
   const admin = await newStaff(['staff_admin']);
   await call('POST', `/staff/verification/organisations/${org}/revoke`, {
     token: admin.token,
-    body: { reason: 'verified_in_error', noConflict: true },
+    body: { capability: 'ship', reason: 'verified_in_error', noConflict: true },
   });
   await owner.query(
     `UPDATE trucker.lane SET state = 'closed' WHERE origin_country = 'XA' AND destination_country = 'XB'`,
@@ -1362,7 +1362,7 @@ test('a publication racing a verification withdrawal never leaves a shipment pub
       act(person, org, made.id, 'publish', { version: made.version, ...details() }),
       call('POST', `/staff/verification/organisations/${org}/revoke`, {
         token: admin.token,
-        body: { reason: 'verified_in_error', noConflict: true },
+        body: { capability: 'ship', reason: 'verified_in_error', noConflict: true },
       }),
     ]);
     assert.equal(revokeReply.status, 200, revokeReply.text);

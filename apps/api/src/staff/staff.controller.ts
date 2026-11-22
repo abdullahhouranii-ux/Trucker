@@ -85,6 +85,7 @@ const decisionBody = z.object({
   noConflict: z.boolean(),
 });
 const revokeBody = z.object({
+  capability: z.enum(['ship', 'carry_as_company']),
   reason: z.string().regex(/^[a-z_]{2,40}$/),
   note,
   noConflict: z.boolean(),
@@ -289,6 +290,14 @@ export class StaffController {
     @Req() request: IncomingRequest,
   ): Promise<Record<string, unknown>> {
     return this.review.shipment(await this.caller(request), identifier(id));
+  }
+
+  @Get('shipments/:id/carrier-access')
+  async carrierAccess(
+    @Param('id') id: string,
+    @Req() request: IncomingRequest,
+  ): Promise<Record<string, unknown>> {
+    return this.review.carrierAccess(await this.caller(request), identifier(id));
   }
 
   @Get('verification')

@@ -27,10 +27,16 @@ const DOCUMENT_TYPE = /^[a-z][a-z0-9_]{1,39}$/;
 const unknown = (reply: Extract<ApiReply<unknown>, { ok: false }>): boolean =>
   reply.status === 0 || reply.status >= 500 || reply.code === 'unavailable';
 
-const page = (locale: Locale, id: string, values: Record<string, string> = {}): string => {
+const page = (
+  locale: Locale,
+  id: string,
+  values: Record<string, string> = {},
+  where: 'verification' | 'carrier' = 'verification',
+): string => {
   const params = new URLSearchParams(values).toString();
-  return `/${locale}/organisations/${id}/verification${params ? `?${params}` : ''}`;
+  return `/${locale}/organisations/${id}/${where}${params ? `?${params}` : ''}`;
 };
+const CODE = /^[A-Za-z0-9_]{2,40}$/;
 
 /** The server's field problems as the short codes the page understands. */
 function problemCodes(details: Record<string, unknown>): string {
@@ -52,7 +58,9 @@ export async function submitVerificationAction(form: FormData): Promise<void> {
   if (!UUID.test(id)) redirect(`/${locale}/organisations?error=organisation_not_found`);
   const key = text(form, 'retryKey');
   const retryKey = RETRY_KEY.test(key) ? key : randomUUID();
-  const back = (error: string): never => redirect(page(locale, id, { error, retry: retryKey }));
+  const where = text(form, 'returnTo') === 'carrier' ? 'carrier' : 'verification';
+  const back = (error: string): never =>
+    redirect(page(locale, id, { error, retry: retryKey }, where));
 
   const version = Number(text(form, 'version'));
   if (!Number.isInteger(version) || version < 1) back('organisation_changed');
@@ -80,6 +88,20 @@ export async function submitVerificationAction(form: FormData): Promise<void> {
     )
     .map(({ entry }) => entry);
   const amendment = text(form, 'kind') === 'amendment';
+  const capabilityValue = text(form, 'capability');
+  const capability =
+    !amendment && (capabilityValue === 'ship' || capabilityValue === 'carry_as_company')
+      ? capabilityValue
+      : undefined;
+  // The carrier's declared service: matching criteria only. Codes from the page's own lists.
+  const codes = (name: string): string[] =>
+    form
+      .getAll(name)
+      .filter((value): value is string => typeof value === 'string' && CODE.test(value));
+  const service =
+    capability === 'carry_as_company'
+      ? { countries: codes('serviceCountry'), equipmentTypes: codes('serviceEquipment') }
+      : undefined;
   const proposed = amendment
     ? {
         legalName: text(form, 'proposedLegalName'),
@@ -100,10 +122,12 @@ export async function submitVerificationAction(form: FormData): Promise<void> {
         declarationLanguage: locale,
         evidence,
         ...(proposed ? { proposed } : {}),
+        ...(capability ? { capability } : {}),
+        ...(service ? { service } : {}),
       },
     },
   );
-  if (reply.ok) redirect(page(locale, id, { done: 'submitted' }));
+  if (reply.ok) redirect(page(locale, id, { done: 'submitted' }, where));
   if (reply.status === 401) {
     await endSession();
     redirect(`/${locale}/sign-in?error=session_ended`);
@@ -123,16 +147,19 @@ export async function withdrawVerificationAction(form: FormData): Promise<void> 
   if (!UUID.test(id) || !UUID.test(application))
     redirect(`/${locale}/organisations?error=organisation_not_found`);
   const key = text(form, 'retryKey');
+  const where = text(form, 'returnTo') === 'carrier' ? 'carrier' : 'verification';
   const reply = await api<{ verification: VerificationOverview }>(
     'POST',
     `/organisations/${id}/verification/applications/${application}/withdraw`,
     { token, retryKey: RETRY_KEY.test(key) ? key : randomUUID() },
   );
-  if (reply.ok) redirect(page(locale, id, { done: 'withdrawn' }));
+  if (reply.ok) redirect(page(locale, id, { done: 'withdrawn' }, where));
   if (reply.status === 401) {
     await endSession();
     redirect(`/${locale}/sign-in?error=session_ended`);
   }
   if (reply.status === 404) redirect(`/${locale}/organisations?error=organisation_not_found`);
-  redirect(page(locale, id, { error: unknown(reply) ? 'withdraw_unconfirmed' : reply.code }));
+  redirect(
+    page(locale, id, { error: unknown(reply) ? 'withdraw_unconfirmed' : reply.code }, where),
+  );
 }

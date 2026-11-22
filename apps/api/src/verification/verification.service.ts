@@ -42,6 +42,33 @@ export interface SubmissionInput {
     registrationNumber: string;
   } | null;
   readonly evidence: EvidenceInput[];
+  /** For an organisation that is not verified, or a verified one applying for another capability. */
+  readonly capability: Capability | null;
+  /** The carrier's declared service: matching criteria only (CB-3). */
+  readonly service: ServiceInput | null;
+}
+
+export type Capability = 'ship' | 'carry_as_company';
+export interface ServiceInput {
+  readonly countries: string[];
+  readonly equipmentTypes: string[];
+}
+/** Declared by the carrier and decided by staff. Matching criteria for discovery only: not
+ * verified vehicles, not availability, not permission to accept work. */
+export interface ServiceView extends ServiceInput {
+  readonly kind: 'declared_matching_criteria';
+}
+export interface CapabilityView {
+  readonly capability: Capability;
+  readonly status: 'granted' | 'revoked';
+  readonly basis: 'demonstration';
+  /** Granted, and resting on the organisation's present legal identity. */
+  readonly effective: boolean;
+  readonly grantedAt: string;
+  readonly revokedAt: string | null;
+  readonly revokeReason: string | null;
+  readonly revokeNote: string | null;
+  readonly service: ServiceView | null;
 }
 
 export interface RequirementView {
@@ -52,7 +79,11 @@ export interface RequirementView {
 export interface ApplicationView {
   readonly id: string;
   readonly versionNo: number;
-  readonly kind: 'initial' | 'amendment';
+  readonly kind: 'initial' | 'capability' | 'amendment';
+  readonly capability: Capability;
+  /** For an amendment: every capability it revalidates on the proposed identity. */
+  readonly revalidates: Capability[] | null;
+  readonly service: ServiceView | null;
   readonly status:
     'submitted' | 'claim_review' | 'withdrawn' | 'verified' | 'changes_requested' | 'rejected';
   readonly legalName: string;
@@ -76,8 +107,17 @@ export interface VerificationOverview {
     countryCode: string;
     registrationNumber: string;
   };
-  /** Empty when nothing can be verified for this country: no requirement exists. */
+  /** Empty when nothing can be verified for this country: no requirement exists. For the
+   * application `maySubmit` names: the requested capability, or for an amendment every
+   * capability held. */
   readonly requirements: RequirementView[];
+  /** The evidence asked for when applying for each capability with the present identity. */
+  readonly requirementsFor: Record<Capability, RequirementView[]>;
+  /** Every capability held or once held. */
+  readonly capabilities: CapabilityView[];
+  /** What may be applied for now, per capability: a first verification, an added capability,
+   * or a new declared service for a carrier. */
+  readonly mayApply: Record<Capability, 'initial' | 'capability' | 'service_change' | null>;
   /** Newest first. */
   readonly applications: ApplicationView[];
   readonly capability: {
@@ -91,9 +131,20 @@ export interface VerificationOverview {
   } | null;
   /** Whether a new version may be submitted now, and of which kind. */
   readonly maySubmit: 'initial' | 'amendment' | null;
-  /** The server's answer for later slices. Nothing can be published in this one. */
   readonly mayPublish: boolean;
+  /** Whether the organisation may discover shipments as a carrier now. */
+  readonly mayDiscover: boolean;
 }
+
+/** The declared service of one application, as the applicant may read it. */
+const SERVICE_OF = (application: string): string => `CASE WHEN EXISTS (
+    SELECT 1 FROM trucker.carrier_service_country s WHERE s.application_id = ${application})
+  THEN jsonb_build_object('kind', 'declared_matching_criteria',
+    'countries', (SELECT jsonb_agg(s.country_code ORDER BY s.country_code)
+                  FROM trucker.carrier_service_country s WHERE s.application_id = ${application}),
+    'equipmentTypes', coalesce((SELECT jsonb_agg(s.equipment_type ORDER BY s.equipment_type)
+                  FROM trucker.carrier_service_equipment s WHERE s.application_id = ${application}), '[]'::jsonb))
+  END`;
 
 const notFound = (): ApiError =>
   new ApiError(404, 'not_found', 'The requested resource was not found.');
@@ -161,19 +212,40 @@ export class VerificationService {
     const organisation = org.rows[0];
     if (!organisation) throw notFound();
     if (!organisation.admin) throw new ApiError(403, 'forbidden', 'This action is not allowed.');
-    const requirements = await client.query<{
-      document_type: string;
-      name_en: string;
-      name_ar: string;
-      name_ur: string;
-      required: boolean;
-    }>(
-      `SELECT r.document_type, r.name_en, r.name_ar, r.name_ur, r.required
-       FROM trucker.evidence_requirement r JOIN trucker.country c ON c.code = r.country_code
-       WHERE r.country_code = $1 AND r.capability = $2 AND (NOT c.fixture OR $3)
-       ORDER BY r.position, r.document_type`,
-      [organisation.country_code, organisation.requested_capability, allowFixtures],
-    );
+    const requirementsOf = async (capabilities: string[]): Promise<RequirementView[]> => {
+      if (capabilities.length === 0) return [];
+      const found = await client.query<{
+        document_type: string;
+        name_en: string;
+        name_ar: string;
+        name_ur: string;
+        required: boolean;
+      }>(
+        `SELECT DISTINCT ON (r.document_type) r.document_type, r.name_en, r.name_ar, r.name_ur,
+                bool_or(r.required) OVER (PARTITION BY r.document_type) AS required,
+                min(r.position) OVER (PARTITION BY r.document_type) AS ord
+         FROM trucker.evidence_requirement r JOIN trucker.country c ON c.code = r.country_code
+         WHERE r.country_code = $1 AND r.capability = ANY ($2) AND (NOT c.fixture OR $3)
+         ORDER BY r.document_type, r.capability`,
+        [organisation.country_code, capabilities, allowFixtures],
+      );
+      // Every capability asked for must have a requirement, or nothing can be verified.
+      const covered = await client.query<{ n: number }>(
+        `SELECT count(DISTINCT r.capability)::int AS n FROM trucker.evidence_requirement r
+         WHERE r.country_code = $1 AND r.capability = ANY ($2)`,
+        [organisation.country_code, capabilities],
+      );
+      if (covered.rows[0]!.n < capabilities.length) return [];
+      return found.rows
+        .map((row) => ({
+          documentType: row.document_type,
+          name: { en: row.name_en, ar: row.name_ar, ur: row.name_ur },
+          required: row.required,
+          ord: (row as unknown as { ord: number }).ord,
+        }))
+        .sort((a, b) => a.ord - b.ord || a.documentType.localeCompare(b.documentType))
+        .map((row) => ({ documentType: row.documentType, name: row.name, required: row.required }));
+    };
     const applications = await client.query<{
       id: string;
       version_no: number;
@@ -188,10 +260,14 @@ export class VerificationService {
       decision_reason: string | null;
       decision_note: string | null;
       evidence: EvidenceInput[];
+      capability: Capability;
+      revalidates: Capability[] | null;
+      service: ServiceView | null;
     }>(
       `SELECT a.id, a.version_no, a.kind, a.status, a.legal_name, a.country_code,
               a.registration_number, a.submitted_at, a.withdrawn_at, a.decided_at,
-              a.decision_reason, a.decision_note,
+              a.decision_reason, a.decision_note, a.capability, a.revalidates,
+              ${SERVICE_OF('a.id')} AS service,
               coalesce((SELECT jsonb_agg(jsonb_build_object(
                   'documentType', e.document_type, 'documentNumber', e.document_number,
                   'issuingCountry', e.issuing_country,
@@ -203,20 +279,48 @@ export class VerificationService {
       [organisationId],
     );
     const capability = await client.query<{
+      capability: Capability;
       status: 'granted' | 'revoked';
       granted_at: Date;
       revoked_at: Date | null;
       revoke_reason: string | null;
       revoke_note: string | null;
     }>(
-      `SELECT status, granted_at, revoked_at, revoke_reason, revoke_note
-       FROM trucker.organisation_capability WHERE organisation_id = $1 AND capability = 'ship'`,
+      `SELECT c.capability, c.status, c.granted_at, c.revoked_at, c.revoke_reason, c.revoke_note
+       FROM trucker.organisation_capability c WHERE c.organisation_id = $1
+       ORDER BY c.capability`,
       [organisationId],
+    );
+    const discovery = await client.query<{ status: string; detail: ServiceView }>(
+      'SELECT status, detail FROM trucker.discovery_status()',
     );
     const open = applications.rows.some(
       (row) => row.status === 'submitted' || row.status === 'claim_review',
     );
-    const held = capability.rows[0];
+    const held = capability.rows.find((row) => row.capability === 'ship');
+    const granted = capability.rows.filter((row) => row.status === 'granted');
+    const requirementsFor = {
+      ship: await requirementsOf(['ship']),
+      carry_as_company: await requirementsOf(['carry_as_company']),
+    };
+    const amendmentRequirements = await requirementsOf(granted.map((row) => row.capability));
+    const verified = organisation.status === 'verified';
+    const reopenable = [
+      'draft',
+      'changes_requested',
+      'rejected',
+      'verification_withdrawn',
+    ].includes(organisation.status);
+    const applyFor = (cap: Capability): 'initial' | 'capability' | 'service_change' | null => {
+      if (open || requirementsFor[cap].length === 0) return null;
+      if (reopenable) return 'initial';
+      if (!verified) return null;
+      const grant = capability.rows.find((row) => row.capability === cap);
+      if (grant?.status === 'granted') return cap === 'carry_as_company' ? 'service_change' : null;
+      return 'capability';
+    };
+    const ownService =
+      discovery.rows[0]!.detail.countries.length > 0 ? discovery.rows[0]!.detail : null;
     return {
       organisation: {
         id: organisation.id,
@@ -226,11 +330,27 @@ export class VerificationService {
         countryCode: organisation.country_code,
         registrationNumber: organisation.registration_number,
       },
-      requirements: requirements.rows.map((row) => ({
-        documentType: row.document_type,
-        name: { en: row.name_en, ar: row.name_ar, ur: row.name_ur },
-        required: row.required,
+      requirements: verified
+        ? amendmentRequirements
+        : (requirementsFor[organisation.requested_capability as Capability] ?? []),
+      requirementsFor,
+      capabilities: capability.rows.map((row) => ({
+        capability: row.capability,
+        status: row.status,
+        basis: 'demonstration' as const,
+        effective:
+          row.capability === 'ship' ? organisation.may_publish : discovery.rows[0]!.status === 'ok',
+        grantedAt: row.granted_at.toISOString(),
+        revokedAt: row.revoked_at ? row.revoked_at.toISOString() : null,
+        revokeReason: row.revoke_reason,
+        revokeNote: row.revoke_note,
+        service:
+          row.capability === 'carry_as_company' && row.status === 'granted' ? ownService : null,
       })),
+      mayApply: {
+        ship: applyFor('ship'),
+        carry_as_company: applyFor('carry_as_company'),
+      },
       applications: applications.rows.map((row) => ({
         id: row.id,
         versionNo: row.version_no,
@@ -246,6 +366,9 @@ export class VerificationService {
         decisionNote: row.decision_note,
         evidenceKind: 'declared_demonstration',
         evidence: row.evidence,
+        capability: row.capability,
+        revalidates: row.revalidates,
+        service: row.service,
       })),
       capability: held
         ? {
@@ -258,17 +381,18 @@ export class VerificationService {
             revokeNote: held.revoke_note,
           }
         : null,
-      maySubmit:
-        open || requirements.rows.length === 0
-          ? null
-          : organisation.status === 'verified'
+      maySubmit: open
+        ? null
+        : verified
+          ? granted.length > 0 && amendmentRequirements.length > 0
             ? 'amendment'
-            : ['draft', 'changes_requested', 'rejected', 'verification_withdrawn'].includes(
-                  organisation.status,
-                )
-              ? 'initial'
-              : null,
+            : null
+          : reopenable &&
+              (requirementsFor[organisation.requested_capability as Capability] ?? []).length > 0
+            ? 'initial'
+            : null,
       mayPublish: organisation.may_publish,
+      mayDiscover: discovery.rows[0]!.status === 'ok',
     };
   }
 
@@ -294,6 +418,8 @@ export class VerificationService {
           language: input.declarationLanguage,
         },
         ...(input.proposed ? { proposed: input.proposed } : {}),
+        ...(input.capability ? { capability: input.capability } : {}),
+        ...(input.service ? { service: input.service } : {}),
         evidence: input.evidence,
       };
       const result = await client.query<{ status: string; detail: unknown }>(

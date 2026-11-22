@@ -40,6 +40,20 @@ const submissionBody = z.object({
     ])
     .optional()
     .transform((value) => value ?? null),
+  capability: z
+    .union([z.enum(['ship', 'carry_as_company']), z.null()])
+    .optional()
+    .transform((value) => value ?? null),
+  service: z
+    .union([
+      z.object({
+        countries: z.array(z.string().regex(/^[A-Z]{2}$/)).max(30),
+        equipmentTypes: z.array(z.string().regex(/^[a-z][a-z0-9_]{1,39}$/)).max(30),
+      }),
+      z.null(),
+    ])
+    .optional()
+    .transform((value) => value ?? null),
   evidence: z
     .array(
       z.object({

@@ -1390,7 +1390,7 @@ test('a mistaken verification is withdrawn by a different administrator: status 
     await fresh(staff);
     return call('POST', `/staff/verification/organisations/${org}/revoke`, {
       token: staff.token,
-      body: { reason: 'verified_in_error', noConflict: true, ...input },
+      body: { capability: 'ship', reason: 'verified_in_error', noConflict: true, ...input },
     });
   };
   // Not the one who gave it, though an administrator. Not a non-administrator. Not someone

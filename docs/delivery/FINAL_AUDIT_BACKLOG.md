@@ -54,6 +54,8 @@ No accessibility conformance is claimed for any page.
 | WD-17 | The withdrawal form asks for an organisation identifier | Slice 9, console | Functional; a search by name would read better |
 | WD-18 | The console shows what carriers would see as raw data | Slice 10, console shipment page | Readable for staff, not presented |
 | WD-19 | A publication window is written "from – until" across lines at phone width | Slice 10, carrier preview | Clear but not elegant |
+| WD-20 | The console shows a carrier's declared countries and equipment as codes (XA, curtain_side), not names | Slice 11, console application page | Readable for staff, not presented |
+| WD-21 | In Arabic and Urdu, an area written in English is followed by its comma on the next line in discovery cards ("North industrial / ,area") | Slice 11, discovery list | Correct order, awkward wrapping |
 
 ## 4. Translation corrections (Arabic and Urdu)
 
@@ -74,6 +76,8 @@ All Arabic and Urdu text in the repository is a draft written without a native r
 | TR-11 | Names of the fictional evidence requirements | Slice 9, `db/fixtures/local-development/countries.json` | Low: development data only |
 | TR-12 | All publication messages (104 strings) and two new shipment errors: statuses, suspension causes, the preview caution, "not confirmed" messages | Slice 10, `pub` | High: the anonymity caution and "no carrier can see it yet" must not shift |
 | TR-13 | Names of the fictional cargo categories and equipment types | Slice 10, fixtures | Low: development data only |
+| TR-14 | All carrier and discovery messages (`carrier`, `disc`), the new verification labels, and the two corrected preview statements | Slice 11 | High: "matching criteria only, not verified vehicles, availability or permission to accept work" and "anonymity is not guaranteed" must not shift |
+| TR-15 | The fictional haulage licence requirement name | Slice 11, fixtures | Low: development data only |
 
 ## 5. How this list is used
 

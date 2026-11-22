@@ -104,24 +104,27 @@ export function PublicationFacts({
   );
 }
 
-/** What carriers would see, shown to the shipper with what it hides and what it cannot. */
-export function CarrierPreview({
+/** The carrier projection itself, as a list of facts. Used by the shipper's preview and by
+ * the carrier's own view of a discovered shipment. */
+export function CarrierFacts({
   locale,
   t,
   view,
   countryName,
   catalogues,
+  id,
 }: {
   locale: Locale;
   t: P;
   view: CarrierView;
   countryName: (code: string) => string;
   catalogues: Catalogues;
+  id: string;
 }) {
-  const place = (title: string, value: CarrierPlace, id: string) => (
+  const place = (title: string, value: CarrierPlace, placeId: string) => (
     <div>
       <dt>{title}</dt>
-      <dd id={id}>
+      <dd id={placeId}>
         <bdi>{value.area}</bdi>, <bdi>{countryName(value.countryCode)}</bdi>
         <br />
         {t.window}:{' '}
@@ -140,84 +143,110 @@ export function CarrierPreview({
     </div>
   );
   return (
+    <dl className="card facts" id={id} data-state={view.state}>
+      <div>
+        <dt>{t.lane}</dt>
+        <dd>
+          <bdi>{countryName(view.lane.origin)}</bdi> {locale === 'en' ? '→' : '←'}{' '}
+          <bdi>{countryName(view.lane.destination)}</bdi>
+          {view.lane.transit.length > 0 ? (
+            <>
+              {' '}
+              (<bdi>{view.lane.transit.map(countryName).join(', ')}</bdi>)
+            </>
+          ) : null}
+        </dd>
+      </div>
+      {place(t.pickupArea, view.pickup, `${id}-pickup`)}
+      {place(t.deliveryArea, view.delivery, `${id}-delivery`)}
+      <div>
+        <dt>{t.cargo}</dt>
+        <dd id={`${id}-cargo`}>
+          {nameOf(catalogues.cargoCategories, view.cargo.category, locale)}
+          {view.cargo.description ? (
+            <>
+              : <bdi>{view.cargo.description}</bdi>
+            </>
+          ) : null}
+          {view.cargo.grossWeightKg ? (
+            <>
+              , <Ltr>{view.cargo.grossWeightKg} kg</Ltr>
+            </>
+          ) : null}
+          {view.cargo.pieces !== null ? (
+            <>
+              , <Ltr>{view.cargo.pieces}</Ltr>
+            </>
+          ) : null}
+          {view.cargo.packaging ? (
+            <>
+              , <bdi>{view.cargo.packaging}</bdi>
+            </>
+          ) : null}
+        </dd>
+      </div>
+      <div>
+        <dt>{t.equipmentType}</dt>
+        <dd>
+          {nameOf(catalogues.equipmentTypes, view.equipment.type, locale)}
+          {view.equipment.notes ? (
+            <>
+              {' '}
+              ({t.equipmentNotes}: <bdi>{view.equipment.notes}</bdi>)
+            </>
+          ) : null}
+        </dd>
+      </div>
+      <div>
+        <dt>{t.dangerousGoods}</dt>
+        <dd>{view.dangerousGoods ? t.dangerousYes : t.dangerousNo}</dd>
+      </div>
+      <div>
+        <dt>{t.deadline}</dt>
+        <dd id={`${id}-deadline`}>
+          <LocalTime
+            local={view.quotationDeadline.local}
+            zone={view.quotationDeadline.timeZone}
+            offset={view.quotationDeadline.offsetMinutes}
+          />
+        </dd>
+      </div>
+      <div>
+        <dt>{t.shipper}</dt>
+        <dd>{t.verifiedShipper}</dd>
+      </div>
+    </dl>
+  );
+}
+
+/** What carriers see, shown to the shipper with what it hides and what it cannot. */
+export function CarrierPreview({
+  locale,
+  t,
+  view,
+  countryName,
+  catalogues,
+}: {
+  locale: Locale;
+  t: P;
+  view: CarrierView;
+  countryName: (code: string) => string;
+  catalogues: Catalogues;
+}) {
+  return (
     <section className="section" aria-labelledby="preview-title">
       <h2 id="preview-title">{t.previewTitle}</h2>
       <p className="notice" role="note" id="preview-lead">
         {t.previewLead}
       </p>
-      <dl className="card facts" id="carrier-preview" data-state={view.state}>
-        <div>
-          <dt>{t.lane}</dt>
-          <dd>
-            <bdi>{countryName(view.lane.origin)}</bdi> {locale === 'en' ? '→' : '←'}{' '}
-            <bdi>{countryName(view.lane.destination)}</bdi>
-            {view.lane.transit.length > 0 ? (
-              <>
-                {' '}
-                (<bdi>{view.lane.transit.map(countryName).join(', ')}</bdi>)
-              </>
-            ) : null}
-          </dd>
-        </div>
-        {place(t.pickupArea, view.pickup, 'preview-pickup')}
-        {place(t.deliveryArea, view.delivery, 'preview-delivery')}
-        <div>
-          <dt>{t.cargo}</dt>
-          <dd id="preview-cargo">
-            {nameOf(catalogues.cargoCategories, view.cargo.category, locale)}
-            {view.cargo.description ? (
-              <>
-                : <bdi>{view.cargo.description}</bdi>
-              </>
-            ) : null}
-            {view.cargo.grossWeightKg ? (
-              <>
-                , <Ltr>{view.cargo.grossWeightKg} kg</Ltr>
-              </>
-            ) : null}
-            {view.cargo.pieces !== null ? (
-              <>
-                , <Ltr>{view.cargo.pieces}</Ltr>
-              </>
-            ) : null}
-            {view.cargo.packaging ? (
-              <>
-                , <bdi>{view.cargo.packaging}</bdi>
-              </>
-            ) : null}
-          </dd>
-        </div>
-        <div>
-          <dt>{t.equipmentType}</dt>
-          <dd>
-            {nameOf(catalogues.equipmentTypes, view.equipment.type, locale)}
-            {view.equipment.notes ? (
-              <>
-                {' '}
-                ({t.equipmentNotes}: <bdi>{view.equipment.notes}</bdi>)
-              </>
-            ) : null}
-          </dd>
-        </div>
-        <div>
-          <dt>{t.dangerousGoods}</dt>
-          <dd>{view.dangerousGoods ? t.dangerousYes : t.dangerousNo}</dd>
-        </div>
-        <div>
-          <dt>{t.deadline}</dt>
-          <dd>
-            <LocalTime
-              local={view.quotationDeadline.local}
-              zone={view.quotationDeadline.timeZone}
-              offset={view.quotationDeadline.offsetMinutes}
-            />
-          </dd>
-        </div>
-        <div>
-          <dt>{t.shipper}</dt>
-          <dd>{t.verifiedShipper}</dd>
-        </div>
-      </dl>
+      <CarrierFacts
+        locale={locale}
+        t={t}
+        view={view}
+        countryName={countryName}
+        catalogues={catalogues}
+        id="carrier-preview"
+      />
       <p id="preview-hidden">{t.previewHidden}</p>
       <p className="notice notice-warning" role="note" id="preview-caution">
         {t.previewCaution}

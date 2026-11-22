@@ -123,6 +123,50 @@
         "ar": "شهادة تسجيل الشركة (وهمية)",
         "ur": "کمپنی رجسٹریشن سرٹیفکیٹ (فرضی)"
       }
+    },
+    {
+      "country": "XA",
+      "capability": "carry_as_company",
+      "documentType": "registration_certificate",
+      "required": true,
+      "name": {
+        "en": "Company registration certificate (fictional)",
+        "ar": "شهادة تسجيل الشركة (وهمية)",
+        "ur": "کمپنی رجسٹریشن سرٹیفکیٹ (فرضی)"
+      }
+    },
+    {
+      "country": "XA",
+      "capability": "carry_as_company",
+      "documentType": "haulage_licence",
+      "required": true,
+      "name": {
+        "en": "Licence to operate haulage (fictional)",
+        "ar": "رخصة تشغيل النقل البري (وهمية)",
+        "ur": "مال برداری چلانے کا لائسنس (فرضی)"
+      }
+    },
+    {
+      "country": "XB",
+      "capability": "carry_as_company",
+      "documentType": "registration_certificate",
+      "required": true,
+      "name": {
+        "en": "Company registration certificate (fictional)",
+        "ar": "شهادة تسجيل الشركة (وهمية)",
+        "ur": "کمپنی رجسٹریشن سرٹیفکیٹ (فرضی)"
+      }
+    },
+    {
+      "country": "XB",
+      "capability": "carry_as_company",
+      "documentType": "haulage_licence",
+      "required": true,
+      "name": {
+        "en": "Licence to operate haulage (fictional)",
+        "ar": "رخصة تشغيل النقل البري (وهمية)",
+        "ur": "مال برداری چلانے کا لائسنس (فرضی)"
+      }
     }
   ],
   "_catalogues_notice": "FICTIONAL cargo categories and equipment types. Not a statement of what may be carried anywhere (D-006 is undecided). Loaded only into a database marked local-development or test.",

@@ -59,3 +59,9 @@ export const REVIEW_ERRORS: Record<string, string> = {
     'It was not confirmed that this was recorded. It may have been. The current state is shown. Recording the same decision again changes nothing twice.',
   refused: 'That was refused.',
 };
+
+/** The two capabilities, decided and withdrawn independently. */
+export const CAPABILITY: Record<string, string> = {
+  ship: 'Shipper',
+  carry_as_company: 'Carrier',
+};

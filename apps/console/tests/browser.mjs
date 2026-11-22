@@ -1200,6 +1200,7 @@ async function main() {
     // recorded, and "not declared" is not "independent": refused.
     const withdraw = async (who, reason = 'verified_in_error') => {
       await who.open(`/verification/withdraw?organisation=${applicantOrg}`);
+      await who.page.select('#capability', 'ship');
       await who.page.select('#reason', reason);
       await who.page.click('#noConflict');
       await who.submit('#withdraw-verification');
