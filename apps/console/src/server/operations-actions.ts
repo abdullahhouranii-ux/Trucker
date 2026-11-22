@@ -22,19 +22,30 @@ const back = (form: FormData): string => {
   return UUID.test(booking) ? `/operations/bookings/${booking}` : '/operations';
 };
 
-async function send(form: FormData, path: string | null, body: Record<string, unknown>) {
+async function send(
+  form: FormData,
+  path: string | null,
+  body: Record<string, unknown>,
+  retryKey?: string,
+  donePrefix = '',
+) {
   const here = back(form);
   const join = (query: string) => `${here}?${query}#${text(form, 'anchor') || 'main'}`;
   const token = await staffToken();
   if (!token) redirect('/sign-in?error=session_ended');
   if (path === null) redirect(join('error=validation_failed'));
-  const reply = await api<{ outcome: string }>('POST', path, { token, body });
-  if (reply.ok) redirect(join(`done=${reply.data.outcome}`));
+  const reply = await api<{ outcome: string }>('POST', path!, {
+    token,
+    body,
+    ...(retryKey ? { retryKey } : {}),
+  });
+  if (reply.ok) redirect(join(`done=${donePrefix}${reply.data.outcome}`));
   if (reply.status === 401) {
     await endStaffSession();
     redirect('/sign-in?error=session_ended');
   }
-  if (unknown(reply)) redirect(join('error=unconfirmed'));
+  if (unknown(reply))
+    redirect(join(`error=unconfirmed${retryKey ? `&key=${encodeURIComponent(retryKey)}` : ''}`));
   redirect(join(`error=${encodeURIComponent(reply.code)}`));
 }
 
@@ -131,8 +142,30 @@ export async function operationsDeliveryAction(form: FormData): Promise<void> {
       statedAt: `${statedAt}:00Z`,
       reason: text(form, 'reason'),
       note: note === '' ? null : note.slice(0, 1000),
+      ...shortfall(form),
     },
   );
+}
+
+/** What fell short and why (slice 18d): sent whenever cargo stays on the vehicle. */
+function shortfall(form: FormData): Record<string, unknown> {
+  const short = ['partly_delivered', 'refused', 'not_delivered'].includes(text(form, 'outcome'));
+  if (!short && text(form, 'cargoRemains') !== 'true') return {};
+  const optional = (name: string) => text(form, name).trim().slice(0, 1000) || null;
+  return {
+    shortfall: {
+      reason: text(form, 'shortfallReason'),
+      refusalReason: optional('refusalReason'),
+      location: text(form, 'shortfallLocation').trim().slice(0, 500),
+      cargoCondition: text(form, 'cargoCondition').trim().slice(0, 1000),
+      quantityUnit: text(form, 'quantityUnit').trim().slice(0, 40),
+      quantityDelivered: text(form, 'quantityDelivered').trim().slice(0, 12),
+      quantityRemaining: text(form, 'quantityRemaining').trim().slice(0, 12),
+      contactAttempts: Number.parseInt(text(form, 'contactAttempts') || '0', 10),
+      contactNote: optional('contactNote'),
+      evidenceNote: optional('evidenceNote'),
+    },
+  };
 }
 
 /** Record the handover of cargo left on the vehicle. */
@@ -150,6 +183,11 @@ export async function operationsHandoverAction(form: FormData): Promise<void> {
       handedAt: `${handedAt}:00Z`,
       place: text(form, 'place').trim().slice(0, 500),
       note: note === '' ? null : note.slice(0, 1000),
+      quantity: text(form, 'quantity').trim().slice(0, 12),
+      condition: text(form, 'condition').trim().slice(0, 1000),
+      handedByStanding: text(form, 'handedByStanding').trim().slice(0, 300),
+      receivedByStanding: text(form, 'receivedByStanding').trim().slice(0, 300),
+      evidenceNote: text(form, 'evidenceNote').trim().slice(0, 1000) || null,
     },
   );
 }
@@ -165,5 +203,73 @@ export async function operationsReleaseAction(form: FormData): Promise<void> {
       ? `/staff/operations/bookings/${id}/resources/${role}/release`
       : null,
     { override: text(form, 'override') === 'true', note: note === '' ? null : note.slice(0, 1000) },
+  );
+}
+
+const CARGO = [
+  'authority_order',
+  'close_case',
+  'record_liability',
+  'decide_claim',
+  'release_hold',
+  'confirm_receipt',
+];
+const RETRY = /^[A-Za-z0-9._-]{16,128}$/;
+
+/**
+ * Operations on undeliverable cargo (slice 18d): an authority's instruction, a receipt, the
+ * final liability from its source, a claim decided, a hold released, the case closed. Each
+ * form carries its retry key, so an answer that never arrived is not acted on twice.
+ */
+export async function operationsCargoAction(form: FormData): Promise<void> {
+  const id = text(form, 'bookingId');
+  const command = text(form, 'submitCommand') || text(form, 'command');
+  const retry = text(form, 'retryKey');
+  const optional = (name: string, max: number) => text(form, name).trim().slice(0, max) || null;
+  const body: Record<string, unknown> = { command };
+  switch (command) {
+    case 'authority_order':
+      Object.assign(body, {
+        order: optional('order', 2000),
+        allowedActions: form.getAll('allowedActions').filter((value) => typeof value === 'string'),
+      });
+      break;
+    case 'close_case':
+      Object.assign(body, { note: optional('note', 2000) });
+      break;
+    case 'record_liability':
+      Object.assign(body, {
+        costId: text(form, 'costId'),
+        liability: text(form, 'liability'),
+        source: text(form, 'source'),
+        reference: optional('reference', 500),
+      });
+      break;
+    case 'decide_claim':
+      Object.assign(body, {
+        claimId: text(form, 'claimId'),
+        decision: text(form, 'decision'),
+        source: text(form, 'source'),
+        reference: optional('reference', 500),
+      });
+      break;
+    case 'release_hold':
+      Object.assign(body, { holdId: text(form, 'holdId'), note: optional('note', 2000) });
+      break;
+    default:
+      Object.assign(body, {
+        handoverId: text(form, 'handoverId'),
+        state: text(form, 'state'),
+        reference: optional('reference', 500),
+      });
+  }
+  await send(
+    form,
+    UUID.test(id) && CARGO.includes(command) && RETRY.test(retry)
+      ? `/staff/operations/bookings/${id}/cargo`
+      : null,
+    body,
+    retry,
+    'cargo_',
   );
 }

@@ -1,6 +1,7 @@
 import { notFound, redirect } from 'next/navigation';
 import { ErrorSummary } from '../../../../../../web/src/components/form.tsx';
-import { api } from '../../../../../../web/src/server/api.ts';
+import { api, type TripCargo } from '../../../../../../web/src/server/api.ts';
+import { CargoOpsPanel } from '../../../../components/cargo-ops.tsx';
 import { ConsoleHeader, Unavailable } from '../../../../components/console-header.tsx';
 import {
   at,
@@ -51,10 +52,24 @@ const OUTCOMES: Record<string, string> = {
   refused: 'Refused',
   not_delivered: 'Not delivered',
 };
+const SHORTFALL: Record<string, string> = {
+  wrong_address: 'Wrong address',
+  receiver_absent: 'Receiver absent',
+  site_not_ready: 'Site not ready',
+  site_closed: 'Site closed',
+  receiver_refused: 'Receiver refused',
+  cargo_damaged: 'Cargo damaged',
+  document_problem: 'Problem with documents',
+  carrier_delay: 'Carrier delay',
+  other: 'Other',
+};
 const HANDOVERS: Record<string, string> = {
   returned_to_shipper: 'Returned to the shipper',
   delivered_elsewhere: 'Delivered to another place',
   replacement_vehicle: 'Handed to a replacement vehicle',
+  warehouse: 'Handed to a warehouse',
+  alternate_carrier: 'Handed to another carrier',
+  consignee: 'Handed to the consignee',
 };
 const ON_BEHALF: Record<string, string> = {
   no_phone: 'The driver has no phone',
@@ -121,6 +136,7 @@ interface Detail {
           receivedBy: string;
           handedAt: string;
           place: string;
+          receipt?: string | null;
         } | null;
       } | null;
       releases: {
@@ -131,6 +147,7 @@ interface Detail {
         note: string | null;
       }[];
     } | null;
+    cargo?: TripCargo;
   } | null;
   roles: string[];
   cases: OperationsCase[];
@@ -433,6 +450,18 @@ export default async function OperationsBookingPage({ params, searchParams }: Pr
                 <DeliveryPanel b={b} hidden={hidden} now={now} />
               ) : null}
 
+              {b.trip?.cargo?.case ? (
+                <CargoOpsPanel
+                  bookingId={b.id}
+                  cargo={b.trip.cargo}
+                  retryKey={
+                    error === 'unconfirmed' && /^[A-Za-z0-9._-]{16,128}$/.test(one('key'))
+                      ? one('key')
+                      : null
+                  }
+                />
+              ) : null}
+
               <section className="section" id="cases" aria-labelledby="cases-title">
                 <h2 id="cases-title">Cases</h2>
                 {b.cases.length === 0 ? (
@@ -500,7 +529,7 @@ function DeliveryPanel({ b, hidden, now }: { b: Detail; hidden: React.ReactNode;
           {delivery!.custody ? (
             <li data-custody={delivery!.custody.open ? 'open' : 'closed'}>
               {delivery!.custody.handover
-                ? `Cargo handed over: ${HANDOVERS[delivery!.custody.handover.kind]} at ${at(delivery!.custody.handover.handedAt)}, by ${delivery!.custody.handover.handedBy} to ${delivery!.custody.handover.receivedBy}, ${delivery!.custody.handover.place}`
+                ? `${delivery!.custody.open ? 'Handover recorded, cargo still in custody until the receiving side confirms it' : 'Cargo handed over'}: ${HANDOVERS[delivery!.custody.handover.kind] ?? delivery!.custody.handover.kind} at ${at(delivery!.custody.handover.handedAt)}, by ${delivery!.custody.handover.handedBy} to ${delivery!.custody.handover.receivedBy}, ${delivery!.custody.handover.place}`
                 : 'Cargo in custody on the vehicle: no handover recorded'}
             </li>
           ) : null}
@@ -557,6 +586,37 @@ function DeliveryPanel({ b, hidden, now }: { b: Detail; hidden: React.ReactNode;
               vehicle
             </label>
           </fieldset>
+          <fieldset className="choice" id="ops-shortfall">
+            <legend>If not everything was delivered (needed then)</legend>
+            <div className="field">
+              <label htmlFor="ops-short-reason">Reason</label>
+              <select id="ops-short-reason" name="shortfallReason" defaultValue="receiver_refused">
+                {Object.entries(SHORTFALL).map(([code, label]) => (
+                  <option key={code} value={code}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {(
+              [
+                ['refusalReason', 'Reason the receiver gave'],
+                ['shortfallLocation', 'Where the cargo is'],
+                ['cargoCondition', 'Condition of the cargo'],
+                ['quantityUnit', 'Unit of the cargo'],
+                ['quantityDelivered', 'Quantity delivered'],
+                ['quantityRemaining', 'Quantity not delivered'],
+                ['contactAttempts', 'Attempts to reach the receiver'],
+                ['contactNote', 'Who was contacted'],
+                ['evidenceNote', 'Evidence'],
+              ] as const
+            ).map(([name, label]) => (
+              <div className="field" key={name}>
+                <label htmlFor={`ops-short-${name}`}>{label}</label>
+                <input type="text" id={`ops-short-${name}`} name={name} maxLength={1000} />
+              </div>
+            ))}
+          </fieldset>
           <div className="field">
             <label htmlFor="ops-delivery-at">When it happened (UTC)</label>
             <input
@@ -604,12 +664,48 @@ function DeliveryPanel({ b, hidden, now }: { b: Detail; hidden: React.ReactNode;
             </select>
           </div>
           <div className="field">
+            <label htmlFor="ops-handover-quantity">Quantity handed over</label>
+            <input
+              type="text"
+              id="ops-handover-quantity"
+              name="quantity"
+              inputMode="decimal"
+              maxLength={12}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="ops-handover-condition">Condition of the cargo</label>
+            <input type="text" id="ops-handover-condition" name="condition" maxLength={1000} />
+          </div>
+          <div className="field">
             <label htmlFor="ops-handed-by">Handed over by</label>
             <input id="ops-handed-by" name="handedBy" type="text" maxLength={200} />
           </div>
           <div className="field">
+            <label htmlFor="ops-handed-by-standing">Standing of the person handing over</label>
+            <input
+              type="text"
+              id="ops-handed-by-standing"
+              name="handedByStanding"
+              maxLength={300}
+            />
+          </div>
+          <div className="field">
             <label htmlFor="ops-received-by">Received by</label>
             <input id="ops-received-by" name="receivedBy" type="text" maxLength={200} />
+          </div>
+          <div className="field">
+            <label htmlFor="ops-received-by-standing">Standing of the person receiving</label>
+            <input
+              type="text"
+              id="ops-received-by-standing"
+              name="receivedByStanding"
+              maxLength={300}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="ops-handover-evidence">Evidence</label>
+            <input type="text" id="ops-handover-evidence" name="evidenceNote" maxLength={1000} />
           </div>
           <div className="field">
             <label htmlFor="ops-handed-at">When (UTC)</label>

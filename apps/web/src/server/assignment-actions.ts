@@ -44,6 +44,8 @@ async function command(
     body?: Record<string, unknown>;
     /** Dispatch only: the same key is sent again when an answer never arrived. */
     retryKey?: string;
+    /** Names the outcome in the confirmation: cargo outcomes have their own words. */
+    donePrefix?: string;
   },
 ): Promise<never> {
   const locale = localeOf(form);
@@ -57,7 +59,10 @@ async function command(
     ...(options.body ? { body: options.body } : {}),
     ...(options.retryKey ? { retryKey: options.retryKey } : {}),
   });
-  if (reply.ok) redirect(withQuery(options.here, { aDone: reply.data.outcome }));
+  if (reply.ok)
+    redirect(
+      withQuery(options.here, { aDone: `${options.donePrefix ?? ''}${reply.data.outcome}` }),
+    );
   if (reply.status === 401) {
     await endSession();
     redirect(`/${locale}/sign-in?error=session_ended`);
@@ -371,6 +376,26 @@ const outcomeBody = (form: FormData, onBehalf: boolean) => {
   };
   if (onBehalf)
     Object.assign(body, { statedAt, reason, note: note === '' ? null : note.slice(0, 500) });
+  // What fell short and why (slice 18d): needed whenever cargo stays on the vehicle.
+  const short = ['partly_delivered', 'refused', 'not_delivered'].includes(outcome);
+  if (short || body.cargoRemains === true) {
+    const optional = (name: string, max: number) => {
+      const value = text(form, name).trim();
+      return value === '' ? null : value.slice(0, max);
+    };
+    body.shortfall = {
+      reason: text(form, 'shortfallReason'),
+      refusalReason: optional('refusalReason', 1000),
+      location: text(form, 'shortfallLocation').trim().slice(0, 500),
+      cargoCondition: text(form, 'cargoCondition').trim().slice(0, 1000),
+      quantityUnit: text(form, 'quantityUnit').trim().slice(0, 40),
+      quantityDelivered: text(form, 'quantityDelivered').trim().slice(0, 12),
+      quantityRemaining: text(form, 'quantityRemaining').trim().slice(0, 12),
+      contactAttempts: Number.parseInt(text(form, 'contactAttempts') || '0', 10),
+      contactNote: optional('contactNote', 1000),
+      evidenceNote: optional('evidenceNote', 1000),
+    };
+  }
   const valid =
     OUTCOMES.includes(outcome) && (!onBehalf || (statedAt !== null && REASONS.includes(reason)));
   return { valid, body };
@@ -425,6 +450,12 @@ export async function recordHandoverAction(form: FormData): Promise<void> {
       handedAt,
       place: text(form, 'place').trim().slice(0, 500),
       note: note === '' ? null : note.slice(0, 1000),
+      quantity: text(form, 'quantity').trim().slice(0, 12),
+      condition: text(form, 'condition').trim().slice(0, 1000),
+      handedByStanding: text(form, 'handedByStanding').trim().slice(0, 300),
+      receivedByStanding: text(form, 'receivedByStanding').trim().slice(0, 300),
+      evidenceNote: text(form, 'evidenceNote').trim().slice(0, 1000) || null,
+      instructionId: member(form, 'instructionId') ?? null,
     },
   });
 }
@@ -441,5 +472,157 @@ export async function releaseResourceAction(form: FormData): Promise<void> {
         : null,
     here,
     anchor: 'trip',
+  });
+}
+
+// ---------------------------------------------------------------------------------------------
+// Undeliverable and refused cargo (slice 18d, R-406)
+// ---------------------------------------------------------------------------------------------
+const CARGO_COMMANDS = [
+  'declare_authority',
+  'end_authority',
+  'issue',
+  'withdraw',
+  'offer',
+  'decide',
+  'execute',
+  'emergency',
+  'confirm_receipt',
+  'leg',
+  'dispute_cost',
+  'raise_claim',
+];
+const RETRY = /^[A-Za-z0-9._-]{16,128}$/;
+
+/** Cost lines from the numbered fields of a form: kind, quantity, unit, amount per unit. */
+const costLines = (form: FormData): Record<string, unknown>[] =>
+  [0, 1, 2]
+    .map((n) => ({
+      kind: text(form, `cost${n}Kind`),
+      quantity: text(form, `cost${n}Quantity`).trim().slice(0, 12),
+      unit: text(form, `cost${n}Unit`),
+      unitAmount: text(form, `cost${n}UnitAmount`).trim().slice(0, 16),
+      description: text(form, `cost${n}Description`).trim().slice(0, 500) || null,
+    }))
+    .filter((line) => line.kind !== '');
+
+/** The body of one cargo command, from the fields its form sends. */
+function cargoCommandBody(form: FormData, name: string): Record<string, unknown> {
+  const optional = (field: string, max: number): string | null => {
+    const value = text(form, field).trim();
+    return value === '' ? null : value.slice(0, max);
+  };
+  const version = Number.parseInt(text(form, 'version'), 10);
+  const common = { command: name, ...(Number.isFinite(version) ? { version } : {}) };
+  switch (name) {
+    case 'declare_authority':
+      return {
+        ...common,
+        holder: text(form, 'holder'),
+        confirmContract: text(form, 'confirmContract') === 'true',
+        basisNote: text(form, 'basisNote').trim().slice(0, 1000),
+        actions: form.getAll('actions').filter((value) => typeof value === 'string'),
+        spendLimit: text(form, 'spendLimit').trim().slice(0, 16),
+        validUntil: instant(form, 'validUntil'),
+        alternateContact: text(form, 'alternateContact').trim().slice(0, 300),
+      };
+    case 'end_authority':
+      return { ...common, authorityId: text(form, 'authorityId'), reason: optional('reason', 500) };
+    case 'issue':
+      return {
+        ...common,
+        action: text(form, 'action'),
+        destination: optional('destination', 500),
+        details: optional('details', 2000),
+      };
+    case 'withdraw':
+      return { ...common, instructionId: text(form, 'instructionId') };
+    case 'offer':
+      return {
+        ...common,
+        instructionId: text(form, 'instructionId'),
+        feasible: text(form, 'feasible') === 'yes',
+        eta: instant(form, 'eta'),
+        note: optional('note', 2000),
+        costs: text(form, 'feasible') === 'yes' ? costLines(form) : [],
+      };
+    case 'decide':
+      return {
+        ...common,
+        instructionId: text(form, 'instructionId'),
+        decision: text(form, 'decision'),
+        interimPayer: text(form, 'interimPayer') || 'instructing_party',
+      };
+    case 'execute':
+      return {
+        ...common,
+        instructionId: text(form, 'instructionId'),
+        step: text(form, 'step'),
+        note: optional('note', 2000),
+      };
+    case 'emergency':
+      return {
+        command: name,
+        action: text(form, 'action'),
+        details: optional('details', 2000),
+        costs: costLines(form),
+      };
+    case 'confirm_receipt':
+      return {
+        command: name,
+        handoverId: text(form, 'handoverId'),
+        state: text(form, 'state'),
+        reference: text(form, 'reference').trim().slice(0, 500),
+      };
+    case 'leg':
+      return {
+        command: name,
+        legId: text(form, 'legId'),
+        step: text(form, 'step'),
+        quantityDelivered: optional('quantityDelivered', 12),
+        receiverName: optional('receiverName', 200),
+      };
+    default:
+      return {
+        command: name,
+        costIds: form.getAll('costIds').filter((value) => typeof value === 'string'),
+        reason: text(form, 'reason').trim().slice(0, 2000),
+      };
+  }
+}
+
+/**
+ * One cargo command, from the booking page, the organiser's cases or the driver's assignments.
+ * Each form carries its own retry key: an answer that never arrived is sent again with the same
+ * key, and the API repeats its first answer instead of doing it twice.
+ */
+export async function cargoAction(form: FormData): Promise<void> {
+  // A form with two outcomes names the command on the button pressed.
+  const name = text(form, 'submitCommand') || text(form, 'command');
+  const retry = text(form, 'retryKey');
+  const bookingId = text(form, 'bookingId');
+  const driver = text(form, 'driverView') === 'true';
+  const from = text(form, 'returnTo');
+  const organisationId = text(form, 'organisationId');
+  const valid = CARGO_COMMANDS.includes(name) && RETRY.test(retry) && UUID.test(bookingId);
+  const here = driver
+    ? `/${localeOf(form)}/driver`
+    : from === 'cases' && UUID.test(organisationId)
+      ? `/${localeOf(form)}/organisations/${organisationId}/cargo-cases`
+      : bookingPage(form).here;
+  await command(form, {
+    operation: 'cargo',
+    path: !valid
+      ? null
+      : driver
+        ? `/me/driver/assignments/${bookingId}/cargo`
+        : UUID.test(organisationId)
+          ? `/organisations/${organisationId}/bookings/${bookingId}/cargo`
+          : null,
+    here,
+    anchor: driver ? 'assignments' : 'cargo',
+    body: cargoCommandBody(form, name),
+    retryKey: retry,
+    donePrefix: 'cargo_',
   });
 }

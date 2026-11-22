@@ -107,6 +107,21 @@ const financialDraftBody = z.object({
   commissionSettlementMaxDays: z.number().int(),
   freightDueDays: z.number().int(),
   feePaymentHours: z.number().int(),
+  // Undeliverable cargo (slice 18d): optional; a draft without them keeps the values in force.
+  responseMinutesGeneral: z.number().int().optional(),
+  responseMinutesTemperature: z.number().int().optional(),
+  responseMinutesDangerous: z.number().int().optional(),
+  escalationMinutes: z.number().int().optional(),
+  freeWaitingMinutes: z.number().int().optional(),
+  exceptionRateCurrency: z.string().max(3).optional(),
+  waitingRatePerHour: z.string().max(20).optional(),
+  storageRatePerDay: z.string().max(20).optional(),
+  emergencyActions: z
+    .array(z.enum(['temporary_storage', 'retry_delivery', 'return_to_sender']))
+    .max(3)
+    .optional(),
+  emergencyCap: z.string().max(20).optional(),
+  returnTripFee: z.enum(['none', 'carrier_offer']).optional(),
   note: z.string().max(2000),
   effectiveFrom: z.union([z.string().max(40), z.null()]),
 });
@@ -194,8 +209,29 @@ const staffDeliveryBody = z.object({
   statedAt: z.string().max(40),
   reason: z.enum(['no_phone', 'no_signal', 'driver_unable', 'correction', 'other']),
   note: z.union([z.string().max(2000), z.null()]).optional(),
+  shortfall: z
+    .object({
+      reason: z.string().max(40),
+      refusalReason: z.union([z.string().max(2000), z.null()]).optional(),
+      location: z.string().max(1000),
+      cargoCondition: z.string().max(2000),
+      quantityUnit: z.string().max(80),
+      quantityDelivered: z.union([z.string().max(20), z.number()]),
+      quantityRemaining: z.union([z.string().max(20), z.number()]),
+      contactAttempts: z.number().int().min(0).max(1000),
+      contactNote: z.union([z.string().max(2000), z.null()]).optional(),
+      evidenceNote: z.union([z.string().max(2000), z.null()]).optional(),
+    })
+    .optional(),
 });
 const staffHandoverBody = z.object({
+  quantity: z.union([z.string().max(20), z.number()]),
+  condition: z.string().max(2000),
+  handedByStanding: z.string().max(600),
+  receivedByStanding: z.string().max(600),
+  evidenceNote: z.union([z.string().max(2000), z.null()]).optional(),
+  instructionId: z.union([z.string().max(40), z.null()]).optional(),
+
   kind: z.string().max(40),
   handedBy: z.string().max(400),
   receivedBy: z.string().max(400),
@@ -207,6 +243,19 @@ const staffReleaseBody = z.object({
   override: z.boolean().optional(),
   note: z.union([z.string().max(2000), z.null()]).optional(),
 });
+const staffCargoBody = z
+  .object({
+    command: z.enum([
+      'authority_order',
+      'close_case',
+      'record_liability',
+      'decide_claim',
+      'release_hold',
+      'confirm_receipt',
+    ]),
+  })
+  .passthrough()
+  .refine((value) => JSON.stringify(value).length <= 20_000);
 const withdrawBody = z.object({ version: z.number().int().min(1), note: z.string().max(2000) });
 const financialMoveBody = z.object({
   version: z.number().int().min(1),
@@ -625,6 +674,25 @@ export class StaffController {
       throw new ApiError(404, 'not_found', 'The requested resource was not found.');
     const { override, note } = parse(staffReleaseBody, body);
     return this.operations.release(caller, identifier(id), role, override ?? false, note ?? null);
+  }
+
+  @Post('operations/bookings/:id/cargo')
+  @HttpCode(200)
+  async operationsCargo(
+    @Param('id') id: string,
+    @Headers('idempotency-key') key: string | undefined,
+    @Body() body: unknown,
+    @Req() request: IncomingRequest,
+  ) {
+    const caller = await this.caller(request);
+    if (typeof key !== 'string' || !RETRY_KEY.test(key))
+      throw new ApiError(400, 'retry_key_required', 'An Idempotency-Key header is required.');
+    return this.operations.cargo(
+      caller,
+      identifier(id),
+      key,
+      parse(staffCargoBody, body) as Record<string, unknown>,
+    );
   }
 
   // Refunds: requested by one administrator, approved by another, submitted, then completed or

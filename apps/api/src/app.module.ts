@@ -34,7 +34,11 @@ import {
   DriverAssignmentController,
 } from './assignment/assignment.controller.js';
 import { AssignmentService } from './assignment/assignment.service.js';
-import { DriverTripController, TripController } from './trip/trip.controller.js';
+import {
+  DriverTripController,
+  OrganiserCargoController,
+  TripController,
+} from './trip/trip.controller.js';
 import { TripService } from './trip/trip.service.js';
 import { FleetService } from './fleet/fleet.service.js';
 import { QuotationController } from './quotation/quotation.controller.js';
@@ -87,6 +91,7 @@ export class AppModule {
         DriverAssignmentController,
         TripController,
         DriverTripController,
+        OrganiserCargoController,
         AuthorityController,
         BookingController,
         BookingStaffController,

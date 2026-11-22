@@ -190,3 +190,13 @@ All Arabic and Urdu text in the repository is a draft written without a native r
 - Web: release buttons are offered once an outcome is recorded even while cargo is in custody; the refusal explains why, but the buttons could wait for the handover.
 - Console: the delivery panel lists the outcome, custody and releases as one list; a small timeline would read better.
 - Wording of the delivery, custody and release messages in English, Arabic and Urdu.
+- Web: the delivery outcome form shows the shortfall fields for every outcome; showing them only for partly delivered, refused and not delivered (or when cargo remains) would be clearer.
+- Web: the cargo case shows every form of a side at once (declare, instruct, dispute); a step-by-step view would read better on a phone.
+- Web: the offer and emergency forms always show three cost lines; adding lines as needed would be tidier.
+- Web: the cargo case lists amounts as entered with their currency code; formatting by locale would read better.
+- Console: the cargo panel lists instructions, costs and handovers as plain lists; a table per instruction would read better.
+- Console: the queue's cargo list shows the cargo class with an underscore removed but in lower case.
+- Wording of the undeliverable-cargo messages in English, Arabic and Urdu.
+- Web: the cargo case's facts (reason, quantities, place, condition) are a definition list with wide gaps between items at phone width; a compact two-column layout would read better.
+- Web: the costs table of an instruction is cramped at 390 px; a stacked layout per cost would read better on a phone.
+- Web: the "declare who may give instructions" form stays shown after an authority is declared (declaring again replaces it); it could be folded behind a button.

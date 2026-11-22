@@ -30,6 +30,17 @@ interface Setting {
   commissionSettlementMaxDays: number;
   freightDueDays: number;
   feePaymentHours: number;
+  responseMinutesGeneral: number;
+  responseMinutesTemperature: number;
+  responseMinutesDangerous: number;
+  escalationMinutes: number;
+  freeWaitingMinutes: number;
+  exceptionRateCurrency: string;
+  waitingRatePerHour: number | string;
+  storageRatePerDay: number | string;
+  emergencyActions: string[];
+  emergencyCap: number | string;
+  returnTripFee: 'none' | 'carrier_offer';
   note: string;
   effectiveFrom: string | null;
   effectiveAt: string | null;
@@ -87,6 +98,32 @@ const FIELDS: Record<string, [string, string]> = {
   ],
   freightDueDays: ['freightDueDays', 'Freight due: from 0 to 365 days.'],
   feePaymentHours: ['feePaymentHours', 'Time to pay the fee: from 1 to 168 hours.'],
+  responseMinutesGeneral: [
+    'responseMinutesGeneral',
+    'Response time, general cargo: 5 to 10080 minutes.',
+  ],
+  responseMinutesTemperature: [
+    'responseMinutesTemperature',
+    'Response time, temperature-controlled cargo: 5 to 10080 minutes.',
+  ],
+  responseMinutesDangerous: [
+    'responseMinutesDangerous',
+    'Response time, dangerous goods: 5 to 10080 minutes.',
+  ],
+  escalationMinutes: [
+    'escalationMinutes',
+    'Escalation after the response time: 5 to 10080 minutes.',
+  ],
+  freeWaitingMinutes: ['freeWaitingMinutes', 'Free waiting: 0 to 10080 minutes.'],
+  exceptionRateCurrency: ['exceptionRateCurrency', 'Rate currency: three capital letters.'],
+  waitingRatePerHour: ['waitingRatePerHour', 'Waiting rate per hour: an amount such as 10.00.'],
+  storageRatePerDay: ['storageRatePerDay', 'Storage rate per day: an amount such as 25.00.'],
+  emergencyActions: [
+    'emergency-temporary_storage',
+    'Emergency plan: choose from the listed actions.',
+  ],
+  emergencyCap: ['emergencyCap', 'Emergency cap: an amount such as 100.00.'],
+  returnTripFee: ['returnTripFee', 'Return trip fee: none, or offered by the carrier.'],
   note: ['note', 'Reason: say why this change is made.'],
   effectiveFrom: ['effectiveDate', 'Effective time: a date and time in UTC, later than now.'],
 };
@@ -129,6 +166,22 @@ function Values({ setting, id }: { setting: Setting; id?: string }) {
       <li>
         Time to pay Trucker&apos;s fee: {setting.feePaymentHours} hours after acceptance, never
         after the assignment deadline
+      </li>
+      <li>
+        Undeliverable cargo: instructions due within {setting.responseMinutesGeneral} minutes
+        (general), {setting.responseMinutesTemperature} (temperature-controlled),{' '}
+        {setting.responseMinutesDangerous} (dangerous goods); escalation {setting.escalationMinutes}{' '}
+        minutes later
+      </li>
+      <li>
+        Free waiting {setting.freeWaitingMinutes} minutes; reference rates{' '}
+        {String(setting.waitingRatePerHour)} per hour waiting, {String(setting.storageRatePerDay)}{' '}
+        per day storage ({setting.exceptionRateCurrency})
+      </li>
+      <li>
+        Emergency plan: {setting.emergencyActions.join(', ') || 'no action'}, up to{' '}
+        {String(setting.emergencyCap)}; return trip fee:{' '}
+        {setting.returnTripFee === 'carrier_offer' ? 'offered by the carrier' : 'none'}
       </li>
     </ul>
   );
@@ -321,6 +374,71 @@ export default async function FinancePage({ searchParams }: Props) {
                       defaultValue={reply.data.settings.inForce.feePaymentHours}
                     />
                   </div>
+                  <fieldset className="choice">
+                    <legend>Undeliverable cargo (development values until approved)</legend>
+                    {(
+                      [
+                        ['responseMinutesGeneral', 'Response time, general cargo (minutes)'],
+                        [
+                          'responseMinutesTemperature',
+                          'Response time, temperature-controlled cargo (minutes)',
+                        ],
+                        ['responseMinutesDangerous', 'Response time, dangerous goods (minutes)'],
+                        ['escalationMinutes', 'Escalation after the response time (minutes)'],
+                        ['freeWaitingMinutes', 'Free waiting at delivery (minutes)'],
+                        ['exceptionRateCurrency', 'Currency of the reference rates'],
+                        ['waitingRatePerHour', 'Reference waiting rate per hour'],
+                        ['storageRatePerDay', 'Reference storage rate per day'],
+                        ['emergencyCap', 'Emergency cap for a protective action'],
+                      ] as const
+                    ).map(([name, label]) => (
+                      <div className="field" key={name}>
+                        <label htmlFor={name}>{label}</label>
+                        <input
+                          id={name}
+                          name={name}
+                          type="text"
+                          maxLength={20}
+                          defaultValue={String(reply.data.settings.inForce[name])}
+                        />
+                      </div>
+                    ))}
+                    <fieldset className="choice">
+                      <legend>Emergency plan: protective actions allowed without an answer</legend>
+                      {(
+                        [
+                          ['temporary_storage', 'Store temporarily'],
+                          ['retry_delivery', 'Try delivery again'],
+                          ['return_to_sender', 'Return to the sender'],
+                        ] as const
+                      ).map(([code, label]) => (
+                        <label key={code}>
+                          <input
+                            type="checkbox"
+                            id={`emergency-${code}`}
+                            name={`emergency-${code}`}
+                            defaultChecked={reply.data.settings.inForce.emergencyActions.includes(
+                              code,
+                            )}
+                          />{' '}
+                          {label}
+                        </label>
+                      ))}
+                    </fieldset>
+                    <div className="field">
+                      <label htmlFor="returnTripFee">Return trip fee</label>
+                      <select
+                        id="returnTripFee"
+                        name="returnTripFee"
+                        defaultValue={reply.data.settings.inForce.returnTripFee}
+                      >
+                        <option value="none">None</option>
+                        <option value="carrier_offer">
+                          Offered by the carrier, approved per case
+                        </option>
+                      </select>
+                    </div>
+                  </fieldset>
                   <div className="field">
                     <label htmlFor="note">Reason for the change</label>
                     <textarea id="note" name="note" rows={3} maxLength={1000} />

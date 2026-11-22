@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type pg from 'pg';
 import { ApiError } from '../http/api-error.js';
+import { cargoAnswer } from '../trip/trip.service.js';
 import { DB_POOL } from '../tokens.js';
 import type { StaffCaller } from './staff.service.js';
 
@@ -65,6 +66,7 @@ const ERRORS: Record<string, [number, string, string]> = {
     'Cargo is still in custody: record its handover before releasing the resource.',
   ],
   not_assigned: [404, 'not_found', 'No such resource on this booking.'],
+  leg_under_way: [409, 'leg_under_way', 'A leg of this trip is still under way.'],
   nothing_to_withdraw: [409, 'nothing_to_withdraw', 'No milestone is recorded on this trip.'],
 };
 
@@ -207,5 +209,14 @@ export class OperationsService {
     );
     if (row.status !== 'released') refuse(row.status, row.detail);
     return { outcome: 'released', trip: row.detail };
+  }
+
+  /** One operations command on a booking's cargo (slice 18d). */
+  async cargo(caller: StaffCaller, bookingId: string, key: string, command: Detail) {
+    const row = await this.run(
+      'SELECT status, detail FROM trucker.staff_cargo_command($1, $2, $3, $4, $5)',
+      [caller.tokenHash, bookingId, key, JSON.stringify(command), caller.requestId ?? null],
+    );
+    return cargoAnswer(row.status, row.detail);
   }
 }

@@ -1144,9 +1144,18 @@ test('FS-3: commission options and limits come from the version in force; a comm
 test('FS-4: an approval and a booking never interleave: each waits for the other', async () => {
   const first = await newStaff(['staff_admin']);
   const second = await newStaff(['staff_admin']);
-  const waiting = async (): Promise<boolean> => {
-    for (let attempt = 0; attempt < 100; attempt++) {
+  // Polls until the request is reported as waiting, or until it has finished without waiting
+  // (a failure). The upper limit is generous because a slow runner can take several seconds to
+  // reach the lock; a request that waits is seen as soon as it does.
+  const waiting = async (pending: Promise<unknown>): Promise<boolean> => {
+    let settled = false;
+    void pending.then(
+      () => (settled = true),
+      () => (settled = true),
+    );
+    for (let attempt = 0; attempt < 600; attempt++) {
       await new Promise((resolve) => setTimeout(resolve, 50));
+      if (settled) return false;
       const found = await owner.query(
         "SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND NOT granted",
       );
@@ -1161,7 +1170,7 @@ test('FS-4: an approval and a booking never interleave: each waits for the other
     await holder.query('BEGIN');
     await holder.query("SELECT pg_advisory_xact_lock(hashtextextended('financial.settings', 0))");
     const pending = accept(made.shipper.person, made.shipper.org, made.quotation.id, 1);
-    assert.ok(await waiting(), 'the booking waits for the settings');
+    assert.ok(await waiting(pending), 'the booking waits for the settings');
     await holder.query('COMMIT');
     assert.equal((await pending).status, 200);
   } finally {
@@ -1177,7 +1186,7 @@ test('FS-4: an approval and a booking never interleave: each waits for the other
       "SELECT pg_advisory_xact_lock_shared(hashtextextended('financial.settings', 0))",
     );
     const pending = moveSetting(second, drafted, 'approve');
-    assert.ok(await waiting(), 'the approval waits for the booking');
+    assert.ok(await waiting(pending), 'the approval waits for the booking');
     await reader.query('COMMIT');
     assert.equal((await pending).status, 200);
   } finally {
@@ -1244,4 +1253,62 @@ test('AUDIT-4: financial-setting approval must recheck an expired session after 
     401,
     'An expired staff session approved financial settings after waiting for the lock',
   );
+});
+
+test('FS-5: the undeliverable-cargo settings (slice 18d) are drafted, checked and approved like the others; a draft without them keeps those in force; a booking keeps the version it was accepted under', async () => {
+  const first = await newStaff(['staff_admin']);
+  const second = await newStaff(['staff_admin']);
+  const made = await offer();
+  const booking = await book(made);
+  const before = await versionOf(booking.id);
+  // Out of range or not allowed: refused, nothing drafted.
+  for (const over of [
+    { responseMinutesGeneral: 2 },
+    { waitingRatePerHour: 'ten' },
+    { returnTripFee: 'always' },
+    { emergencyActions: ['sell_cargo'] },
+    { exceptionRateCurrency: 'xx' },
+  ]) {
+    const refused = await draftSetting(first, values(over));
+    assert.ok([422].includes(refused.status), `${JSON.stringify(over)}: ${refused.text}`);
+  }
+  const changed = await approved(
+    first,
+    second,
+    values({
+      responseMinutesGeneral: 120,
+      responseMinutesTemperature: 30,
+      responseMinutesDangerous: 15,
+      escalationMinutes: 45,
+      freeWaitingMinutes: 60,
+      waitingRatePerHour: '12.50',
+      storageRatePerDay: '30',
+      emergencyActions: ['temporary_storage', 'return_to_sender'],
+      emergencyCap: '150',
+      returnTripFee: 'carrier_offer',
+      note: 'Exception settings (fictional)',
+    }),
+  );
+  const inForce = (await settingsOf(first)).inForce as unknown as Record<string, unknown>;
+  assert.equal(inForce.id, changed.id);
+  assert.deepEqual(
+    [
+      inForce.responseMinutesGeneral,
+      inForce.escalationMinutes,
+      inForce.freeWaitingMinutes,
+      Number(inForce.waitingRatePerHour),
+      inForce.emergencyActions,
+      inForce.returnTripFee,
+    ],
+    [120, 45, 60, 12.5, ['return_to_sender', 'temporary_storage'], 'carrier_offer'],
+  );
+  // A later draft that leaves them out keeps the values in force.
+  const next = await approved(first, second, values({ note: 'Fee only (fictional)' }));
+  const kept = (await settingsOf(first)).inForce as unknown as Record<string, unknown>;
+  assert.deepEqual(
+    [kept.id, kept.responseMinutesGeneral, kept.returnTripFee],
+    [next.id, 120, 'carrier_offer'],
+  );
+  // The booking accepted earlier keeps its version: its terms are not changed afterwards.
+  assert.equal(await versionOf(booking.id), before);
 });

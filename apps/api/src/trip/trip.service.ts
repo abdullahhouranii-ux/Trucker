@@ -16,6 +16,66 @@ import { DB_POOL } from '../tokens.js';
 
 type Detail = Record<string, unknown>;
 
+/** Refusals of a cargo command (slice 18d, R-406). */
+export const CARGO_ERRORS: Record<string, [number, string, string]> = {
+  unauthorized: [401, 'unauthorized', 'Authentication is required.'],
+  forbidden: [
+    403,
+    'staff_privilege_required',
+    'Your account does not hold the privilege this needs.',
+  ],
+  not_found: [404, 'not_found', 'The requested resource was not found.'],
+  not_dispatched: [409, 'not_dispatched', 'This booking has not been dispatched.'],
+  key_conflict: [
+    409,
+    'retry_key_conflict',
+    'This retry key was used for a different request. Nothing was changed.',
+  ],
+  conflict: [409, 'record_changed', 'This changed since it was opened. Nothing was changed.'],
+  no_case: [409, 'no_cargo_case', 'No undeliverable cargo is recorded on this trip.'],
+  case_closed: [409, 'cargo_case_closed', 'This cargo case is closed.'],
+  no_authority: [
+    403,
+    'no_instruction_authority',
+    'You hold no authority in force to give this instruction. Nothing was changed.',
+  ],
+  authority_order: [
+    409,
+    'authority_order',
+    'The instruction of a competent authority does not allow this action.',
+  ],
+  instruction_open: [409, 'instruction_open', 'Another instruction is open on this cargo.'],
+  not_open: [409, 'not_open', 'This is not open for that step.'],
+  over_limit: [
+    409,
+    'over_spend_limit',
+    'The total is above your spending limit. Nothing was approved.',
+  ],
+  not_due: [
+    409,
+    'response_time_not_passed',
+    'The response time has not passed: no emergency action is allowed yet.',
+  ],
+  not_in_plan: [409, 'not_in_emergency_plan', 'This action is not in the emergency plan.'],
+  over_cap: [409, 'over_emergency_cap', 'The cost is above the emergency cap.'],
+  exceeds_waiting: [
+    409,
+    'exceeds_billable_waiting',
+    'More waiting than was billable: waiting stops when the truck is released.',
+  ],
+  return_fee_not_allowed: [
+    409,
+    'return_fee_not_allowed',
+    'The booking terms do not allow a return trip fee.',
+  ],
+  leg_under_way: [409, 'leg_under_way', 'A leg of this trip is still under way.'],
+  owner_open: [
+    409,
+    'hold_owner_open',
+    'Only the decision of the claim or dispute that placed this hold releases it.',
+  ],
+};
+
 const ERRORS: Record<string, [number, string, string]> = {
   unauthorized: [401, 'unauthorized', 'Authentication is required.'],
   not_found: [404, 'not_found', 'The requested resource was not found.'],
@@ -61,6 +121,7 @@ const ERRORS: Record<string, [number, string, string]> = {
     'no_delivery_outcome',
     'No delivery outcome is recorded: the resource stays on the trip.',
   ],
+  leg_under_way: [409, 'leg_under_way', 'A leg of this trip is still under way.'],
   custody_open: [
     409,
     'custody_open',
@@ -282,4 +343,83 @@ export class TripService {
     if (row.status === 'released') return { outcome: 'released', trip: row.detail };
     return refuse(row.status, row.detail);
   }
+
+  /** One command on the cargo of a booking (slice 18d): organisation '' acts as the driver. */
+  async cargo(
+    caller: Caller,
+    organisationId: string,
+    bookingId: string,
+    key: string,
+    command: Detail,
+  ) {
+    const row = await this.run(
+      caller,
+      organisationId,
+      'SELECT status, detail FROM trucker.cargo_command($1, $2, $3)',
+      () => [bookingId, key, JSON.stringify(command)],
+    );
+    return cargoAnswer(row.status, row.detail);
+  }
+
+  /** The instruction authorities of a booking. */
+  async authorities(caller: Caller, organisationId: string, bookingId: string) {
+    const row = await this.run(
+      caller,
+      organisationId,
+      'SELECT status, detail FROM trucker.booking_authorities($1)',
+      () => [bookingId],
+    );
+    if (row.status === 'ok') return row.detail;
+    return refuse(row.status, null);
+  }
+
+  /** The cases where an organiser holds, or held, an authority. */
+  async organiserCases(caller: Caller, organisationId: string) {
+    const row = await this.run(
+      caller,
+      organisationId,
+      'SELECT status, detail FROM trucker.organiser_cargo_cases()',
+      () => [],
+    );
+    if (row.status === 'ok') return { cases: row.detail };
+    return refuse(row.status, null);
+  }
+}
+
+const CARGO_DONE = new Set([
+  'declared',
+  'ended',
+  'issued',
+  'withdrawn',
+  'offered',
+  'approved',
+  'declined',
+  'started',
+  'completed',
+  'failed',
+  'emergency',
+  'confirmed',
+  'rejected',
+  'leg_updated',
+  'disputed',
+  'claimed',
+  'recorded',
+  'closed',
+  'decided',
+  'released',
+]);
+
+/** Maps the answer of a cargo command: the outcome and the cargo as the caller sees it. */
+export function cargoAnswer(status: string, detail: unknown) {
+  if (CARGO_DONE.has(status)) return { outcome: status, cargo: detail };
+  if (status === 'invalid') {
+    const list = Array.isArray(detail) ? detail : detail ? [detail] : [];
+    const problems = list as { field: string; code: string }[];
+    throw new ApiError(422, 'validation_failed', 'Some fields are missing or not valid.', {
+      fields: problems.map((problem) => problem.field),
+      problems,
+    });
+  }
+  const known = CARGO_ERRORS[status] ?? CARGO_ERRORS.not_found!;
+  throw new ApiError(known[0], known[1], known[2], detail ? { detail } : undefined);
 }

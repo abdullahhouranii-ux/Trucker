@@ -2,6 +2,7 @@ import type { Messages } from '../i18n/messages.ts';
 import type { ExceptionType, Trip } from '../server/api.ts';
 import { Field } from './form.tsx';
 import { InstantText } from './booking-view.tsx';
+import { SHORTFALL_REASONS } from './cargo-panel.tsx';
 
 // What a trip shows its parties (slice 17a): when it was dispatched, the milestones recorded
 // in order, and the latest arrival estimate. A milestone entered for the driver says who
@@ -270,7 +271,11 @@ export function DeliveryFacts({
         </>
       ) : null}
       {delivery.custody ? (
-        delivery.custody.handover ? (
+        delivery.custody.open && delivery.custody.handover && !delivery.custody.handover.receipt ? (
+          <p className="notice" id="custody" data-custody="pending">
+            {d.custodyPending}
+          </p>
+        ) : !delivery.custody.open && delivery.custody.handover ? (
           <p id="custody" data-custody="closed">
             <strong>{d.custodyClosed}</strong>: {d.handoverKinds[delivery.custody.handover.kind]},{' '}
             <InstantText at={delivery.custody.handover.handedAt} />
@@ -314,6 +319,7 @@ const OUTCOMES = [
 /** Recording the outcome: by the driver as it happens, or on the driver's behalf. */
 export function DeliveryForm({
   d,
+  c,
   t,
   id,
   action,
@@ -321,6 +327,7 @@ export function DeliveryForm({
   onBehalf,
 }: {
   d: D;
+  c: Messages['cargo'];
   t: T;
   id: string;
   action: (form: FormData) => Promise<void>;
@@ -349,11 +356,69 @@ export function DeliveryForm({
       <Field id={`${id}-remarks`} label={d.remarksField}>
         <textarea id={`${id}-remarks`} name="remarks" maxLength={2000} />
       </Field>
-      <div className="field">
-        <label>
-          <input type="checkbox" name="cargoRemains" value="true" /> {d.cargoRemainsField}
-        </label>
+      <div className="check">
+        <input type="checkbox" id={`${id}-remains`} name="cargoRemains" value="true" />
+        <label htmlFor={`${id}-remains`}>{d.cargoRemainsField}</label>
       </div>
+      <fieldset className="fieldset" id={`${id}-shortfall`}>
+        <legend>{c.shortfallTitle}</legend>
+        <p className="field-hint">{c.shortfallLead}</p>
+        <Field id={`${id}-short-reason`} label={c.reason}>
+          <select id={`${id}-short-reason`} name="shortfallReason" defaultValue="receiver_refused">
+            {SHORTFALL_REASONS.map((code) => (
+              <option key={code} value={code}>
+                {c.reasons[code]}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field id={`${id}-refusal`} label={c.refusalReason}>
+          <input type="text" id={`${id}-refusal`} name="refusalReason" maxLength={1000} />
+        </Field>
+        <Field id={`${id}-short-location`} label={c.location}>
+          <input type="text" id={`${id}-short-location`} name="shortfallLocation" maxLength={500} />
+        </Field>
+        <Field id={`${id}-short-condition`} label={c.condition}>
+          <input type="text" id={`${id}-short-condition`} name="cargoCondition" maxLength={1000} />
+        </Field>
+        <Field id={`${id}-short-unit`} label={c.quantityUnit}>
+          <input type="text" id={`${id}-short-unit`} name="quantityUnit" maxLength={40} />
+        </Field>
+        <Field id={`${id}-short-delivered`} label={c.quantityDelivered}>
+          <input
+            type="text"
+            id={`${id}-short-delivered`}
+            name="quantityDelivered"
+            inputMode="decimal"
+            maxLength={12}
+          />
+        </Field>
+        <Field id={`${id}-short-remaining`} label={c.quantityRemaining}>
+          <input
+            type="text"
+            id={`${id}-short-remaining`}
+            name="quantityRemaining"
+            inputMode="decimal"
+            maxLength={12}
+          />
+        </Field>
+        <Field id={`${id}-short-attempts`} label={c.contactAttempts}>
+          <input
+            id={`${id}-short-attempts`}
+            name="contactAttempts"
+            type="text"
+            inputMode="numeric"
+            maxLength={4}
+            defaultValue="0"
+          />
+        </Field>
+        <Field id={`${id}-short-contact`} label={c.contactNote}>
+          <input type="text" id={`${id}-short-contact`} name="contactNote" maxLength={1000} />
+        </Field>
+        <Field id={`${id}-short-evidence`} label={c.evidenceNote}>
+          <input type="text" id={`${id}-short-evidence`} name="evidenceNote" maxLength={1000} />
+        </Field>
+      </fieldset>
       {onBehalf ? (
         <>
           <Field id={`${id}-at`} label={t.statedAt}>
@@ -392,12 +457,17 @@ export function DeliveryForm({
 /** The carrier records the handover of cargo left on the vehicle. */
 export function HandoverForm({
   d,
+  c,
   action,
   hidden,
+  instructions,
 }: {
   d: D;
+  c: Messages['cargo'];
   action: (form: FormData) => Promise<void>;
   hidden: React.ReactNode;
+  /** Approved or running instructions the handover may be carried out under (slice 18d). */
+  instructions: { id: string; action: keyof Messages['cargo']['actions'] }[];
 }) {
   const now = utcMinute(new Date());
   return (
@@ -406,20 +476,71 @@ export function HandoverForm({
       <h3>{d.handoverTitle}</h3>
       <Field id="handover-kind" label={d.handoverKind}>
         <select id="handover-kind" name="kind" required>
-          {(['returned_to_shipper', 'delivered_elsewhere', 'replacement_vehicle'] as const).map(
-            (code) => (
-              <option key={code} value={code}>
-                {d.handoverKinds[code]}
-              </option>
-            ),
-          )}
+          {(
+            [
+              'warehouse',
+              'returned_to_shipper',
+              'delivered_elsewhere',
+              'consignee',
+              'alternate_carrier',
+              'replacement_vehicle',
+            ] as const
+          ).map((code) => (
+            <option key={code} value={code}>
+              {d.handoverKinds[code]}
+            </option>
+          ))}
         </select>
+      </Field>
+      <Field id="handover-instruction" label={c.handoverInstruction}>
+        <select id="handover-instruction" name="instructionId" defaultValue="">
+          <option value="">{c.noInstruction}</option>
+          {instructions.map((item) => (
+            <option key={item.id} value={item.id}>
+              {c.actions[item.action]}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <Field id="handover-quantity" label={c.handoverQuantity}>
+        <input
+          type="text"
+          id="handover-quantity"
+          name="quantity"
+          inputMode="decimal"
+          maxLength={12}
+          required
+        />
+      </Field>
+      <Field id="handover-condition" label={c.handoverCondition}>
+        <input type="text" id="handover-condition" name="condition" maxLength={1000} required />
       </Field>
       <Field id="handover-by" label={d.handedBy}>
         <input id="handover-by" name="handedBy" type="text" maxLength={200} required />
       </Field>
+      <Field id="handover-by-standing" label={c.handedByStanding}>
+        <input
+          type="text"
+          id="handover-by-standing"
+          name="handedByStanding"
+          maxLength={300}
+          required
+        />
+      </Field>
       <Field id="handover-to" label={d.receivedBy}>
         <input id="handover-to" name="receivedBy" type="text" maxLength={200} required />
+      </Field>
+      <Field id="handover-to-standing" label={c.receivedByStanding}>
+        <input
+          type="text"
+          id="handover-to-standing"
+          name="receivedByStanding"
+          maxLength={300}
+          required
+        />
+      </Field>
+      <Field id="handover-evidence" label={c.evidenceNote}>
+        <input type="text" id="handover-evidence" name="evidenceNote" maxLength={1000} />
       </Field>
       <Field id="handover-at" label={d.handedAt}>
         <input

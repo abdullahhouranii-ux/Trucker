@@ -76,8 +76,14 @@ export const DONE: Record<string, string> = {
   held: 'The trip is on hold. No milestone is recorded until it is resumed.',
   resumed: 'The trip is resumed.',
   withdrawn: 'The milestone is withdrawn. It stays in the record, and the trip is back one step.',
-  handed_over: 'The handover is recorded. Custody is closed.',
+  handed_over: 'The handover is recorded. Custody moves once the receiving side confirms it.',
   released: 'The resource is released.',
+  cargo_recorded: 'Recorded.',
+  cargo_closed: 'The cargo case is closed. Holds stay until their own cause is decided.',
+  cargo_decided: 'The claim decision is recorded with its source.',
+  cargo_released: 'The hold is released.',
+  cargo_confirmed: 'The receipt is confirmed. Custody has moved.',
+  cargo_rejected: 'The receipt is rejected. Custody has not moved.',
 };
 export const ERRORS: Record<string, string> = {
   staff_privilege_required: 'Your account does not hold the operations privilege.',
@@ -106,6 +112,13 @@ export const ERRORS: Record<string, string> = {
     'Something is missing or not valid: every step except acknowledging needs a note, and a block or hold needs a reason.',
   unconfirmed:
     'It was not confirmed that this was done. It may have been. The page shows the present state.',
+  leg_under_way: 'A leg of this trip is still under way: nothing can be released.',
+  no_cargo_case: 'No undeliverable cargo is recorded on this trip.',
+  cargo_case_closed: 'This cargo case is closed.',
+  instruction_open: 'An instruction is still open: it must end before the case closes.',
+  not_open: 'This is not open for that step.',
+  hold_owner_open: 'The cause of this hold is not decided yet: the hold stays.',
+  retry_key_conflict: 'This form was already sent with other values. Reload the page.',
 };
 
 export function caseTitle(item: { kind: string; type: string | null }): string {

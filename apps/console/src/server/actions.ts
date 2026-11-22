@@ -435,6 +435,20 @@ export async function draftFinancialAction(form: FormData): Promise<void> {
     commissionSettlementMaxDays: whole(form, 'commissionSettlementMaxDays') ?? -1,
     freightDueDays: whole(form, 'freightDueDays') ?? -1,
     feePaymentHours: whole(form, 'feePaymentHours') ?? -1,
+    // Undeliverable cargo (slice 18d): development values until approved for production.
+    responseMinutesGeneral: whole(form, 'responseMinutesGeneral') ?? -1,
+    responseMinutesTemperature: whole(form, 'responseMinutesTemperature') ?? -1,
+    responseMinutesDangerous: whole(form, 'responseMinutesDangerous') ?? -1,
+    escalationMinutes: whole(form, 'escalationMinutes') ?? -1,
+    freeWaitingMinutes: whole(form, 'freeWaitingMinutes') ?? -1,
+    exceptionRateCurrency: text(form, 'exceptionRateCurrency').trim().toUpperCase().slice(0, 3),
+    waitingRatePerHour: text(form, 'waitingRatePerHour').trim().slice(0, 20),
+    storageRatePerDay: text(form, 'storageRatePerDay').trim().slice(0, 20),
+    emergencyActions: ['temporary_storage', 'retry_delivery', 'return_to_sender'].filter(
+      (action) => form.get(`emergency-${action}`) === 'on',
+    ),
+    emergencyCap: text(form, 'emergencyCap').trim().slice(0, 20),
+    returnTripFee: text(form, 'returnTripFee') === 'carrier_offer' ? 'carrier_offer' : 'none',
     note: text(form, 'note'),
     // A time in UTC, as the form says; anything else is refused by the database.
     effectiveFrom: at ? `${date}T${time}:00Z` : null,

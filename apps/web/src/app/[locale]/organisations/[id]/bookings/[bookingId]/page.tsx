@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { notFound, redirect } from 'next/navigation';
+import { CargoPanel } from '../../../../../../components/cargo-panel.tsx';
 import { DraftKeeper } from '../../../../../../components/draft-keeper.tsx';
 import {
   BookingCard,
@@ -31,6 +32,7 @@ import {
   cancelBookingAction,
   decideSubstitutionAction,
   dispatchBookingAction,
+  cargoAction,
   recordDeliveryAction,
   recordHandoverAction,
   recordMilestoneOnBehalfAction,
@@ -137,7 +139,10 @@ export default async function BookingPage({ params, searchParams }: Props) {
   const error = one('aError');
   const problems: { message: string }[] = [];
   if (error) {
-    const message = (a.errors as Record<string, string>)[error] ?? a.errors.invalid;
+    const message =
+      (a.errors as Record<string, string>)[error] ??
+      (m.cargo.errors as Record<string, string>)[error] ??
+      a.errors.invalid;
     const roleName = (a.roles as Record<string, string>)[one('aRole')];
     const reason = reasonText(one('aReason'));
     if (error === 'dispatch_refused') {
@@ -166,7 +171,16 @@ export default async function BookingPage({ params, searchParams }: Props) {
       });
   }
   const done = one('aDone');
-  const confirmation = done ? (a.done as Record<string, string>)[done] : undefined;
+  const confirmation = done.startsWith('cargo_')
+    ? (m.cargo.done as Record<string, string>)[done.slice('cargo_'.length)]
+    : done
+      ? (a.done as Record<string, string>)[done]
+      : undefined;
+  // A cargo command whose answer never arrived is sent again with the same key (slice 18d).
+  const cargoKey = (): string =>
+    error === 'cargo_unconfirmed' && /^[A-Za-z0-9._-]{16,128}$/.test(one('aKey'))
+      ? one('aKey')
+      : randomUUID();
   const hidden = (
     <>
       <input type="hidden" name="locale" value={locale} />
@@ -328,6 +342,17 @@ export default async function BookingPage({ params, searchParams }: Props) {
               {role === 'carrier' ? <CarrierTripForms t={tt} trip={trip} hidden={hidden} /> : null}
               {trip.delivery ? (
                 <DeliveryFacts d={m.delivery} t={tt} delivery={trip.delivery} roles={a.roles} />
+              ) : null}
+              {trip.cargo?.case ? (
+                <CargoPanel
+                  c={m.cargo}
+                  cargo={trip.cargo}
+                  side={role}
+                  hidden={hidden}
+                  action={cargoAction}
+                  retryKey={cargoKey}
+                  canInstruct={false}
+                />
               ) : null}
               {role === 'carrier' ? (
                 <CarrierDeliveryForms
@@ -695,6 +720,7 @@ function CarrierDeliveryForms({
       {!outcome && !trip.hold ? (
         <DeliveryForm
           d={d}
+          c={m.cargo}
           t={m.trip}
           id="delivery-form"
           action={recordDeliveryAction}
@@ -703,7 +729,15 @@ function CarrierDeliveryForms({
         />
       ) : null}
       {trip.delivery?.custody?.open ? (
-        <HandoverForm d={d} action={recordHandoverAction} hidden={hidden} />
+        <HandoverForm
+          d={d}
+          c={m.cargo}
+          action={recordHandoverAction}
+          hidden={hidden}
+          instructions={(trip.cargo?.case?.instructions ?? [])
+            .filter((item) => item.state === 'approved' || item.state === 'executing')
+            .map((item) => ({ id: item.id, action: item.action }))}
+        />
       ) : null}
       {outcome && assigned.some((item) => !released.has(item)) ? (
         <section className="card" id="release">
