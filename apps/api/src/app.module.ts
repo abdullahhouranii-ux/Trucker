@@ -38,6 +38,11 @@ import { FleetService } from './fleet/fleet.service.js';
 import { QuotationController } from './quotation/quotation.controller.js';
 import { QuotationService } from './quotation/quotation.service.js';
 import { FeeLapseJob } from './fee/fee-lapse.job.js';
+import { DEVELOPMENT_PAYMENT_TEST_SECRET } from './config/config.js';
+import { PaymentController } from './payment/payment.controller.js';
+import { PaymentService } from './payment/payment.service.js';
+import { PAYMENT_PROVIDER } from './payment/provider.js';
+import { TestPaymentProvider } from './payment/test-provider.js';
 import { FeeService } from './staff/fee.service.js';
 import { FinanceService } from './staff/finance.service.js';
 import { ReviewService } from './staff/review.service.js';
@@ -84,11 +89,23 @@ export class AppModule {
         ShipmentController,
         StaffController,
         VerificationController,
+        PaymentController,
       ],
       providers: [
         { provide: APP_CONFIG, useValue: config },
         { provide: DB_POOL, useFactory: () => createPool(config) },
         { provide: CLOCK, useValue: clock },
+        {
+          provide: PAYMENT_PROVIDER,
+          useValue:
+            config.PAYMENT_PROVIDER === 'test'
+              ? new TestPaymentProvider(
+                  config.PAYMENT_TEST_SECRET ?? DEVELOPMENT_PAYMENT_TEST_SECRET,
+                  clock,
+                )
+              : null,
+        },
+        PaymentService,
         PoolLifecycle,
         HealthService,
         IdentityService,

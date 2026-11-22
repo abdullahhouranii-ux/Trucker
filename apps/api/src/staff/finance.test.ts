@@ -1186,3 +1186,62 @@ test('FS-4: an approval and a booking never interleave: each waits for the other
   }
   await restoreFinancialSettings(owner);
 });
+
+// Changed from the review's version only in how it sees the wait: a test role that is not a
+// superuser (as in the Windows CI job) cannot read another role's query text or wait event,
+// but can see that a lock in this database is not granted. Only the audited request waits.
+async function auditWaitForBlocked(fragment: string): Promise<void> {
+  void fragment;
+  for (let i = 0; i < 400; i++) {
+    const rows = await owner.query<{ n: number }>(
+      'SELECT count(*)::int AS n FROM pg_locks l JOIN pg_stat_activity a ON a.pid = l.pid WHERE NOT l.granted AND a.datname = current_database()',
+    );
+    if (rows.rows[0]!.n > 0) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error('Audit request did not reach the controlled lock');
+}
+
+test('AUDIT-4: financial-setting approval must recheck an expired session after its lock wait', async () => {
+  const drafter = await newStaff(['staff_admin']);
+  const approver = await newStaff(['staff_admin']);
+  const drafted = await draftSetting(drafter);
+  assert.equal(drafted.status, 201, drafted.text);
+  const setting = drafted.body.setting as Setting;
+  const holder = await owner.connect();
+  await holder.query('BEGIN');
+  await holder.query("SELECT pg_advisory_xact_lock(hashtextextended('financial.settings',0))");
+  const pending = moveSetting(approver, setting, 'approve').then(
+    (reply) => ({ reply }),
+    (error) => ({ error }),
+  );
+  try {
+    await auditWaitForBlocked('staff_financial_move');
+    await advance(D.staff_session_idle_minutes * 60 + 1);
+  } finally {
+    await holder.query('COMMIT');
+    holder.release();
+  }
+  const result = await pending;
+  if ('error' in result) throw result.error;
+  const state = (
+    await owner.query('SELECT status FROM trucker.financial_setting_version WHERE id=$1', [
+      setting.id,
+    ])
+  ).rows[0];
+  const check = await call('GET', '/staff/me', { token: approver.token });
+  console.log(
+    'AUDIT-4 OBSERVED',
+    JSON.stringify({
+      approvalStatus: result.reply.status,
+      approval: result.reply.body,
+      setting: state.status,
+      subsequentSessionCheck: check.status,
+    }),
+  );
+  assert.equal(
+    result.reply.status,
+    401,
+    'An expired staff session approved financial settings after waiting for the lock',
+  );
+});

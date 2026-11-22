@@ -72,7 +72,18 @@ const schema = z.object({
    * marked local-development or test (db/migrations/0003, trucker.environment).
    */
   COUNTRY_FIXTURES: z.enum(['none', 'local-development']).default('none'),
+  /**
+   * Online payment of Trucker's fee (src/payment). No payment provider is chosen: `none` closes
+   * online payment, and `test` is a development stand-in that moves no money, refused in
+   * production and with a remote database.
+   */
+  PAYMENT_PROVIDER: z.enum(['none', 'test']).default('none'),
+  /** Key the stand-in signs its notifications with. Development falls back to a published value. */
+  PAYMENT_TEST_SECRET: z.string().min(32).optional(),
 });
+
+/** Published on purpose: the stand-in protects nothing. */
+export const DEVELOPMENT_PAYMENT_TEST_SECRET = 'trucker-payment-stand-in-secret-not-for-production';
 
 /** Published on purpose: it only exists so local development needs no setup. */
 export const DEVELOPMENT_IDENTITY_SECRET = 'trucker-development-only-secret-not-for-production';
@@ -158,6 +169,15 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
           );
         }
       }
+    }
+    if (production && parsed.PAYMENT_PROVIDER === 'test') {
+      problems.push('PAYMENT_PROVIDER must not be test in production');
+    }
+    if (
+      parsed.PAYMENT_PROVIDER === 'test' &&
+      !databaseIsLocal(parsed.APP_DATABASE_URL ?? parsed.DATABASE_URL)
+    ) {
+      problems.push('PAYMENT_PROVIDER test needs a database on this machine');
     }
     if (production && parsed.COUNTRY_FIXTURES !== 'none') {
       problems.push('COUNTRY_FIXTURES must not be set in production');

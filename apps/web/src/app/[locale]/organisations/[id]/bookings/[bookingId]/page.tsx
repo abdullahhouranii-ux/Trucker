@@ -1,6 +1,11 @@
 import { notFound, redirect } from 'next/navigation';
 import { DraftKeeper } from '../../../../../../components/draft-keeper.tsx';
-import { BookingCard, InstantText } from '../../../../../../components/booking-view.tsx';
+import {
+  BookingCard,
+  InstantText,
+  PaymentNotice,
+  PayOnline,
+} from '../../../../../../components/booking-view.tsx';
 import { ErrorSummary, Field } from '../../../../../../components/form.tsx';
 import { direction, isLocale, type Locale } from '../../../../../../i18n/config.ts';
 import { getMessages, type Messages } from '../../../../../../i18n/messages.ts';
@@ -10,6 +15,7 @@ import {
   type AssignedVehicle,
   type AssignmentCandidates,
   type BookingDetail,
+  type PaymentOptions,
 } from '../../../../../../server/api.ts';
 import {
   assignResourcesAction,
@@ -79,6 +85,8 @@ export default async function BookingPage({ params, searchParams }: Props) {
   });
   if (!reply.ok && reply.status === 401) redirect(`/${locale}/sign-in?error=session_ended`);
   if (!reply.ok && reply.status === 404) notFound();
+  const options = await api<PaymentOptions>('GET', '/payments/options');
+  const online = options.ok && options.data.online;
   const back = (
     <div className="form-inline">
       <a className="button" id="back-to-bookings" href={`/${locale}/organisations/${id}/bookings`}>
@@ -138,6 +146,21 @@ export default async function BookingPage({ params, searchParams }: Props) {
         </p>
       ) : null}
       <BookingCard t={m.book} a={a} locale={locale} booking={booking} />
+      <PaymentNotice
+        t={m.book}
+        fee={booking.feePayment}
+        payment={one('payment')}
+        payError={one('payError')}
+      />
+      <PayOnline
+        t={m.book}
+        locale={locale}
+        fee={booking.feePayment}
+        online={online}
+        organisationId={id}
+        bookingId={booking.id}
+        returnTo={`/${locale}/organisations/${id}/bookings/${booking.id}`}
+      />
       {booking.cancellation ? (
         <section className="section" id="cancellation-record" aria-labelledby="cancellation-title">
           <h2 id="cancellation-title">{ct.status}</h2>

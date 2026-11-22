@@ -922,7 +922,8 @@ test('CM-2: no quotation exists on a commissioned shipment unless the carrier ac
   assert.deepEqual(await commissions(customer), { quotations: [], bookings: [] });
   const read = await quotationsOf(customer, shipment.id);
   assert.equal(read.status, 200, read.text);
-  assert.doesNotMatch(read.text, /commission|1980|1237\.99/i);
+  // The nets as amounts: a bare "1980" can occur inside a random identifier.
+  assert.doesNotMatch(read.text, /commission|1980\.00|1237\.99/i);
 
   // A shipment with no commission is quoted as before, whatever is sent with it.
   const plain = await arranged(organiser, await authorised(organiser, await verifiedShipper()));

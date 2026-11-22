@@ -58,3 +58,25 @@ test('the returned configuration cannot be modified', () => {
     (config as { PORT: number }).PORT = 1;
   });
 });
+
+test('the payment stand-in is closed by default, refused in production and with a remote database', () => {
+  assert.equal(loadConfig(valid).PAYMENT_PROVIDER, 'none');
+  assert.equal(loadConfig({ ...valid, PAYMENT_PROVIDER: 'test' }).PAYMENT_PROVIDER, 'test');
+  assert.ok(
+    problemsOf({ ...valid, NODE_ENV: 'production', PAYMENT_PROVIDER: 'test' }).includes(
+      'PAYMENT_PROVIDER must not be test in production',
+    ),
+  );
+  assert.ok(
+    problemsOf({
+      ...valid,
+      DATABASE_URL: 'postgres://app:s3cret-value@db.example.test:5432/trucker',
+      PAYMENT_PROVIDER: 'test',
+    }).includes('PAYMENT_PROVIDER test needs a database on this machine'),
+  );
+  assert.ok(
+    problemsOf({ ...valid, PAYMENT_PROVIDER: 'card' }).some((p) =>
+      p.startsWith('PAYMENT_PROVIDER '),
+    ),
+  );
+});

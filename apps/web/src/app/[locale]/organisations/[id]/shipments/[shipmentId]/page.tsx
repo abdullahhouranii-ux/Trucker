@@ -25,6 +25,7 @@ import { getMessages } from '../../../../../../i18n/messages.ts';
 import {
   api,
   type Catalogues,
+  type PaymentOptions,
   type PlaceOption,
   type PublicationRecord,
   type Shipment,
@@ -76,6 +77,7 @@ export default async function ShipmentPage({ params, searchParams }: Props) {
     m.auth.errors.unavailable,
   );
   const limit = one('limit');
+  const paymentOptions = await api<PaymentOptions>('GET', '/payments/options');
   const pubFound = publicationProblems(pubParts, m.pub, limit ? { limit } : {});
   const allProblems = [...found.problems, ...pubFound.problems];
   const key = (name: string): string => {
@@ -450,6 +452,11 @@ export default async function ShipmentPage({ params, searchParams }: Props) {
         locale={locale}
         t={m.commission}
         book={m.book}
+        payment={{
+          online: paymentOptions.ok && paymentOptions.data.online,
+          returned: one('payment') ?? '',
+          error: one('payError') ?? '',
+        }}
         organisationId={id}
         shipmentId={shipmentId}
         version={shipment.version}

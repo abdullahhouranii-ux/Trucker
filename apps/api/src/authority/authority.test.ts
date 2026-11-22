@@ -1264,3 +1264,68 @@ test('SR-7: a booking keeps its accepted snapshot and its roles whatever changes
     [null, plain.shipper.org, plain.shipper.org],
   );
 });
+
+// Changed from the review's version only in how it sees the wait: a test role that is not a
+// superuser (as in the Windows CI job) cannot read another role's query text or wait event,
+// but can see that a lock in this database is not granted. Only the audited request waits.
+async function auditWaitForBlocked(fragment: string): Promise<void> {
+  void fragment;
+  for (let i = 0; i < 400; i++) {
+    const rows = await owner.query<{ n: number }>(
+      'SELECT count(*)::int AS n FROM pg_locks l JOIN pg_stat_activity a ON a.pid = l.pid WHERE NOT l.granted AND a.datname = current_database()',
+    );
+    if (rows.rows[0]!.n > 0) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error('Audit request did not reach the controlled lock');
+}
+
+test('AUDIT-5: granting organiser authority must recheck an expired customer session after its lock wait', async () => {
+  const customer = await verifiedShipper();
+  const organiser = await broker();
+  const code = (await authorityOverview(customer)).accountCode;
+  const asked = await requestAuthority(organiser, code);
+  assert.equal(asked.status, 201, asked.text);
+  const authority = asked.body.authority as Authority;
+  const holder = await owner.connect();
+  await holder.query('BEGIN');
+  await holder.query('SELECT 1 FROM trucker.organiser_authority WHERE id=$1 FOR UPDATE', [
+    authority.id,
+  ]);
+  const pending = decideAuthority(customer, authority.id, {
+    version: authority.version,
+    decision: 'accept',
+    mayPublish: true,
+    feePayerAgreed: true,
+  }).then(
+    (reply) => ({ reply }),
+    (error) => ({ error }),
+  );
+  try {
+    await auditWaitForBlocked('decide_authority');
+    await advance(D.session_idle_minutes * 60 + 1);
+  } finally {
+    await holder.query('COMMIT');
+    holder.release();
+  }
+  const result = await pending;
+  if ('error' in result) throw result.error;
+  const state = (
+    await owner.query('SELECT status FROM trucker.organiser_authority WHERE id=$1', [authority.id])
+  ).rows[0];
+  const check = await call('GET', '/me', { token: customer.person.token });
+  console.log(
+    'AUDIT-5 OBSERVED',
+    JSON.stringify({
+      grantStatus: result.reply.status,
+      grant: result.reply.body,
+      authority: state.status,
+      subsequentSessionCheck: check.status,
+    }),
+  );
+  assert.equal(
+    result.reply.status,
+    401,
+    'An expired customer session granted organiser authority after waiting for the lock',
+  );
+});

@@ -621,6 +621,29 @@ export interface FeePayment {
     currency: string;
     status: 'pending';
   }[];
+  /** An online payment in progress, to be resumed rather than started again (slice 27). */
+  checkout?: FeeCheckout | null;
+  /** Acknowledgements of payment, not tax invoices. */
+  receipts?: {
+    number: string;
+    method: 'bank_transfer' | 'online';
+    amount: string;
+    currency: string;
+    issuedAt: string;
+  }[];
+}
+export interface FeeCheckout {
+  id: string;
+  status: 'opening' | 'open' | 'paid' | 'failed' | 'expired';
+  provider: 'test';
+  providerReference: string | null;
+  amount: string;
+  currency: string;
+  expiresAt: string;
+}
+export interface PaymentOptions {
+  online: boolean;
+  provider: 'test' | null;
 }
 export interface Booking {
   id: string;
@@ -794,8 +817,8 @@ export interface CommissionView {
   limits?: { options: ('percentage' | 'fixed' | 'contract')[]; maxBasisPoints: number };
   /** The organiser's view of the booked price, once the shipment is booked. */
   bookedPrice?: BookingPrice | null;
-  /** Trucker's fee, when the organiser is the one who pays it. */
-  feePayment?: FeePayment | null;
+  /** Trucker's fee, when the organiser is the one who pays it, with its booking. */
+  feePayment?: (FeePayment & { bookingId: string }) | null;
   arranged?: boolean;
   editable?: boolean;
 }

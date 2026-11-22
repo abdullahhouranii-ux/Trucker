@@ -1,5 +1,7 @@
+import { randomUUID } from 'node:crypto';
 import type { Locale } from '../i18n/config.ts';
 import type { Messages } from '../i18n/messages.ts';
+import { payFeeOnlineAction } from '../server/payment-actions.ts';
 import type {
   AcceptancePreview,
   Booking,
@@ -179,6 +181,20 @@ export function FeePaymentFacts({ t, fee }: { t: B; fee: FeePayment | null | und
           {f.verifying}
         </p>
       ) : null}
+      {fee.receipts && fee.receipts.length > 0 ? (
+        <>
+          <ul className="evidence" data-fee-receipts>
+            {fee.receipts.map((receipt) => (
+              <li key={receipt.number} data-receipt={receipt.number}>
+                {f.receiptLine}: <bdi dir="ltr">{receipt.number}</bdi>,{' '}
+                <Money amount={receipt.amount} currency={receipt.currency} />,{' '}
+                {f.method[receipt.method]}, <InstantText at={receipt.issuedAt} />
+              </li>
+            ))}
+          </ul>
+          <p className="field-hint">{f.receiptNote}</p>
+        </>
+      ) : null}
       {fee.refunds && fee.refunds.length > 0 ? (
         <ul className="evidence" data-fee-refunds>
           {fee.refunds.map((refund) => (
@@ -190,6 +206,92 @@ export function FeePaymentFacts({ t, fee }: { t: B; fee: FeePayment | null | und
         </ul>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * The payer pays the fee online, or goes back to the payment in progress. Shown only to the
+ * payer, while the fee is due and online payment is available here.
+ */
+export function PayOnline({
+  t,
+  locale,
+  fee,
+  online,
+  organisationId,
+  bookingId,
+  returnTo,
+}: {
+  t: B;
+  locale: Locale;
+  fee: FeePayment | null | undefined;
+  online: boolean;
+  organisationId: string;
+  bookingId: string;
+  /** This page's path, to come back to after the provider's page. */
+  returnTo: string;
+}) {
+  if (!online || !fee || fee.status !== 'due' || !fee.reference) return null;
+  const f = t.feePayment;
+  return (
+    <form className="form-inline" id="pay-online" action={payFeeOnlineAction}>
+      <input type="hidden" name="locale" value={locale} />
+      <input type="hidden" name="organisationId" value={organisationId} />
+      <input type="hidden" name="bookingId" value={bookingId} />
+      <input type="hidden" name="returnTo" value={returnTo} />
+      <input type="hidden" name="retryKey" value={randomUUID()} />
+      <button className="button button-primary" type="submit" id="pay-online-button">
+        {fee.checkout ? f.continuePayment : f.payOnline}
+      </button>
+      <p className="field-hint">{fee.checkout ? f.inProgress : f.payOnlineNote}</p>
+    </form>
+  );
+}
+
+/** After the provider's page, or a refused attempt: what stands, never more than was recorded. */
+export function PaymentNotice({
+  t,
+  fee,
+  payment,
+  payError,
+}: {
+  t: B;
+  fee: FeePayment | null | undefined;
+  payment: string;
+  payError: string;
+}) {
+  const f = t.feePayment;
+  if (payError) {
+    const message = (f.errors as Record<string, string>)[payError] ?? f.errors.invalid;
+    return (
+      <p className="notice notice-error" role="alert" id="payment-error">
+        {message}
+      </p>
+    );
+  }
+  if (!payment) return null;
+  const paid = fee?.status === 'paid';
+  const message =
+    payment === 'paid'
+      ? paid
+        ? f.returned.confirmed
+        : f.returned.pending
+      : payment === 'declined'
+        ? f.returned.declined
+        : payment === 'closed'
+          ? f.returned.closed
+          : paid
+            ? f.returned.confirmed
+            : f.returned.pending;
+  return (
+    <p
+      className={paid ? 'notice notice-success' : 'notice'}
+      role="status"
+      id="payment-notice"
+      data-confirmed={String(paid)}
+    >
+      {message}
+    </p>
   );
 }
 
