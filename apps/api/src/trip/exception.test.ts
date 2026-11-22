@@ -25,6 +25,16 @@ import { ensureQuotationFleet } from '../testing/quotation-fleet.js';
 import { createTestDatabase, type TestDatabase } from '../testing/test-database.js';
 import { TripWatchJob } from './trip-watch.job.js';
 
+/**
+ * A record as text without its identifiers: a random id such as "…4410…" is not a leaked note.
+ * For checks that a short number does not appear; every other character is kept.
+ */
+const withoutIds = (value: unknown): string =>
+  JSON.stringify(value).replace(
+    /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi,
+    '<id>',
+  );
+
 // Assignment, reservation and confirmation (slice 15). Real PostgreSQL, the API connected as
 // its restricted role. Shippers, carriers, vehicles, drivers and bookings are made through the
 // routes of the earlier slices. Occupancy episodes do not exist in the product yet: where a test
@@ -1316,7 +1326,7 @@ test('EXC-2: only staff holding the operations privilege see the queue and act; 
   );
   assert.equal(history.rowCount, 4);
   assert.ok(history.rows.every((row) => row.actor_staff_id === reviewer.id));
-  assert.ok(!JSON.stringify(history.rows).includes('5517'));
+  assert.ok(!withoutIds(history.rows).includes('5517'));
   // Records are never changed or removed.
   await refused(
     () => owner.query("UPDATE trucker.trip_case SET description = 'x'"),
@@ -1371,7 +1381,7 @@ test('DB-9, DD-4: operations blocks a dispatch with a reason the parties see and
       [{ code: 'operations_block', reason: 'safety_review' }],
     );
     assert.equal(view.dispatch.ready, false);
-    assert.ok(!JSON.stringify(view).includes('9083'));
+    assert.ok(!withoutIds(view).includes('9083'));
   }
   const lifted = await ops(await fresh(operations), `/bookings/${id}/block`, {
     block: false,
@@ -1493,7 +1503,7 @@ test('EXC-4: a trip on hold accepts no milestone until it is resumed; the hold i
   for (const party of [before.shipper, carrier]) {
     const trip = await tripOf(await freshParty(party), id);
     assert.equal(trip.hold?.reason, 'document_concern');
-    assert.ok(!JSON.stringify(trip).includes('4410'));
+    assert.ok(!withoutIds(trip).includes('4410'));
   }
   // The driver sees the hold too.
   const assignments = await call('GET', '/me/driver/assignments', { token: driver.token });
