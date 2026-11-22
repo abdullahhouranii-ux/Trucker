@@ -21,7 +21,11 @@ import {
   operationsReleaseAction,
   withdrawMilestoneAction,
 } from '../../../../server/operations-actions.ts';
-import { requireStaff } from '../../../../server/session.ts';
+import {
+  DisputePanel,
+  type BookingDisputes,
+} from '../../../../../../web/src/components/dispute-panel.tsx';
+import { requireStaff, staffToken } from '../../../../server/session.ts';
 
 // One booking for Trucker operations (slice 17b): block its dispatch or lift the block; once
 // dispatched, put the trip on hold or resume it, record a milestone on the driver's behalf,
@@ -94,8 +98,8 @@ interface Milestone {
 }
 interface Detail {
   id: string;
-  shipper: { legalName: string };
-  carrier: { legalName: string };
+  shipper: { id: string; legalName: string };
+  carrier: { id: string; legalName: string };
   plannedReservation: { startAt: string; endAt: string };
   cancelled: boolean;
   confirmed: boolean;
@@ -206,6 +210,20 @@ export default async function OperationsBookingPage({ params, searchParams }: Pr
   const hidden = <input type="hidden" name="bookingId" value={id} />;
   const now = new Date().toISOString().slice(0, 16);
   const b = reply.ok ? reply.data.booking : null;
+  const disputePath = `/staff/operations/bookings/${id}/disputes`;
+  const disputeView = b
+    ? await api<BookingDisputes>('GET', disputePath, { token: found.token })
+    : null;
+  async function submitDispute(key: string, body: Record<string, unknown>) {
+    'use server';
+    const token = await staffToken();
+    if (!token) return 'refused';
+    const result = await api('POST', disputePath, { token, retryKey: key, body });
+    if (result.ok) return 'ok';
+    if (result.status === 0 || result.status >= 500 || result.code === 'unavailable')
+      return 'unknown';
+    return result.status === 409 ? 'conflict' : 'refused';
+  }
   const blockInForce = b?.blocks.find((item) => item.liftedAt === null) ?? null;
   return (
     <>
@@ -465,6 +483,20 @@ export default async function OperationsBookingPage({ params, searchParams }: Pr
                       ? one('key')
                       : null
                   }
+                />
+              ) : null}
+              {disputeView?.ok ? (
+                <DisputePanel
+                  view={disputeView.data}
+                  bookingId={id}
+                  submit={submitDispute}
+                  locale="en"
+                  podVersions={b.trip?.pod?.versions ?? []}
+                  parties={[b.shipper, b.carrier].map((party) => ({
+                    id: party.id,
+                    label: party.legalName,
+                  }))}
+                  canRelease={found.staff.privileges.includes('staff_admin')}
                 />
               ) : null}
 

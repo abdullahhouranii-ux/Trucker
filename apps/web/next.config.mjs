@@ -2,6 +2,8 @@
 // language negotiation is designed (not decided: see docs/delivery/WEB_FOUNDATION_SLICE_3.md).
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Keep review builds separate from the output of an existing local server.
+  distDir: process.env.TRUCKER_NEXT_BUILD_DIR || '.next',
   poweredByHeader: false,
   reactStrictMode: true,
   // Proof-of-delivery files pass through a server action: up to 10 files of 10 MB (slice 18b).

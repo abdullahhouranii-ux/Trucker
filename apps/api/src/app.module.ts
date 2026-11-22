@@ -10,6 +10,7 @@ import type { AppConfig } from './config/config.js';
 import { AccessGuard } from './database/access.js';
 import { createPool } from './database/pool.js';
 import { DiscoveryController } from './discovery/discovery.controller.js';
+import { DisputesController } from './trip/disputes.controller.js';
 import { DiscoveryService } from './discovery/discovery.service.js';
 import { HealthController } from './health/health.controller.js';
 import { HealthService } from './health/health.service.js';
@@ -85,6 +86,7 @@ export class AppModule {
       module: AppModule,
       controllers: [
         DiscoveryController,
+        DisputesController,
         HealthController,
         IdentityController,
         OrganisationController,
