@@ -19,7 +19,9 @@ Node 24, isolated PostgreSQL, this branch alone.
 | Browser journey (`TRUCKER_QUOTATION_BROWSER=1`) | Passes: a carrier signed in sees the card, is refused without a matching fleet, quotes once the truck is added, and the shipper books. Codex's steps for the operations workspace were moved to the redesign branch |
 | Deliberate faults in 0039 | Seven, one at a time. Six caught: unpublished shipments listed, expired shipments listed, a suspension ignored, no fleet gate, a tractor without a trailer accepted, an unverified truck accepted. Five were missed at first; a test of the board's and the gate's edges was added. The seventh, the shipper's publishability check, is not caught on its own because withdrawing a shipper's verification also suspends its shipments, which the board already excludes |
 
-## Decisions for Abdullah
+## Decisions
 
-1. **Visibility.** Anyone, without signing in, sees the route countries, equipment and quote deadline of every open shipment. Confirm this is acceptable, or require sign-in.
-2. **Fleet gate.** Quoting now requires a matching verified fleet. Confirm the rule, including that a tractor needs a matching trailer.
+Approved by Abdullah on 22 November 2026:
+
+1. **Visibility.** Anyone, without signing in, sees the route countries, equipment and quote deadline of every open shipment.
+2. **Fleet gate.** Quoting requires a matching verified fleet; a tractor needs a matching trailer.
