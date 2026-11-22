@@ -19,6 +19,8 @@ export interface OrganisationInput {
 
 export interface OrganisationView extends OrganisationInput {
   readonly id: string;
+  /** How another account names this one when asking it for authority. */
+  readonly accountCode: string;
   readonly kind: 'company' | 'individual';
   readonly status: string;
   readonly requestedCapability: string;
@@ -63,6 +65,7 @@ export interface Caller {
 
 interface OrganisationRow {
   id: string;
+  account_code: string;
   kind: 'company' | 'individual';
   status: string;
   requested_capability: string;
@@ -77,11 +80,12 @@ interface OrganisationRow {
   updated_at: Date;
 }
 
-const COLUMNS = `id, kind, status, requested_capability, legal_name, trading_name, country_code,
+const COLUMNS = `id, account_code, kind, status, requested_capability, legal_name, trading_name, country_code,
   registration_number, address, contact_name, version, created_at, updated_at`;
 
 const view = (row: OrganisationRow): OrganisationView => ({
   id: row.id,
+  accountCode: row.account_code,
   kind: row.kind,
   status: row.status,
   requestedCapability: row.requested_capability,

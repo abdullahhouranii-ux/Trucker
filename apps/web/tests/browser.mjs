@@ -656,11 +656,11 @@ async function main() {
     mkdirSync(outDir, { recursive: true });
     // At most five pictures, for design review only.
     const shots = {
-      'en:personal account form': 'personal-account-en-390',
-      'ar:personal account form': 'personal-account-ar-390',
-      'en:truck owner fleet': 'truck-owner-fleet-en-390',
-      'ar:truck owner fleet': 'truck-owner-fleet-ar-390',
-      'ur:truck owner fleet': 'truck-owner-fleet-ur-390',
+      'en:authority requested': 'authority-requested-en-390',
+      'en:shipment roles': 'shipment-roles-en-390',
+      'ar:shipment roles': 'shipment-roles-ar-390',
+      'en:authority in force': 'authority-in-force-en-390',
+      'ar:authority in force': 'authority-in-force-ar-390',
     };
     // Fictional numbers: country code 999 is not assigned. Unique per run.
     const stamp = String(Date.now()).slice(-7);
@@ -2245,10 +2245,10 @@ async function main() {
     // fictional zones (XA is UTC+4, XB is UTC+3).
     const zoned = (hours, offsetHours) =>
       new Date(Date.now() + (hours + offsetHours) * 3_600_000).toISOString().slice(0, 16);
-    const makeShipment = async (name) =>
+    const makeShipment = async (name, org = verifyOrg) =>
       (
         await (
-          await fetch(`${apiOrigin}/organisations/${verifyOrg}/shipments`, {
+          await fetch(`${apiOrigin}/organisations/${org}/shipments`, {
             method: 'POST',
             headers: {
               authorization: `Bearer ${urToken}`,
@@ -3879,6 +3879,163 @@ async function main() {
       await open(ownerFleet(locale), 390);
       await inspect(locale, 'truck owner fleet');
     }
+
+    // ------------------------------------------------------------------------------------
+    // Shipment roles and authority (slice 22): the personal account becomes an organiser,
+    // asks the shipper for authority by its account code, the shipper accepts, the organiser
+    // names the shipper as the customer of a draft and publishes it, and the shipper sees it.
+    // ------------------------------------------------------------------------------------
+    const organiseApplied = await post(
+      `/organisations/${personalOrg}/verification/applications`,
+      {
+        version: (await urApi(`/organisations/${personalOrg}/verification`)).body.verification
+          .organisation.version,
+        declarationAccepted: true,
+        declarationLanguage: 'en',
+        capability: 'organise',
+        evidence: [
+          { documentType: 'identity_evidence', documentNumber: 'ID-ORG-1', issuingCountry: 'XA' },
+        ],
+      },
+      'organise-apply',
+    );
+    const organiseApplication = organiseApplied.body.verification?.applications?.[0];
+    const organiseDecision = await fetch(
+      `${apiOrigin}/staff/verification/${organiseApplication?.id}/decision`,
+      {
+        method: 'POST',
+        headers: { authorization: `Bearer ${reviewerToken}`, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          version: 1,
+          decision: 'verified',
+          reason: 'evidence_accepted',
+          noConflict: true,
+        }),
+      },
+    );
+    const authPath = (locale, org) => `/${locale}/organisations/${org}/authorities`;
+    await open(`/en/organisations/${verifyOrg}`, 390);
+    await submit('#open-authorities');
+    const customerCode = (await text('#account-code')) ?? '';
+    check(
+      'authority',
+      organiseDecision.status === 200 &&
+        page.url() === `${origin}${authPath('en', verifyOrg)}` &&
+        /^TR[0-9A-F]{10}$/.test(customerCode) &&
+        (await page.$('#request-form')) === null,
+      `the customer's authorities page showed code ${customerCode} after ${organiseDecision.status}`,
+    );
+    // A wrong code is refused with a message that says nothing about any account.
+    await open(authPath('en', personalOrg), 390);
+    await page.type('#customerCode', 'TR0000000000');
+    await submit('#request-authority');
+    const wrongCode = ((await text('#authority-error')) ?? '').includes(
+      messagesFor('en').roles.errors.account_code_not_found,
+    );
+    await page.type('#customerCode', customerCode);
+    await submit('#request-authority');
+    check(
+      'authority',
+      wrongCode &&
+        ((await text('#authority-done')) ?? '').includes(messagesFor('en').roles.done.requested) &&
+        (await page.$('[data-status="requested"][data-role="organiser"]')) !== null,
+      `asking for authority led to ${page.url()}`,
+    );
+    for (const locale of locales) {
+      await open(authPath(locale, verifyOrg), 390);
+      await inspect(locale, 'authority requested');
+    }
+    // The customer accepts and chooses what it allows.
+    await open(authPath('en', verifyOrg), 390);
+    await page.click('[data-status="requested"] input[name="mayPublish"]');
+    await page.click('[data-status="requested"] input[name="feePayerAgreed"]');
+    await submit('[data-status="requested"] [data-accept]');
+    const granted = (await urApi(`/organisations/${personalOrg}/authorities`)).body.overview
+      .authorities[0];
+    check(
+      'authority',
+      granted?.status === 'active' &&
+        granted.mayPublish === true &&
+        granted.feePayerAgreed === true &&
+        (await page.$('[data-status="active"] [data-end]')) !== null,
+      `after the customer accepted, the authority is ${granted?.status}`,
+    );
+    // The organiser names the customer on a draft in the browser, then publishes it.
+    const arrangedShipment = await makeShipment('arr', personalOrg);
+    const arrangedPath = (locale) =>
+      `/${locale}/organisations/${personalOrg}/shipments/${arrangedShipment}`;
+    await open(arrangedPath('en'), 390);
+    await page.select('#customerAuthorityId', granted.id);
+    await page.type('#receiverName', 'Receiver Fixture (fictional)');
+    await page.select('#freightPayer', 'receiver');
+    await submit('#save-roles');
+    const savedParties = (
+      await urApi(`/organisations/${personalOrg}/shipments/${arrangedShipment}/parties`)
+    ).body.parties;
+    check(
+      'authority',
+      (await page.$('#roles-saved')) !== null &&
+        savedParties?.customer?.id === verifyOrg &&
+        savedParties.receiver?.name === 'Receiver Fixture (fictional)' &&
+        savedParties.freightPayer === 'receiver' &&
+        savedParties.feePayer === 'customer',
+      `saving the roles led to ${page.url()} with customer ${savedParties?.customer?.id}`,
+    );
+    for (const locale of locales) {
+      await open(arrangedPath(locale), 390);
+      await inspect(locale, 'shipment roles');
+    }
+    const arrangedPublished = await post(
+      `/organisations/${personalOrg}/shipments/${arrangedShipment}/publish`,
+      {
+        version: 1,
+        cargoCategory: 'general_dry',
+        equipmentType: 'curtain_side',
+        dangerousGoods: false,
+        pickupArea: 'North industrial area',
+        deliveryArea: 'Port district',
+        quotationDeadline: { local: zoned(24, 4) },
+      },
+      'arranged-publish',
+    );
+    await open(arrangedPath('en'), 390);
+    const rolesFixed = (await page.$('#roles-form')) === null && (await page.$('#roles')) !== null;
+    // The customer sees the shipment arranged in its name, with who arranged it.
+    await open(authPath('en', verifyOrg), 390);
+    const arrangedText = (await text(`[data-arranged="${arrangedShipment}"]`)) ?? '';
+    check(
+      'authority',
+      arrangedPublished.status === 200 &&
+        rolesFixed &&
+        arrangedText.includes('Individual Fixture Person (fictional)') &&
+        arrangedText.includes('Receiver Fixture (fictional)'),
+      `the customer's page shows the arranged shipment as: ${arrangedText.slice(0, 200)}`,
+    );
+    for (const locale of locales) {
+      await open(authPath(locale, verifyOrg), 390);
+      await inspect(locale, 'authority in force');
+    }
+    // The customer ends it: nothing new can be arranged in its name.
+    await open(authPath('en', verifyOrg), 390);
+    await submit('[data-status="active"] [data-end]');
+    const endedShipment = await makeShipment('arr2', personalOrg);
+    const afterEnd = await post(
+      `/organisations/${personalOrg}/shipments/${endedShipment}/parties`,
+      {
+        version: 1,
+        customerAuthorityId: granted.id,
+        sender: 'customer',
+        receiver: 'not_named',
+        freightPayer: 'customer',
+        feePayer: 'customer',
+      },
+      'after-end',
+    );
+    check(
+      'authority',
+      (await page.$('[data-status="ended"]')) !== null && afterEnd.status === 422,
+      `after the customer ended the authority a new draft answered ${afterEnd.status}`,
+    );
 
     // Suspended when the verification is withdrawn by staff (test accounts, migration role).
     const adminToken = `${randomBytes(16).toString('hex')}.${randomBytes(16).toString('hex')}`;

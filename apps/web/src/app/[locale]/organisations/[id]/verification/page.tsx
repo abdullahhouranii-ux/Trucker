@@ -159,7 +159,14 @@ export default async function VerificationPage({ params, searchParams }: Props) 
     done === 'submitted' ? t.doneSubmitted : done === 'withdrawn' ? t.doneWithdrawn : undefined;
   const formId = `verification-form-${v.organisation.id}`;
   const amendment = v.maySubmit === 'amendment';
-  const closed = v.requirements.length === 0;
+  // A company that has never been verified may apply first as an organiser (a broker).
+  const brokerOffered =
+    v.maySubmit === 'initial' &&
+    v.organisation.kind === 'company' &&
+    v.mayApply.organise === 'initial';
+  const asBroker = brokerOffered && search.as === 'organise';
+  const initialRequirements = asBroker ? v.requirementsFor.organise : v.requirements;
+  const closed = initialRequirements.length === 0;
   const has = (field: string): boolean => invalid.has(field);
 
   const evidenceList = (application: VerificationApplication) => (
@@ -265,13 +272,27 @@ export default async function VerificationPage({ params, searchParams }: Props) 
       ) : null}
       {v.maySubmit && !closed ? (
         <section className="section" aria-labelledby="submit-title">
-          <h2 id="submit-title">{amendment ? t.amendTitle : t.submitTitle}</h2>
+          <h2 id="submit-title">
+            {amendment ? t.amendTitle : asBroker ? t.organiserApplyTitle : t.submitTitle}
+          </h2>
+          {brokerOffered ? (
+            <div className="form-inline">
+              <a
+                className="button"
+                id="switch-capability"
+                href={`/${locale}/organisations/${v.organisation.id}/verification${asBroker ? '' : '?as=organise'}`}
+              >
+                {asBroker ? t.applyAsShipper : t.applyAsOrganiser}
+              </a>
+            </div>
+          ) : null}
           <form className="form card" id={formId} action={submitVerificationAction} noValidate>
             <input type="hidden" name="locale" value={locale} />
             <input type="hidden" name="organisationId" value={v.organisation.id} />
             <input type="hidden" name="version" value={v.organisation.version} />
             <input type="hidden" name="retryKey" value={retryKey} />
             <input type="hidden" name="kind" value={amendment ? 'amendment' : 'initial'} />
+            {asBroker ? <input type="hidden" name="capability" value="organise" /> : null}
             {amendment ? (
               <fieldset className="fieldset">
                 <legend>{t.identityTitle}</legend>
@@ -374,7 +395,7 @@ export default async function VerificationPage({ params, searchParams }: Props) 
             <EvidenceFields
               locale={locale}
               t={t}
-              requirements={v.requirements}
+              requirements={initialRequirements}
               previous={latest?.evidence ?? []}
               countries={open}
               defaultCountry={v.organisation.countryCode}
