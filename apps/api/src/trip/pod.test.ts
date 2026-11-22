@@ -2813,3 +2813,84 @@ test('record photos: another company cannot reach a record through its own accou
   );
   assert.equal(late.status, 409);
 });
+
+test('record photos: more than 5 MB is refused before anything is stored; the keeping time is a setting, 0 keeps everything, and only ended records lose their photos', async () => {
+  const carrier = await verifiedCarrier();
+  const jpeg = (marker: number, size = 7) => {
+    const bytes = new Uint8Array(size);
+    bytes.set([255, 216, 255, 224, marker]);
+    bytes[size - 2] = 255;
+    bytes[size - 1] = 217;
+    return bytes;
+  };
+  const photos = (vehicleId: string) =>
+    '/organisations/' + carrier.org + '/vehicles/' + vehicleId + '/photos';
+  const put = (vehicleId: string, bytes: Uint8Array<ArrayBuffer>) =>
+    fetch(base + photos(vehicleId) + '/' + randomUUID(), {
+      method: 'PUT',
+      body: bytes,
+      headers: { authorization: 'Bearer ' + carrier.person.token, 'content-type': 'image/jpeg' },
+    });
+  const kept = await rigid(carrier);
+  const leaving = await rigid(carrier);
+
+  // 5 MB is accepted; one byte more is refused and nothing is stored.
+  const before = storedFiles();
+  const tooLarge = await put(kept.id, jpeg(1, 5 * 1024 * 1024 + 1));
+  assert.equal(tooLarge.status, 413);
+  assert.equal(storedFiles(), before);
+  assert.equal((await put(kept.id, jpeg(2, 5 * 1024 * 1024))).status, 200);
+  assert.equal((await put(leaving.id, jpeg(3))).status, 200);
+
+  const version = (
+    await owner.query<{ version: number }>(
+      'SELECT row_version AS version FROM trucker.vehicle WHERE id = $1',
+      [leaving.id],
+    )
+  ).rows[0]!.version;
+  const retired = await call(
+    'POST',
+    '/organisations/' + carrier.org + '/fleet/vehicles/' + leaving.id + '/retire',
+    { token: carrier.person.token, body: { version }, key: key() },
+  );
+  assert.equal(retired.status, 200, retired.text);
+  const service = nest.get(PodService);
+  // Moving the clock ends sessions: each look signs in again.
+  const listed = async (vehicleId: string) => {
+    const token = (await again(carrier.person)).token;
+    const reply = await call('GET', photos(vehicleId), { token });
+    assert.equal(reply.status, 200, reply.text);
+    return (reply.body.photos as unknown[]).length;
+  };
+
+  // 0, the default, keeps every photo, however long ago the record ended.
+  await advance(10 * 24 * 60 * 60);
+  assert.equal(await service.removeExpiredPhotos(), 0);
+  assert.equal(await listed(leaving.id), 1);
+
+  // A keeping time of 30 days: not yet; then the retired vehicle's photo goes, the active one's
+  // stays, and the removal is audited without an actor.
+  await owner.query('UPDATE trucker.security_setting SET record_photo_retention_days = 30');
+  try {
+    assert.equal(await service.removeExpiredPhotos(), 0);
+    await advance(21 * 24 * 60 * 60);
+    assert.equal(await service.removeExpiredPhotos(), 1);
+    assert.equal(await listed(leaving.id), 0);
+    assert.equal(await listed(kept.id), 1);
+    assert.equal(
+      await count(
+        'audit_entry',
+        "action = 'record_photo.removed_by_retention' AND actor_person_id IS NULL",
+        [],
+      ),
+      1,
+    );
+    // Its file is then unrecorded, and the sweep removes it.
+    const files = storedFiles();
+    const swept = await service.sweepUnrecorded(new Date(Date.now() + 60_000));
+    assert.equal(swept.removed, 1);
+    assert.equal(storedFiles(), files - 1);
+  } finally {
+    await owner.query('UPDATE trucker.security_setting SET record_photo_retention_days = 0');
+  }
+});
